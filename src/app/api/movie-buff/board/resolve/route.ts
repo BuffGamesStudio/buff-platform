@@ -25,12 +25,49 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result, { status: 200 });
   } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Board resolution failed.";
+
+    const normalizedMessage =
+      message.toLowerCase();
+
+    const canFallbackToLinearFlow =
+      normalizedMessage.includes(
+        "movie_buff_boards"
+      ) ||
+      normalizedMessage.includes(
+        "movie_buff_board_"
+      ) ||
+      normalizedMessage.includes(
+        "schema cache"
+      ) ||
+      normalizedMessage.includes(
+        "relation \"public.content_items\" does not exist"
+      ) ||
+      normalizedMessage.includes(
+        "relation \"public.content_media\" does not exist"
+      );
+
+    if (canFallbackToLinearFlow) {
+      return NextResponse.json(
+        {
+          boardResolved: false,
+          boardUnavailable: true,
+          boardId: null,
+          nextSelectorPlayerId: null,
+          status: null,
+          tileId: null,
+          tilesUsedCount: 0,
+        },
+        { status: 200 },
+      );
+    }
+
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Board resolution failed.",
+        error: message,
       },
       { status: 500 },
     );

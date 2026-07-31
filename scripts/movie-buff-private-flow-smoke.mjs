@@ -340,34 +340,40 @@ async function waitForAnswerFormReady(page) {
 }
 
 async function waitForResultsReady(page) {
-  await page.waitForFunction(
-    () =>
-      document.body?.innerText?.includes(
-        "Leave Match",
-      ) &&
-      (document.body?.innerText?.includes(
-        "Next Round",
-      ) ||
-        document.body?.innerText?.includes(
-          "View Final Results",
-        )),
-    undefined,
-    { timeout: 30000 },
-  );
+  const nextRoundButton = page.getByRole("button", {
+    name: "Next Round",
+  });
+  const finalResultsButton = page.getByRole("button", {
+    name: "View Final Results",
+  });
+  const leaveMatchButton = page.getByRole("button", {
+    name: "Leave Match",
+  });
+
+  await Promise.all([
+    leaveMatchButton.first().waitFor({ timeout: 30000 }),
+    Promise.race([
+      nextRoundButton.first().waitFor({ timeout: 30000 }),
+      finalResultsButton.first().waitFor({ timeout: 30000 }),
+    ]),
+  ]);
 }
 
 async function waitForFinalResultsReady(page) {
-  await page.waitForFunction(
-    () =>
-      document.body?.innerText?.includes(
-        "Play Again",
-      ) &&
-      document.body?.innerText?.includes(
-        "Return to Lobby",
-      ),
-    undefined,
-    { timeout: 30000 },
-  );
+  await Promise.all([
+    page
+      .getByRole("button", {
+        name: "Play Again",
+      })
+      .first()
+      .waitFor({ timeout: 30000 }),
+    page
+      .getByRole("button", {
+        name: "Return to Lobby",
+      })
+      .first()
+      .waitFor({ timeout: 30000 }),
+  ]);
 }
 
 async function resolveIntoPlay(page) {
