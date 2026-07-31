@@ -1,6 +1,8 @@
 import AdminHeader from "@/components/admin/AdminHeader";
 import { getMovieBuffMatchAnalytics } from "@/lib/server/movieBuffAnalyticsAdmin";
 
+export const dynamic = "force-dynamic";
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",

@@ -1,6 +1,8 @@
 import AdminHeader from "@/components/admin/AdminHeader";
 import { listMovieBuffClipAdminRows } from "@/lib/server/movieBuffAnalyticsAdmin";
 
+export const dynamic = "force-dynamic";
+
 function formatDateTime(value: string | null) {
   if (!value) {
     return "No playback yet";

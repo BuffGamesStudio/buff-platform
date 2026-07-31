@@ -103,9 +103,9 @@ Additional hosted evidence gathered during this pass:
 - strengthened hosted admin smoke now proves:
   - `/admin/movies`: `49` visible movies
   - `/admin/sources`: `4` registered sources
-  - `/admin/analytics/clips`: still `0` tracked clips on hosted
-  - `/admin/analytics/rotation`: still `0` eligible clips and `0` primary ready assets on hosted
-  - `/admin/analytics/qa`: still `0` watchlist size on hosted
+  - `/admin/analytics/clips`: `49` tracked clips on hosted
+  - `/admin/analytics/rotation`: `49` eligible clips render on hosted, but top pool-summary parity is still the remaining hosted blocker
+  - `/admin/analytics/qa`: `0` watchlist size on hosted
 
 Coverage/pool evidence restored during this pass:
 
@@ -135,7 +135,7 @@ Coverage/pool evidence restored during this pass:
 | Timer only follows authoritative server state | Proven hosted | hosted timer smoke passes | none |
 | No dead buttons or broken routes in core flow | Proven for core flow | hosted preflight route/gameplay suite passes | non-core route quality can still improve later |
 | Leave / back / exit flows exist where needed | Proven hosted | hosted private leave and shared public leave both pass | none |
-| Admin pages needed for live operations load and reflect real data | Partially proven, still blocked | strengthened hosted admin smoke proves real data on `/admin/movies` and `/admin/sources`, but hosted `/admin/analytics/clips`, `/admin/analytics/rotation`, and `/admin/analytics/qa` still render zero-value admin state | hosted analytics/admin parity still missing for clip operations |
+| Admin pages needed for live operations load and reflect real data | Partially proven, still blocked | strengthened hosted admin smoke proves real data on `/admin/movies`, `/admin/sources`, and `/admin/analytics/clips`; hosted rotation summary still is not fully proven against production-true ready-pool state | hosted rotation/admin parity still needs final proof |
 | Clip delivery is fast and stable enough for live play | Proven for current soft-launch pool path | hosted full-suite gameplay passes; launch gate avoids on-demand-only stalls | broader scale remains unproven |
 | Pool / rotation behavior avoids stale repeats well enough for soft launch | Partially proven | runtime pool depth is healthy; hosted gameplay uses warmed assets; coverage verifier now works again in hosted legacy mode | weighted content-engine rotation/admin visibility is not fully hosted-parity proven |
 | Enough playable movie coverage exists for soft launch | Proven for soft-launch minimum, not broader public depth | hosted legacy gameplay inventory is `49` active source-backed rows with balanced difficulty spread; pool reserves are materially above shallow minimums | still below the user's larger long-term content target |
@@ -149,7 +149,7 @@ Coverage/pool evidence restored during this pass:
 
 | Blocker | Owner area | Current status | Evidence | Next fix | Severity |
 |---|---|---|---|---|---|
-| Hosted clip analytics and rotation parity is missing | Supabase schema + admin ops | Open | hosted REST cannot read `movie_buff_clip_analytics`; strengthened hosted admin smoke proves `/admin/analytics/clips` = `0`, `/admin/analytics/rotation` = `0` eligible clips / `0` primary ready assets, `/admin/analytics/qa` = `0` watchlist size | restore hosted analytics exposure or deploy the legacy fallback path and prove non-zero admin analytics on hosted | Critical |
+| Hosted rotation summary parity is not yet fully proven | Admin analytics + hosted runtime behavior | Open | production now runs commit `22c193f`, hosted clips page shows `49` tracked clips, but rotation summary behavior still depends on hosted request-time evaluation and deployment-local runtime assumptions | force request-time rendering for analytics pages, rerun hosted rotation proof, and if needed move pool-summary truth entirely to durable data instead of deployment-local files | Critical |
 | Hosted content-engine/source registry REST parity is incomplete | Supabase schema + admin ops | Open | direct hosted REST reads still fail for `content_items`, `content_media`, `content_sources`, and `content_source_items`, even though `/admin/movies` and `/admin/sources` now render useful fallback/live data | apply the missing hosted schema/grants or keep verified fallback paths only where they are operationally sufficient | High |
 | Hosted admin smoke needed stronger data assertions | Verifier coverage | Mitigated | strengthened hosted admin smoke now proves movie count and source count instead of only headings | keep this stronger verifier and rerun after each hosted admin fix | Medium |
 
@@ -176,13 +176,13 @@ Movie Buff is closer to soft launch than it was earlier on Friday, July 31, 2026
 
 It is now hosted-proven for the core player path.
 
-It is not yet fully soft-launch-ready because hosted live-ops/admin data parity is still incomplete.
+It is not yet fully soft-launch-ready because hosted live-ops/admin rotation parity is still incomplete.
 
 ## Current truthful status statement
 
 As of Friday, July 31, 2026, Movie Buff is hosted-green for core gameplay, auth,
 ready-check, timer, leave flow, and round progression on
-`https://movie-buff-sigma.vercel.app`, and hosted admin now proves real movie
-and source data, but it is still not fully soft-launch-ready because hosted clip
-analytics, rotation control, and QA health are still rendering zero-value admin
-state instead of production-true analytics.
+`https://movie-buff-sigma.vercel.app`, and hosted admin now proves real movie,
+source, and clip analytics counts, but it is still not fully soft-launch-ready
+because the hosted rotation summary path is not yet fully proven against
+production-true ready-pool state.

@@ -1,6 +1,8 @@
 import AdminHeader from "@/components/admin/AdminHeader";
 import { listMovieBuffClipAdminRows } from "@/lib/server/movieBuffAnalyticsAdmin";
 
+export const dynamic = "force-dynamic";
+
 function formatPercent(value: number) {
   return `${Math.round(value * 100)}%`;
 }

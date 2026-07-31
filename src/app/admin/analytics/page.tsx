@@ -13,6 +13,8 @@ import {
   listMovieBuffClipAdminRows,
 } from "@/lib/server/movieBuffAnalyticsAdmin";
 
+export const dynamic = "force-dynamic";
+
 function formatDateTime(value: string | null) {
   if (!value) {
     return "Not played yet";

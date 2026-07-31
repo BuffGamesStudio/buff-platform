@@ -6,6 +6,8 @@ import {
 import { listMovieBuffClipAdminRows } from "@/lib/server/movieBuffAnalyticsAdmin";
 import { getMovieBuffGlobalPoolStatus } from "@/lib/server/movieClipper";
 
+export const dynamic = "force-dynamic";
+
 const statuses = [
   "active",
   "featured",
