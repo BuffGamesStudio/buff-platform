@@ -208,15 +208,19 @@ function normalizeDifficultyPoolLabel(
     ?.trim()
     .toLowerCase();
 
-  if (normalized === "rookie") {
+  if (
+    normalized === "rookie" ||
+    normalized === "fan" ||
+    normalized === "easy"
+  ) {
     return "Fan";
   }
 
-  if (normalized === "fan") {
-    return "Fan";
-  }
-
-  if (normalized === "buffster") {
+  if (
+    normalized === "buffster" ||
+    normalized === "hard" ||
+    normalized === "expert"
+  ) {
     return "Buffster";
   }
 
