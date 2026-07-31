@@ -41,6 +41,10 @@ function runCommand(command, args, options = {}) {
   return result.stdout;
 }
 
+function isLocalBaseUrl(url) {
+  return /127\.0\.0\.1|localhost/i.test(url);
+}
+
 function resolveDbContainerName() {
   const output = runCommand("docker", [
     "ps",
@@ -427,6 +431,42 @@ where room.id = '${roomId}'::uuid;
 `;
 }
 
+async function verifyHostedRemainingPlayerState(page) {
+  await page.waitForTimeout(4000);
+
+  const currentUrl = page.url();
+  const body = await page.locator("body").innerText();
+
+  assert(
+    !currentUrl.includes("/games/movie-buff/lobby"),
+    "Remaining public player was unexpectedly returned to the lobby.",
+  );
+
+  assert(
+    !body.includes("Application error") &&
+      !body.includes("Unexpected Application Error"),
+    "Remaining public player hit an application error after the other player left.",
+  );
+
+  const canContinue =
+    currentUrl.includes("/games/movie-buff/play") ||
+    currentUrl.includes("/games/movie-buff/round-results") ||
+    currentUrl.includes("/games/movie-buff/final-results") ||
+    body.includes("Enter the movie title") ||
+    body.includes("Round Results") ||
+    body.includes("Final Results");
+
+  assert(
+    canContinue,
+    "Remaining public player did not stay in a playable or post-round state after the other player left.",
+  );
+
+  return {
+    verificationMode: "hosted-browser",
+    remainingUrl: currentUrl,
+  };
+}
+
 const browser = await chromium.launch({
   headless: true,
   executablePath: CHROME_EXECUTABLE,
@@ -506,34 +546,47 @@ try {
 
   await pageOne.waitForTimeout(1500);
 
-  const containerName = resolveDbContainerName();
-  const verification = extractJsonLine(
-    runSql(
-      containerName,
-      buildVerificationSql(roomIdOne),
-    ),
-  );
+  const verification = isLocalBaseUrl(APP_URL)
+    ? (() => {
+        const containerName =
+          resolveDbContainerName();
+        const localVerification =
+          extractJsonLine(
+            runSql(
+              containerName,
+              buildVerificationSql(roomIdOne),
+            ),
+          );
 
-  assert(
-    verification.roomStatus === "active",
-    `Expected active room after one public player left, got ${verification.roomStatus}.`,
-  );
-  assert(
-    verification.activePlayerCount === 1,
-    `Expected 1 active player after one public player left, got ${verification.activePlayerCount}.`,
-  );
-  assert(
-    Number(
-      verification.eventsByType?.player_left ?? 0,
-    ) >= 1,
-    "Expected at least one player_left event.",
-  );
-  assert(
-    Number(
-      verification.eventsByType?.match_abandoned ?? 0,
-    ) === 0,
-    "Did not expect match_abandoned while one public player remains.",
-  );
+        assert(
+          localVerification.roomStatus === "active",
+          `Expected active room after one public player left, got ${localVerification.roomStatus}.`,
+        );
+        assert(
+          localVerification.activePlayerCount === 1,
+          `Expected 1 active player after one public player left, got ${localVerification.activePlayerCount}.`,
+        );
+        assert(
+          Number(
+            localVerification.eventsByType?.player_left ??
+              0,
+          ) >= 1,
+          "Expected at least one player_left event.",
+        );
+        assert(
+          Number(
+            localVerification.eventsByType
+              ?.match_abandoned ?? 0,
+          ) === 0,
+          "Did not expect match_abandoned while one public player remains.",
+        );
+
+        return {
+          verificationMode: "local-sql",
+          ...localVerification,
+        };
+      })()
+    : await verifyHostedRemainingPlayerState(pageOne);
 
   result.leaveVerification = verification;
 

@@ -245,6 +245,24 @@ try {
     },
   );
 
+  await page.goto(`${APP_URL}/account`, {
+    waitUntil: "domcontentloaded",
+  });
+
+  await page.waitForFunction(
+    () =>
+      document.body?.innerText?.includes(
+        "Launch Movie Buff",
+      ),
+    undefined,
+    { timeout: 60000 },
+  );
+
+  result.checkpoints.accountSignedIn = {
+    url: page.url(),
+    ok: true,
+  };
+
   await page.goto(`${APP_URL}/admin/movies`, {
     waitUntil: "domcontentloaded",
   });

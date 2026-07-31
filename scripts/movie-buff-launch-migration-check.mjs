@@ -9,6 +9,8 @@ const migrationsDir = path.join(
 );
 
 const requiredMigrations = [
+  "202607311945_movie_buff_public_matchmaking_presence_gate.sql",
+  "202607311930_movie_buff_public_presence_hotfix.sql",
   "202607300100_movie_buff_clip_analytics_and_round_timing.sql",
   "202607300240_movie_buff_public_room_created_event_in_rpc.sql",
   "202607300220_movie_buff_playback_launch_timeout_buffer.sql",
