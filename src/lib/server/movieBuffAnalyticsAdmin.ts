@@ -85,6 +85,13 @@ type LegacyClipRow = {
   is_active: boolean;
 };
 
+type LegacyClipEventRow = {
+  event_type: string;
+  legacy_clip_id: string | null;
+  occurred_at: string;
+  payload: Record<string, unknown> | null;
+};
+
 export type MovieBuffClipAdminRow = {
   contentMediaId: string;
   contentId: string;
@@ -226,11 +233,117 @@ async function listLegacyMovieBuffClipAdminRows(
       (row) => [row.id, row]
     )
   );
+  const typedClips =
+    (((clipsData ?? []) as unknown) as LegacyClipRow[]);
+  const legacyClipIds = typedClips.map(
+    (row) => row.id
+  );
 
-  let rows = (((clipsData ?? []) as unknown) as LegacyClipRow[])
+  const { data: eventData, error: eventError } =
+    legacyClipIds.length > 0
+      ? await supabaseAdmin
+          .from("movie_buff_round_events")
+          .select(
+            "event_type, legacy_clip_id, occurred_at, payload"
+          )
+          .in("legacy_clip_id", legacyClipIds)
+      : { data: [], error: null };
+
+  if (eventError) {
+    throw new Error(eventError.message);
+  }
+
+  const eventRows =
+    (((eventData ?? []) as unknown) as LegacyClipEventRow[]);
+  const eventsByLegacyClipId = new Map();
+
+  for (const row of eventRows) {
+    if (!row.legacy_clip_id) {
+      continue;
+    }
+
+    const bucket =
+      eventsByLegacyClipId.get(
+        row.legacy_clip_id,
+      ) ?? [];
+    bucket.push(row);
+    eventsByLegacyClipId.set(
+      row.legacy_clip_id,
+      bucket,
+    );
+  }
+
+  let rows = typedClips
     .map((clipRow) => {
       const movieRow =
         movieById.get(clipRow.movie_id);
+      const clipEvents =
+        ((eventsByLegacyClipId.get(
+          clipRow.id,
+        ) ?? []) as LegacyClipEventRow[]);
+      const totalPlays = clipEvents.filter(
+        (eventRow: LegacyClipEventRow) =>
+          eventRow.event_type ===
+          "answer_submitted"
+      ).length;
+      const totalCorrect = clipEvents.filter(
+        (eventRow: LegacyClipEventRow) =>
+          eventRow.event_type ===
+          "answer_correct"
+      ).length;
+      const totalWrong = clipEvents.filter(
+        (eventRow: LegacyClipEventRow) =>
+          eventRow.event_type ===
+          "answer_wrong"
+      ).length;
+      const totalTimeouts = clipEvents.filter(
+        (eventRow: LegacyClipEventRow) =>
+          eventRow.event_type === "timeout"
+      ).length;
+      const totalLoadFailures = clipEvents.filter(
+        (eventRow: LegacyClipEventRow) =>
+          eventRow.event_type ===
+          "clip_failed_to_load"
+      ).length;
+      const totalLoadSuccess = clipEvents.filter(
+        (eventRow: LegacyClipEventRow) =>
+          eventRow.event_type === "clip_loaded" ||
+          eventRow.event_type === "clip_started"
+      ).length;
+      const totalHintsUsed = clipEvents.filter(
+        (eventRow: LegacyClipEventRow) =>
+          eventRow.payload?.usedHint === true ||
+          eventRow.event_type ===
+            "hint_requested"
+      ).length;
+      const answerTimes = clipEvents
+        .map((eventRow: LegacyClipEventRow) =>
+          Number(
+            eventRow.payload?.answerTimeSeconds,
+          )
+        )
+        .filter((value: number) =>
+          Number.isFinite(value)
+        );
+      const avgAnswerTimeSeconds =
+        answerTimes.length > 0
+          ? answerTimes.reduce(
+              (sum: number, value: number) =>
+                sum + value,
+              0
+            ) / answerTimes.length
+          : 0;
+      const lastPlayedAt =
+        clipEvents.reduce(
+          (
+            latest: string,
+            eventRow: LegacyClipEventRow,
+          ) =>
+            latest > eventRow.occurred_at
+              ? latest
+              : eventRow.occurred_at,
+          "",
+        ) || null;
 
       return {
         contentMediaId: clipRow.id,
@@ -267,34 +380,55 @@ async function listLegacyMovieBuffClipAdminRows(
         clipTitle: null,
         clipIsActive: clipRow.is_active,
         clipIsHidden: false,
-        totalPlays: 0,
-        totalCorrect: 0,
-        totalWrong: 0,
-        totalHintsUsed: 0,
-        totalTimeouts: 0,
-        totalLoadSuccess: 0,
-        totalLoadFailures: 0,
-        sampleSize: 0,
-        confidenceFactor: 0,
-        avgAnswerTimeSeconds: 0,
-        correctRate: 0,
-        hintRate: 0,
+        totalPlays,
+        totalCorrect,
+        totalWrong,
+        totalHintsUsed,
+        totalTimeouts,
+        totalLoadSuccess,
+        totalLoadFailures,
+        sampleSize: totalPlays,
+        confidenceFactor: Math.min(
+          1,
+          Math.max(0, totalPlays / 8)
+        ),
+        avgAnswerTimeSeconds,
+        correctRate:
+          totalPlays > 0
+            ? totalCorrect / totalPlays
+            : 0,
+        hintRate:
+          totalPlays > 0
+            ? totalHintsUsed / totalPlays
+            : 0,
         difficultyScore: 50,
         systemDifficultyLabel:
           getMovieBuffDifficultyLabel(
             movieRow?.difficulty ?? "medium"
           ),
-        qualityScore: clipRow.is_active ? 100 : 0,
+        qualityScore:
+          totalLoadFailures > 0
+            ? 35
+            : clipRow.is_active
+              ? 100
+              : 0,
         rotationScore: clipRow.is_active ? 50 : 0,
-        rotationWeight: clipRow.is_active ? 50 : 0,
+        rotationWeight:
+          clipRow.is_active &&
+          totalLoadFailures === 0
+            ? 50
+            : 0,
         adminBoost: 0,
         status: clipRow.is_active
           ? "active"
           : "retired",
-        qualityFlags: [],
-        lastPlayedAt: null,
+        qualityFlags:
+          totalLoadFailures > 0
+            ? ["broken_playback"]
+            : [],
+        lastPlayedAt,
         lastLoadedAt: null,
-        updatedAt: null,
+        updatedAt: lastPlayedAt,
       } satisfies MovieBuffClipAdminRow;
     })
     .sort((left, right) =>

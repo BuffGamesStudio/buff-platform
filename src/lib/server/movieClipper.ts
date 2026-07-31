@@ -135,6 +135,8 @@ type LegacyGlobalPoolRow = {
   movie_id: string;
   clip_type: string | null;
   is_active: boolean;
+  media_url: string | null;
+  source_url: string | null;
 };
 
 type LegacyGlobalPoolMovieRow = {
@@ -1604,7 +1606,7 @@ async function listGlobalPoolCandidates() {
         supabaseAdmin
           .from("clips")
           .select(
-            "id, movie_id, clip_type, is_active"
+            "id, movie_id, clip_type, is_active, media_url, source_url"
           )
           .eq("is_active", true),
         supabaseAdmin
@@ -1651,8 +1653,9 @@ async function listGlobalPoolCandidates() {
               : "retired",
             lastPlayedAt: null,
             totalPlays: 0,
-            sourceUrl: null,
-            fallbackMediaUrl: null,
+            sourceUrl: row.source_url ?? null,
+            fallbackMediaUrl:
+              row.media_url ?? null,
           } satisfies GlobalPoolCandidate;
         }
       );
@@ -2307,37 +2310,61 @@ export async function getMovieBuffGlobalPoolStatus(): Promise<MovieBuffGlobalPoo
     await listGlobalPoolCandidates();
   const inventory =
     await readGlobalPoolInventory(candidates);
+  const hasExplicitReadyInventory =
+    GLOBAL_POOL_LABELS.some(
+      (label) =>
+        inventory.perLabelReadyCounts[label]
+          .primary > 0 ||
+        inventory.perLabelReadyCounts[label]
+          .secondary > 0,
+    );
+  const usingLegacyStaticAssets =
+    !hasExplicitReadyInventory &&
+    candidates.some(
+      (candidate) =>
+        typeof candidate.fallbackMediaUrl ===
+          "string" &&
+        candidate.fallbackMediaUrl.length > 0,
+    );
+
+  const perLabel = GLOBAL_POOL_LABELS.map(
+    (label) => {
+      const eligibleClips = candidates.filter(
+        (candidate) =>
+          candidate.difficultyLabel === label,
+      ).length;
+
+      return {
+        eligibleClips,
+        label,
+        primaryReadyAssets:
+          usingLegacyStaticAssets
+            ? eligibleClips
+            : inventory.perLabelReadyCounts[label]
+                .primary,
+        secondaryReadyAssets:
+          usingLegacyStaticAssets
+            ? 0
+            : inventory.perLabelReadyCounts[label]
+                .secondary,
+      };
+    },
+  );
 
   return {
     generatedAt: new Date().toISOString(),
     totalEligibleClips: candidates.length,
-    totalPrimaryReadyAssets: GLOBAL_POOL_LABELS.reduce(
-      (sum, label) =>
-        sum +
-        inventory.perLabelReadyCounts[label].primary,
+    totalPrimaryReadyAssets: perLabel.reduce(
+      (sum, entry) =>
+        sum + entry.primaryReadyAssets,
       0,
     ),
-    totalSecondaryReadyAssets:
-      GLOBAL_POOL_LABELS.reduce(
-        (sum, label) =>
-          sum +
-          inventory.perLabelReadyCounts[label]
-            .secondary,
-        0,
-      ),
-    perLabel: GLOBAL_POOL_LABELS.map((label) => ({
-      eligibleClips: candidates.filter(
-        (candidate) =>
-          candidate.difficultyLabel === label,
-      ).length,
-      label,
-      primaryReadyAssets:
-        inventory.perLabelReadyCounts[label]
-          .primary,
-      secondaryReadyAssets:
-        inventory.perLabelReadyCounts[label]
-          .secondary,
-    })),
+    totalSecondaryReadyAssets: perLabel.reduce(
+      (sum, entry) =>
+        sum + entry.secondaryReadyAssets,
+      0,
+    ),
+    perLabel,
   };
 }
 
