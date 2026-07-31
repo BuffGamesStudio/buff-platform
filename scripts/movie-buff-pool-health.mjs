@@ -72,6 +72,23 @@ const supabase = createClient(
   },
 );
 
+function isMissingContentEngineSchema(
+  message,
+) {
+  const normalizedMessage =
+    message?.toLowerCase() ?? "";
+
+  return (
+    (normalizedMessage.includes("content_media") ||
+      normalizedMessage.includes("content_items") ||
+      normalizedMessage.includes(
+        "movie_buff_clip_analytics",
+      )) &&
+    (normalizedMessage.includes("schema cache") ||
+      normalizedMessage.includes("does not exist"))
+  );
+}
+
 function countFilesInDirectory(root) {
   if (!fs.existsSync(root)) {
     return 0;
@@ -127,6 +144,94 @@ function buildPoolCounts() {
   return counts;
 }
 
+function summarizeByDifficulty(rows) {
+  return rows.reduce((accumulator, row) => {
+    const key = String(
+      row.difficulty ?? "(null)",
+    ).toLowerCase();
+    accumulator[key] =
+      (accumulator[key] ?? 0) + 1;
+    return accumulator;
+  }, {});
+}
+
+async function buildLegacyCoverageSummary() {
+  const [
+    { data: moviesData, error: moviesError },
+    { data: clipsData, error: clipsError },
+  ] = await Promise.all([
+    supabase
+      .from("movies")
+      .select("id, difficulty, is_active"),
+    supabase
+      .from("clips")
+      .select(
+        "id, movie_id, is_active, media_url, source_url, licensing_status",
+      ),
+  ]);
+
+  if (moviesError) {
+    throw new Error(moviesError.message);
+  }
+
+  if (clipsError) {
+    throw new Error(clipsError.message);
+  }
+
+  const movies = moviesData ?? [];
+  const clips = clipsData ?? [];
+  const movieById = new Map(
+    movies.map((movie) => [movie.id, movie]),
+  );
+
+  const sourceBackedClips = clips.filter(
+    (clip) =>
+      Boolean(clip.media_url) ||
+      Boolean(clip.source_url),
+  );
+  const activeSourceBackedClips =
+    sourceBackedClips.filter(
+      (clip) => clip.is_active,
+    );
+  const activeMovies = movies.filter(
+    (movie) => movie.is_active,
+  );
+
+  return {
+    mode: "legacy-fallback",
+    sourceBackedVideoRows:
+      sourceBackedClips.length,
+    activeSourceBackedVideoRows:
+      activeSourceBackedClips.length,
+    inactiveSourceBackedVideoRows:
+      sourceBackedClips.length -
+      activeSourceBackedClips.length,
+    activeByDifficulty:
+      summarizeByDifficulty(activeMovies),
+    inactiveByDifficulty:
+      summarizeByDifficulty(
+        movies.filter((movie) => !movie.is_active),
+      ),
+    legacyMovieCount: movies.length,
+    legacyActiveMovieCount:
+      activeMovies.length,
+    legacyClipCount: clips.length,
+    legacyActiveClipCount:
+      clips.filter((clip) => clip.is_active)
+        .length,
+    legacyClipDifficultyByMovie:
+      summarizeByDifficulty(
+        activeSourceBackedClips
+          .map((clip) =>
+            movieById.get(clip.movie_id),
+          )
+          .filter(Boolean),
+      ),
+    runtimePoolFileCounts:
+      buildPoolCounts(),
+  };
+}
+
 async function main() {
   const { data, error } = await supabase
     .from("content_media")
@@ -137,6 +242,21 @@ async function main() {
     .not("source_url", "is", null);
 
   if (error) {
+    if (
+      isMissingContentEngineSchema(
+        error.message,
+      )
+    ) {
+      console.log(
+        JSON.stringify(
+          await buildLegacyCoverageSummary(),
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+
     throw new Error(error.message);
   }
 
@@ -148,17 +268,8 @@ async function main() {
     (row) => !row.is_active || row.is_hidden,
   );
 
-  const summarizeByDifficulty = (list) =>
-    list.reduce((accumulator, row) => {
-      const key = String(
-        row.difficulty ?? "(null)",
-      ).toLowerCase();
-      accumulator[key] =
-        (accumulator[key] ?? 0) + 1;
-      return accumulator;
-    }, {});
-
   const output = {
+    mode: "content-engine",
     sourceBackedVideoRows: rows.length,
     activeSourceBackedVideoRows: activeRows.length,
     inactiveSourceBackedVideoRows:
