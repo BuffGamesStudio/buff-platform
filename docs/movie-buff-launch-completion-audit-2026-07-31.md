@@ -147,6 +147,29 @@ Interpretation:
 - but there is still no real non-test Buff Games operator account available in production
 - launch readiness therefore still depends on creating or upgrading a real Buff Games account and assigning the correct admin role before launch use
 
+Additional content-engine parity proof completed on Friday, July 31, 2026:
+
+- direct hosted production SQL check in Supabase SQL Editor returned `0 rows` for:
+  - `public.content_items`
+  - `public.content_media`
+  - `public.content_sources`
+  - `public.content_source_items`
+  - `public.movie_buff_clip_analytics`
+- direct hosted Data API checks against those same tables return `PGRST205` schema-cache/table-missing responses
+- repo evidence shows the missing tables are defined in migrations beginning with:
+  - `202607270002_buff_games_content_engine.sql`
+  - `202607311950_movie_buff_source_registry.sql`
+- hosted soft-launch behavior is currently covered by explicit fallback paths:
+  - source registry falls back to four hardcoded approved/discovery sources in [contentSources.ts](C:\Users\shapa\BuffGames\buff-platform\src\lib\server\contentSources.ts)
+  - clip analytics and rotation admin paths fall back to legacy `movies`, `clips`, and `movie_buff_round_events`
+  - hosted gameplay remains green on the legacy playable library
+
+Interpretation:
+
+- production does not yet have the new content-engine schema
+- this is a real production gap, not just a PostgREST cache issue
+- but for the current soft-launch scope it is behind the operator-account blocker because the hosted app is already running on verified legacy fallback paths for gameplay and current admin visibility
+
 Coverage/pool evidence restored during this pass:
 
 - `node .\scripts\movie-buff-pool-health.mjs` now reports hosted coverage truthfully even when hosted is still on the legacy content path
@@ -190,13 +213,14 @@ Coverage/pool evidence restored during this pass:
 | Blocker | Owner area | Current status | Evidence | Next fix | Severity |
 |---|---|---|---|---|---|
 | No real production operator account exists yet | Auth + admin ops | Open | hosted account page shows the live browser is still anonymous; hosted auth inventory shows `0` real non-test full accounts in production | create or upgrade a real Buff Games account, grant it admin, sign in with it, and verify hosted admin access end to end | Critical |
-| Hosted content-engine/source registry REST parity is incomplete | Supabase schema + admin ops | Open | direct hosted REST reads still fail for `content_items`, `content_media`, `content_sources`, and `content_source_items`, even though `/admin/movies` and `/admin/sources` now render useful fallback/live data | apply the missing hosted schema/grants or keep verified fallback paths only where they are operationally sufficient | High |
+| Hosted content-engine/source registry schema is absent | Supabase schema + admin ops | Open | production SQL and Data API proof both show `content_items`, `content_media`, `content_sources`, `content_source_items`, and `movie_buff_clip_analytics` are not present in hosted production | for soft launch, keep the verified legacy fallback path and freeze launch content scope; after operator-account setup, decide whether to apply the content-engine migration chain before broader rollout | High |
 | Hosted admin smoke needed stronger data assertions | Verifier coverage | Mitigated | strengthened hosted admin smoke now proves movie count and source count instead of only headings | keep this stronger verifier and rerun after each hosted admin fix | Medium |
 
 ### 2. Important but deferrable
 
 | Item | Owner area | Current status | Evidence | Next fix | Severity |
 |---|---|---|---|---|---|
+| New content-engine schema is not yet present in hosted production | Supabase schema + content ops | Open | direct SQL and Data API checks prove those tables are absent, but current hosted launch scope works through legacy fallbacks | apply the `202607270002` content-engine chain and dependent source-registry migrations after the first real operator account exists and the current soft-launch path is stable | High |
 | Content library depth is soft-launch viable but still limited | Content ops | In progress | `49` active hosted legacy rows; enough for initial controlled launch, not large public scale | continue content ingest after launch-blocker closure | Medium |
 | Weighted rotation parity between legacy hosted data and full content-engine analytics | Gameplay/content ops | Partial | runtime pool counts are healthy, but full hosted content-engine weighting is not exposed | finish hosted content-engine parity, then rerun rotation/admin proofs | Medium |
 | Runbook/checklist docs are stale on hosted parity status | Ops documentation | Open | existing docs still describe hosted parity as missing, but gameplay parity is now green | refresh docs after admin-parity decision lands | Medium |
