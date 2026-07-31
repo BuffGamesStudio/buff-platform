@@ -64,7 +64,28 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   },
 });
 
-const adminSupabase = serviceRoleKey
+function isHostedSupabaseUrl(url) {
+  return /^https:\/\/.+\.supabase\.co$/i.test(url);
+}
+
+function resolveUsableServiceRoleKey() {
+  if (!serviceRoleKey) {
+    return null;
+  }
+
+  if (isHostedSupabaseUrl(supabaseUrl)) {
+    return serviceRoleKey.startsWith("sb_secret_")
+      ? serviceRoleKey
+      : null;
+  }
+
+  return serviceRoleKey;
+}
+
+const usableServiceRoleKey =
+  resolveUsableServiceRoleKey();
+
+const adminSupabase = usableServiceRoleKey
   ? createClient(supabaseUrl, serviceRoleKey, {
       auth: {
         autoRefreshToken: false,
@@ -95,7 +116,7 @@ export async function provisionLocalSmokeAccount(label) {
     if (!adminSupabase) {
       return {
         error: new Error(
-          "No service role key available for admin smoke-account provisioning.",
+          "No usable service role key available for admin smoke-account provisioning.",
         ),
       };
     }

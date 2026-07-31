@@ -159,6 +159,23 @@ function toNumber(value: unknown, fallback = 0) {
     : fallback;
 }
 
+function isMissingAnalyticsContentSchema(
+  message: string | null | undefined,
+) {
+  const normalizedMessage =
+    message?.toLowerCase() ?? "";
+
+  return (
+    (normalizedMessage.includes("content_media") ||
+      normalizedMessage.includes("content_items") ||
+      normalizedMessage.includes(
+        "movie_buff_clip_analytics",
+      )) &&
+    (normalizedMessage.includes("schema cache") ||
+      normalizedMessage.includes("does not exist"))
+  );
+}
+
 export async function listMovieBuffClipAdminRows(
   limit?: number
 ): Promise<MovieBuffClipAdminRow[]> {
@@ -182,6 +199,14 @@ export async function listMovieBuffClipAdminRows(
   } = await mediaQuery;
 
   if (mediaError) {
+    if (
+      isMissingAnalyticsContentSchema(
+        mediaError.message,
+      )
+    ) {
+      return [];
+    }
+
     throw new Error(mediaError.message);
   }
 
@@ -224,10 +249,170 @@ export async function listMovieBuffClipAdminRows(
   ]);
 
   if (contentError) {
+    if (
+      isMissingAnalyticsContentSchema(
+        contentError.message,
+      )
+    ) {
+      return mediaRows.map((mediaRow) => ({
+        contentMediaId: mediaRow.id,
+        contentId: mediaRow.content_id,
+        legacyClipId: mediaRow.legacy_clip_id,
+        movieTitle: "Untitled movie",
+        releaseYear: null,
+        sourceName: null,
+        sourceUrl: mediaRow.source_url,
+        licenseStatus: "pending",
+        publicationStatus: "draft",
+        movieIsActive: true,
+        mediaType: mediaRow.media_type,
+        section: mediaRow.round_position,
+        targetDifficulty:
+          getMovieBuffDifficultyLabel(
+            mediaRow.difficulty,
+          ),
+        clipStartSeconds:
+          toNumber(mediaRow.start_seconds, 0) ===
+            0 && mediaRow.start_seconds == null
+            ? null
+            : toNumber(mediaRow.start_seconds),
+        clipEndSeconds:
+          toNumber(mediaRow.end_seconds, 0) ===
+            0 && mediaRow.end_seconds == null
+            ? null
+            : toNumber(mediaRow.end_seconds),
+        clipDurationSeconds:
+          toNumber(mediaRow.duration_seconds, 0) ===
+            0 &&
+          mediaRow.duration_seconds == null
+            ? null
+            : toNumber(mediaRow.duration_seconds),
+        clipTitle: mediaRow.title,
+        clipIsActive: mediaRow.is_active,
+        clipIsHidden: mediaRow.is_hidden,
+        totalPlays: 0,
+        totalCorrect: 0,
+        totalWrong: 0,
+        totalHintsUsed: 0,
+        totalTimeouts: 0,
+        totalLoadSuccess: 0,
+        totalLoadFailures: 0,
+        sampleSize: 0,
+        confidenceFactor: 0,
+        avgAnswerTimeSeconds: 0,
+        correctRate: 0,
+        hintRate: 0,
+        difficultyScore: 50,
+        systemDifficultyLabel: "Buff",
+        qualityScore: 100,
+        rotationScore: 50,
+        rotationWeight: 50,
+        adminBoost: 0,
+        status: "active",
+        qualityFlags: [],
+        lastPlayedAt: null,
+        lastLoadedAt: null,
+        updatedAt: null,
+      }));
+    }
+
     throw new Error(contentError.message);
   }
 
   if (analyticsError) {
+    if (
+      isMissingAnalyticsContentSchema(
+        analyticsError.message,
+      )
+    ) {
+      const contentById = new Map(
+        ((contentData as ContentItemRow[] | null) ??
+          []
+        ).map((row) => [row.id, row])
+      );
+
+      return mediaRows.map((mediaRow) => {
+        const contentRow =
+          contentById.get(mediaRow.content_id);
+
+        return {
+          contentMediaId: mediaRow.id,
+          contentId: mediaRow.content_id,
+          legacyClipId: mediaRow.legacy_clip_id,
+          movieTitle:
+            contentRow?.title ??
+            "Untitled movie",
+          releaseYear:
+            contentRow?.release_year ?? null,
+          sourceName:
+            contentRow?.source_name ?? null,
+          sourceUrl:
+            contentRow?.source_url ??
+            mediaRow.source_url,
+          licenseStatus:
+            contentRow?.licensing_status ??
+            "pending",
+          publicationStatus:
+            contentRow?.publication_status ??
+            "draft",
+          movieIsActive:
+            contentRow?.is_active ?? true,
+          mediaType: mediaRow.media_type,
+          section: mediaRow.round_position,
+          targetDifficulty:
+            getMovieBuffDifficultyLabel(
+              mediaRow.difficulty,
+            ),
+          clipStartSeconds:
+            toNumber(mediaRow.start_seconds, 0) ===
+              0 && mediaRow.start_seconds == null
+              ? null
+              : toNumber(mediaRow.start_seconds),
+          clipEndSeconds:
+            toNumber(mediaRow.end_seconds, 0) ===
+              0 && mediaRow.end_seconds == null
+              ? null
+              : toNumber(mediaRow.end_seconds),
+          clipDurationSeconds:
+            toNumber(
+              mediaRow.duration_seconds,
+              0,
+            ) === 0 &&
+            mediaRow.duration_seconds == null
+              ? null
+              : toNumber(
+                  mediaRow.duration_seconds,
+                ),
+          clipTitle: mediaRow.title,
+          clipIsActive: mediaRow.is_active,
+          clipIsHidden: mediaRow.is_hidden,
+          totalPlays: 0,
+          totalCorrect: 0,
+          totalWrong: 0,
+          totalHintsUsed: 0,
+          totalTimeouts: 0,
+          totalLoadSuccess: 0,
+          totalLoadFailures: 0,
+          sampleSize: 0,
+          confidenceFactor: 0,
+          avgAnswerTimeSeconds: 0,
+          correctRate: 0,
+          hintRate: 0,
+          difficultyScore: 50,
+          systemDifficultyLabel: "Buff",
+          qualityScore: 100,
+          rotationScore: 50,
+          rotationWeight: 50,
+          adminBoost: 0,
+          status: "active",
+          qualityFlags: [],
+          lastPlayedAt: null,
+          lastLoadedAt: null,
+          updatedAt: null,
+        };
+      });
+    }
+
     throw new Error(analyticsError.message);
   }
 

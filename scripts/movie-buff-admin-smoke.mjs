@@ -223,6 +223,50 @@ const result = {
   checkpoints: {},
 };
 
+async function waitForAdminPageReady(page) {
+  await page.waitForFunction(
+    () =>
+      !document.body?.innerText?.includes(
+        "Checking access",
+      ),
+    undefined,
+    { timeout: 60000 },
+  );
+
+  return page.locator("body").innerText();
+}
+
+async function verifyAdminPage(
+  page,
+  checkpointKey,
+  route,
+  markers,
+) {
+  await page.goto(`${APP_URL}${route}`, {
+    waitUntil: "domcontentloaded",
+  });
+
+  const body = await waitForAdminPageReady(page);
+
+  assert(
+    !body.includes("Admin access required"),
+    `Admin access gate was shown for ${route}.`,
+  );
+
+  for (const marker of markers) {
+    assert(
+      body.includes(marker),
+      `Expected marker "${marker}" on ${route}. Body excerpt: ${body.slice(0, 400)}`,
+    );
+  }
+
+  result.checkpoints[checkpointKey] = {
+    url: page.url(),
+    hasAdminAccessGate: false,
+    markers,
+  };
+}
+
 try {
   const {
     storageKey,
@@ -267,18 +311,7 @@ try {
     waitUntil: "domcontentloaded",
   });
 
-  await page.waitForFunction(
-    () =>
-      !document.body?.innerText?.includes(
-        "Checking access",
-      ),
-    undefined,
-    { timeout: 60000 },
-  );
-
-  const moviesBody = await page
-    .locator("body")
-    .innerText();
+  const moviesBody = await waitForAdminPageReady(page);
 
   assert(
     moviesBody.includes("Movie Library"),
@@ -303,18 +336,7 @@ try {
     waitUntil: "domcontentloaded",
   });
 
-  await page.waitForFunction(
-    () =>
-      !document.body?.innerText?.includes(
-        "Checking access",
-      ),
-    undefined,
-    { timeout: 60000 },
-  );
-
-  const sourcesBody = await page
-    .locator("body")
-    .innerText();
+  const sourcesBody = await waitForAdminPageReady(page);
 
   assert(
     sourcesBody.includes("Source Registry"),
@@ -339,6 +361,34 @@ try {
     hasRegistryMetrics: true,
     hasAdminAccessGate: false,
   };
+
+  await verifyAdminPage(
+    page,
+    "clipAnalytics",
+    "/admin/analytics/clips",
+    ["Clip Analytics", "Clip-level scoring"],
+  );
+
+  await verifyAdminPage(
+    page,
+    "rotationControl",
+    "/admin/analytics/rotation",
+    ["Rotation Control", "Global ready pool"],
+  );
+
+  await verifyAdminPage(
+    page,
+    "qaContentHealth",
+    "/admin/analytics/qa",
+    ["QA / Content Health", "Watchlist size"],
+  );
+
+  await verifyAdminPage(
+    page,
+    "matchAnalytics",
+    "/admin/analytics/matches",
+    ["Match Analytics", "Recent room summaries"],
+  );
 
   const apiAccess = await page.evaluate(
     async () => {
