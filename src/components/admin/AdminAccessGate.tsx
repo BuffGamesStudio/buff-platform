@@ -98,6 +98,13 @@ export default function AdminAccessGate({
         {denied ? (
           <div className="mt-6 flex flex-col gap-3">
             <Link
+              href="/sign-in?next=%2Fadmin"
+              className="inline-flex items-center justify-center rounded-xl bg-red-600 px-4 py-3 text-sm font-black text-white transition hover:bg-red-500"
+            >
+              Sign In to Buff Games
+            </Link>
+
+            <Link
               href="/games/movie-buff"
               className="inline-flex items-center justify-center rounded-xl bg-violet-500 px-4 py-3 text-sm font-black text-white transition hover:bg-violet-400"
             >

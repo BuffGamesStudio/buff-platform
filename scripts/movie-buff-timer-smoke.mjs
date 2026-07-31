@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { provisionLocalSmokeSession } from "./movie-buff-smoke-auth.mjs";
 
 const PLAYWRIGHT_ENTRY =
   process.env.PLAYWRIGHT_ENTRY ??
@@ -56,18 +57,140 @@ async function clickUnique(page, role, name) {
   );
 }
 
+async function fillUnique(page, placeholder, value) {
+  const locator = page.getByPlaceholder(
+    placeholder,
+    { exact: true },
+  );
+  const count = await locator.count();
+  assert(
+    count === 1,
+    `Expected one input with placeholder "${placeholder}", found ${count}.`,
+  );
+  await locator.click();
+  await locator.press("ControlOrMeta+A");
+  await locator.press("Backspace");
+  await locator.type(value);
+}
+
 async function waitForEitherUrl(page, patterns) {
-  for (const pattern of patterns) {
-    try {
-      await page.waitForURL(pattern, {
-        timeout: 15000,
-      });
-      return page.url();
-    } catch {}
+  const currentUrl = page.url();
+
+  if (
+    patterns.some((pattern) => {
+      const normalizedPattern = pattern
+        .replace(/\*\*/g, "")
+        .replace(/\*/g, "");
+
+      return currentUrl.includes(
+        normalizedPattern,
+      );
+    })
+  ) {
+    return currentUrl;
   }
 
-  throw new Error(
-    `Timed out waiting for any URL in: ${patterns.join(", ")}`,
+  await page.waitForFunction(
+    (candidatePatterns) =>
+      candidatePatterns.some((pattern) => {
+        const normalizedPattern = pattern
+          .replace(/\*\*/g, "")
+          .replace(/\*/g, "");
+
+        return window.location.href.includes(
+          normalizedPattern,
+        );
+      }),
+    patterns,
+    { timeout: 30000 },
+  );
+
+  return page.url();
+}
+
+async function waitForBoardPreviewReady(page) {
+  await page.waitForFunction(
+    () =>
+      document.body?.innerText?.includes(
+        "Prototype board",
+      ) &&
+      (Array.from(
+        document.querySelectorAll("button"),
+      ).some((button) =>
+        (button.textContent ?? "")
+          .trim()
+          .includes("Select to lock this round"),
+      ) ||
+        document.body?.innerText?.includes(
+          "Board persistence is temporarily unavailable for this room.",
+        ) ||
+        document.body?.innerText?.includes(
+          "Continue to Clip Round",
+        )),
+    undefined,
+    { timeout: 30000 },
+  );
+}
+
+async function selectFirstBoardTile(page) {
+  await waitForBoardPreviewReady(page);
+
+  const continueButton = page.getByRole("link", {
+    name: "Continue to Clip Round",
+  });
+
+  if ((await continueButton.count()) === 1) {
+    await continueButton.click();
+    await page.waitForURL(
+      "**/games/movie-buff/play?**",
+    );
+    return;
+  }
+
+  const tileButton = page
+    .locator("button")
+    .filter({
+      hasText: "Select to lock this round",
+    })
+    .first();
+
+  const count = await tileButton.count();
+  assert(
+    count >= 1,
+    "No selectable board tile was available.",
+  );
+
+  await tileButton.click();
+  await page.waitForURL(
+    "**/games/movie-buff/play?**",
+  );
+}
+
+async function enterLobbyWithLocalTestAccount(page) {
+  const { storageKey, sessionString } =
+    await provisionLocalSmokeSession("timer");
+  await page.addInitScript(
+    ({ key, value }) => {
+      window.localStorage.setItem(key, value);
+    },
+    {
+      key: storageKey,
+      value: sessionString,
+    },
+  );
+  await page.goto(`${APP_URL}/games/movie-buff/lobby`, {
+    waitUntil: "domcontentloaded",
+  });
+
+  await page.waitForFunction(
+    () =>
+      !document.body?.innerText?.includes(
+        "Checking your Buff Games account...",
+      ) &&
+      document.body?.innerText?.includes("Create Room") &&
+      document.body?.innerText?.includes("Find Match"),
+    undefined,
+    { timeout: 45000 },
   );
 }
 
@@ -118,7 +241,17 @@ async function waitForRoundIntroReady(page) {
       ) &&
       !document.body?.innerText?.includes(
         "Loading the next Movie Buff page.",
-      ),
+      ) &&
+      (window.location.pathname.includes(
+        "/games/movie-buff/play",
+      ) ||
+        Array.from(
+          document.querySelectorAll("button"),
+        ).some((button) =>
+          (button.textContent ?? "")
+            .trim()
+            .includes("Start Round"),
+        )),
     undefined,
     { timeout: 30000 },
   );
@@ -152,12 +285,14 @@ async function resolveIntoPlay(page) {
       await startMatchButton.click();
       await waitForEitherUrl(page, [
         "**/games/movie-buff/round-intro?**",
+        "**/games/movie-buff/board-preview?**",
         "**/games/movie-buff/play?**",
       ]);
     }
   } else {
     await waitForEitherUrl(page, [
       "**/games/movie-buff/round-intro?**",
+      "**/games/movie-buff/board-preview?**",
       "**/games/movie-buff/play?**",
     ]);
   }
@@ -165,7 +300,14 @@ async function resolveIntoPlay(page) {
   if (page.url().includes("/round-intro")) {
     await waitForRoundIntroReady(page);
     await clickUnique(page, "button", "Start Round");
-    await page.waitForURL("**/games/movie-buff/play?**");
+    await waitForEitherUrl(page, [
+      "**/games/movie-buff/board-preview?**",
+      "**/games/movie-buff/play?**",
+    ]);
+  }
+
+  if (page.url().includes("/board-preview")) {
+    await selectFirstBoardTile(page);
   }
 }
 
@@ -224,12 +366,7 @@ const result = {
 };
 
 try {
-  await page.goto(`${APP_URL}/games/movie-buff`, {
-    waitUntil: "domcontentloaded",
-  });
-
-  await clickUnique(page, "link", "PLAY NOW");
-  await page.waitForURL("**/games/movie-buff/lobby");
+  await enterLobbyWithLocalTestAccount(page);
 
   await clickUnique(page, "button", "Create Room");
   await page.waitForURL(

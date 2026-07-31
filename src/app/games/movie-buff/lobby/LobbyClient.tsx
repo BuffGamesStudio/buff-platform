@@ -46,6 +46,8 @@ export default function MovieBuffLobbyClient({
   const [roomCode, setRoomCode] = useState("");
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [authChecking, setAuthChecking] =
+    useState(true);
   const categoryError = initialCategoryError ?? "";
   const [actionError, setActionError] = useState("");
   const [currentOpenRoom, setCurrentOpenRoom] =
@@ -82,9 +84,13 @@ export default function MovieBuffLobbyClient({
         );
         const user = await getCurrentUser();
 
-        if (!user) {
+        if (!user || user.is_anonymous === true) {
           if (isMounted) {
-            setCurrentOpenRoom(null);
+            router.replace(
+              `/sign-in?next=${encodeURIComponent(
+                "/games/movie-buff/lobby",
+              )}`,
+            );
           }
 
           return;
@@ -100,9 +106,11 @@ export default function MovieBuffLobbyClient({
         }
 
         setCurrentOpenRoom(openRoom);
+        setAuthChecking(false);
       } catch {
         if (isMounted) {
           setCurrentOpenRoom(null);
+          setAuthChecking(false);
         }
       }
     }
@@ -112,7 +120,7 @@ export default function MovieBuffLobbyClient({
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [router]);
 
   async function copyCode() {
     await navigator.clipboard.writeText(privateCode);
@@ -124,15 +132,19 @@ export default function MovieBuffLobbyClient({
   }
 
   async function requirePlayer() {
-    const {
-      getCurrentUser,
-      signInAsGuest,
-    } = await import("@/lib/auth/auth");
+    const { getCurrentUser } = await import(
+      "@/lib/auth/auth"
+    );
 
-    let user = await getCurrentUser();
+    const user = await getCurrentUser();
 
-    if (!user) {
-      user = await signInAsGuest();
+      if (!user || user.is_anonymous === true) {
+        navigateToUrl(
+          `/sign-in?next=${encodeURIComponent(
+            "/games/movie-buff/lobby",
+        )}`,
+      );
+      return null;
     }
 
     return user;
@@ -174,6 +186,10 @@ export default function MovieBuffLobbyClient({
       );
       const user = await requirePlayer();
 
+      if (!user) {
+        return;
+      }
+
       const room = await createRoom({
         hostId: user.id,
         roomType,
@@ -208,6 +224,10 @@ export default function MovieBuffLobbyClient({
       const { findOrCreatePublicRoom } =
         await import("@/lib/db/movieBuff");
       const user = await requirePlayer();
+
+      if (!user) {
+        return;
+      }
 
       const room =
         await findOrCreatePublicRoom({
@@ -274,6 +294,9 @@ export default function MovieBuffLobbyClient({
         "@/lib/db/movieBuff"
       );
       const user = await requirePlayer();
+      if (!user) {
+        return;
+      }
       const room = await joinRoom(roomCode, user.id);
 
       navigateToRoom(room.id, room.room_code);
@@ -318,6 +341,18 @@ export default function MovieBuffLobbyClient({
       currentOpenRoom.roomId,
     )}`;
   }, [currentOpenRoom]);
+
+  if (authChecking) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-black text-white">
+        <div className="text-center">
+          <p className="text-2xl font-black">
+            Checking your Buff Games account...
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-black text-white">

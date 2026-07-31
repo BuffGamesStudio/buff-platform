@@ -120,9 +120,10 @@ export default function WaitingRoomPage() {
         }
 
         if (!resolvedUser) {
-          setCurrentPlayerId("");
-          setError(
-            "Your player session was not found. Return to the lobby and rejoin this room in the same browser."
+          navigateTo(
+            `/sign-in?next=${encodeURIComponent(
+              `/games/movie-buff/waiting-room${window.location.search}`
+            )}`
           );
           return;
         }

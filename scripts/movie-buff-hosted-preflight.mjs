@@ -78,6 +78,18 @@ const steps = [
     env
   ),
   runStep(
+    "bootstrap_artifacts",
+    "node",
+    [
+      path.join(
+        repoRoot,
+        "scripts",
+        "movie-buff-bootstrap-artifact-check.mjs"
+      ),
+    ],
+    env
+  ),
+  runStep(
     "deploy_env",
     "node",
     [
@@ -138,6 +150,18 @@ if (args.fullSuite) {
       env
     ),
     runStep(
+      "auth_smoke",
+      "node",
+      [
+        path.join(
+          repoRoot,
+          "scripts",
+          "movie-buff-auth-flow-smoke.mjs"
+        ),
+      ],
+      env
+    ),
+    runStep(
       "private_smoke",
       "node",
       [
@@ -169,6 +193,18 @@ if (args.fullSuite) {
           repoRoot,
           "scripts",
           "movie-buff-public-leave-smoke.mjs"
+        ),
+      ],
+      env
+    ),
+    runStep(
+      "admin_smoke",
+      "node",
+      [
+        path.join(
+          repoRoot,
+          "scripts",
+          "movie-buff-admin-smoke.mjs"
         ),
       ],
       env

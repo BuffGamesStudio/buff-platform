@@ -3,7 +3,8 @@
 import Link from "next/link";
 import {
   ArrowRight,
-  PlayCircle,
+  LogIn,
+  UserPlus,
 } from "lucide-react";
 
 export default function Hero() {
@@ -33,18 +34,26 @@ export default function Hero() {
 
         <div className="mt-12 flex flex-col gap-5 sm:flex-row">
           <Link
-            href="/games/movie-buff/lobby"
+            href="/sign-up"
             className="flex items-center justify-center gap-3 rounded-xl bg-red-600 px-8 py-4 text-lg font-bold text-white transition hover:bg-red-700"
           >
-            <PlayCircle size={22} />
-            Play Movie Buff
+            <UserPlus size={22} />
+            Sign Up
           </Link>
 
           <Link
-            href="/#games"
+            href="/sign-in"
             className="flex items-center justify-center gap-3 rounded-xl border border-zinc-700 px-8 py-4 text-lg font-bold text-white transition hover:border-red-500 hover:text-red-400"
           >
-            Learn More
+            <LogIn size={20} />
+            Sign In
+          </Link>
+
+          <Link
+            href="/account"
+            className="flex items-center justify-center gap-3 rounded-xl border border-zinc-700 px-8 py-4 text-lg font-bold text-white transition hover:border-red-500 hover:text-red-400"
+          >
+            Enter Buff Games
             <ArrowRight size={20} />
           </Link>
         </div>

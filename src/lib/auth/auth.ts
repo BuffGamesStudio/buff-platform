@@ -36,7 +36,8 @@ export async function signInAsGuest(): Promise<User> {
 export async function signUpWithEmail(
   email: string,
   password: string,
-  displayName?: string
+  displayName?: string,
+  redirectTo?: string
 ): Promise<User | null> {
   const { data, error } = await supabase.auth.signUp({
     email: email.trim(),
@@ -45,7 +46,8 @@ export async function signUpWithEmail(
       data: {
         display_name: displayName?.trim() || undefined,
       },
-      emailRedirectTo: getRedirectUrl(),
+      emailRedirectTo:
+        redirectTo?.trim() || getRedirectUrl(),
     },
   });
 
@@ -76,11 +78,14 @@ export async function signInWithEmail(
   return data.user;
 }
 
-export async function signInWithGoogle(): Promise<void> {
+export async function signInWithGoogle(
+  redirectTo?: string
+): Promise<void> {
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: getRedirectUrl(),
+      redirectTo:
+        redirectTo?.trim() || getRedirectUrl(),
     },
   });
 

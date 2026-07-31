@@ -1,6 +1,6 @@
 "use client";
 
-import { getCurrentUser, signInAsGuest } from "@/lib/auth/auth";
+import { getCurrentUser } from "@/lib/auth/auth";
 import { joinRoom as joinMovieBuffRoom } from "@/lib/db/movieBuff";
 
 export async function joinRoomAction(roomCode: string): Promise<void> {
@@ -10,10 +10,14 @@ export async function joinRoomAction(roomCode: string): Promise<void> {
     throw new Error("Enter a room code.");
   }
 
-  let user = await getCurrentUser();
+  const user = await getCurrentUser();
 
-  if (!user) {
-    user = await signInAsGuest();
+  if (!user || user.is_anonymous === true) {
+    const nextTarget = encodeURIComponent(
+      `/games/movie-buff/join?code=${normalizedCode}`,
+    );
+    window.location.href = `/sign-in?next=${nextTarget}`;
+    return;
   }
 
   const room = await joinMovieBuffRoom(normalizedCode, user.id);

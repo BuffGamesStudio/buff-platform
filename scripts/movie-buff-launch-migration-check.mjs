@@ -10,12 +10,15 @@ const migrationsDir = path.join(
 
 const requiredMigrations = [
   "202607300100_movie_buff_clip_analytics_and_round_timing.sql",
+  "202607300240_movie_buff_public_room_created_event_in_rpc.sql",
   "202607300220_movie_buff_playback_launch_timeout_buffer.sql",
   "202607300310_movie_buff_public_match_autostart.sql",
   "202607300330_movie_buff_public_ready_autostart_rpc.sql",
   "202607300340_movie_buff_analytics_rls_lockdown.sql",
   "202607301430_movie_buff_public_matchmaking_creation_lock.sql",
   "202607301700_movie_buff_launch_gate_fast_media_only.sql",
+  "202607311950_movie_buff_source_registry.sql",
+  "202607311958_movie_buff_source_registry_grants.sql",
 ];
 
 const result = {

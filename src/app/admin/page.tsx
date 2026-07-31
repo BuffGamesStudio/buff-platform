@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   BarChart3,
   Film,
+  LibraryBig,
   Settings,
   ShieldCheck,
   ShieldAlert,
@@ -25,6 +26,13 @@ const shortcuts = [
       "Review difficulty, solve rates, and clip-level scoring signals.",
     href: "/admin/analytics/clips",
     icon: BarChart3,
+  },
+  {
+    title: "Source Registry",
+    description:
+      "Review approved, conditional, and rejected source lanes before gameplay ingest.",
+    href: "/admin/sources",
+    icon: LibraryBig,
   },
   {
     title: "Rotation Control",

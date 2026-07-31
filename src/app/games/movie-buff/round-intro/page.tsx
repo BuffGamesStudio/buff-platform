@@ -113,6 +113,20 @@ export default function RoundIntroPage() {
             // Pre-warming generated clip media is best-effort only.
           });
       } catch (loadError) {
+        if (
+          loadError instanceof Error &&
+          loadError.message ===
+            "You must sign in with a Buff Games account to continue."
+        ) {
+          const nextTarget = encodeURIComponent(
+            `/games/movie-buff/round-intro${window.location.search}`,
+          );
+          window.location.replace(
+            `/sign-in?next=${nextTarget}`
+          );
+          return;
+        }
+
         console.error(loadError);
         setError(
           loadError instanceof Error
@@ -179,7 +193,7 @@ export default function RoundIntroPage() {
       return;
     }
 
-    const destination = `/games/movie-buff/play?roomId=${encodeURIComponent(
+    const destination = `/games/movie-buff/board-preview?roomId=${encodeURIComponent(
       roomId
     )}&round=${encodeURIComponent(String(round))}`;
 
@@ -289,7 +303,7 @@ export default function RoundIntroPage() {
           </p>
 
           <p className="mt-3 text-2xl font-black">
-            Watch closely and answer before time expires!
+            Board first. Then clip. Then answer before time expires.
           </p>
         </div>
 

@@ -5,9 +5,9 @@ import { useState } from "react";
 import {
   Gamepad2,
   Menu,
-  Trophy,
   X,
 } from "lucide-react";
+import AuthShellActions from "@/components/AuthShellActions";
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
@@ -56,12 +56,14 @@ export default function Navbar() {
         </nav>
 
         <div className="hidden items-center gap-4 lg:flex">
+          <AuthShellActions />
+
           <Link
-            href="/games/movie-buff/lobby"
+            href="/account"
             className="flex items-center gap-2 rounded-xl bg-red-600 px-6 py-3 font-bold text-white transition hover:bg-red-700"
           >
             <Gamepad2 size={18} />
-            Play Now
+            Enter Buff Games
           </Link>
         </div>
 
@@ -89,13 +91,15 @@ export default function Navbar() {
               </Link>
             ))}
 
+            <AuthShellActions mobile />
+
             <Link
-              href="/games/movie-buff/lobby"
+              href="/account"
               onClick={() => setOpen(false)}
-              className="mt-6 flex items-center justify-center gap-2 rounded-xl bg-red-600 py-4 font-bold text-white transition hover:bg-red-700"
+              className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-red-600 py-4 font-bold text-white transition hover:bg-red-700"
             >
-              <Trophy size={18} />
-              Play Now
+              <Gamepad2 size={18} />
+              Enter Buff Games
             </Link>
           </div>
         </div>

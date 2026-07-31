@@ -5,6 +5,9 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/server/supabaseAdmin";
 
 const ADMIN_ROLE = "admin";
+const LOCAL_ADMIN_BYPASS_ENABLED =
+  process.env.ALLOW_LOCAL_ADMIN_BYPASS ===
+  "true";
 const LOCAL_ADMIN_HOSTNAMES = new Set([
   "localhost",
   "127.0.0.1",
@@ -72,6 +75,10 @@ function isLocalAdminBypassCandidate(
 export function isLocalAdminBypassHeaders(
   requestHeaders: Headers,
 ) {
+  if (!LOCAL_ADMIN_BYPASS_ENABLED) {
+    return false;
+  }
+
   const candidateHostnames = [
     getCandidateHostname(requestHeaders.get("host")),
     getCandidateHostname(
@@ -85,6 +92,10 @@ export function isLocalAdminBypassHeaders(
 }
 
 function isLocalAdminBypassRequest(request: Request) {
+  if (!LOCAL_ADMIN_BYPASS_ENABLED) {
+    return false;
+  }
+
   const candidateHostnames = [
     getCandidateHostname(request.headers.get("host")),
     getCandidateHostname(

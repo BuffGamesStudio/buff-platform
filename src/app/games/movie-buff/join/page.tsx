@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Bot } from "lucide-react";
 
-import { getCurrentUser, signInAsGuest } from "@/lib/auth/auth";
+import { getCurrentUser } from "@/lib/auth/auth";
 import { joinRoom } from "@/lib/db/movieBuff";
 
 export default function MovieBuffJoinPage() {
@@ -31,10 +31,15 @@ export default function MovieBuffJoinPage() {
       }
 
       try {
-        let user = await getCurrentUser();
+        const user = await getCurrentUser();
 
-        if (!user) {
-          user = await signInAsGuest();
+        if (!user || user.is_anonymous === true) {
+          router.replace(
+            `/sign-in?next=${encodeURIComponent(
+              `/games/movie-buff/join?code=${code}`,
+            )}`,
+          );
+          return;
         }
 
         const room = await joinRoom(code, user.id);
@@ -89,7 +94,7 @@ export default function MovieBuffJoinPage() {
           </div>
 
           <p className="max-w-2xl text-lg leading-8 text-zinc-300">
-            We are signing you in and joining the room with
+            We are checking your Buff Games account and joining the room with
             the shared code.
           </p>
         </div>

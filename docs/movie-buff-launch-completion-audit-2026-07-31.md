@@ -37,36 +37,49 @@ Current repo-backed evidence:
 
 - `npm run movie-buff:local-launch-suite`
 - `npm run movie-buff:smoke-public`
+- `npm run movie-buff:smoke-auth`
 - `npm run movie-buff:smoke-private`
 - `npm run movie-buff:smoke-leave`
 - `npm run movie-buff:smoke-public-leave`
 - `npm run movie-buff:smoke-timer`
+- `npm run movie-buff:check-bootstrap-artifacts`
 - `npm run movie-buff:verify-analytics`
 - `npm run movie-buff:pool-health`
 - `node .\scripts\movie-buff-hosted-preflight.mjs --env-file .env.production.example --base-url http://127.0.0.1:3001 --full-suite`
 - `npm run build`
 - current launch docs in `docs/`
+- fresh Friday, July 31, 2026 reruns from this pass:
+  - `npm run movie-buff:smoke-public`
+  - `npm run movie-buff:smoke-auth`
+  - `npm run movie-buff:smoke-private`
+  - `npm run movie-buff:smoke-public-leave`
+  - `npm run movie-buff:smoke-timer`
+  - `npm run movie-buff:check-bootstrap-artifacts`
+  - `npm run movie-buff:check-launch-migrations`
+  - `npm run movie-buff:check-deploy-env`
+  - `node .\scripts\movie-buff-hosted-preflight.mjs --env-file .env.production.example --base-url http://127.0.0.1:3001`
 
 ## Requirement-by-requirement audit
 
 | Requirement | Current verdict | Evidence | Gap |
 |---|---|---|---|
-| Public matchmaking flow works end to end | Proven locally, not hosted-proven | `movie-buff:smoke-public` passes through final results; analytics verifier proves shared room and `public_match_start` path | still needs hosted rerun |
-| Private room flow works end to end | Proven locally, not hosted-proven | `movie-buff:smoke-private` passes through final results | still needs hosted rerun |
+| Public matchmaking flow works end to end | Proven locally, not hosted-proven | On Friday, July 31, 2026, a fresh rerun of `movie-buff:smoke-public` passed through the same room, ready check, 10 rounds, and final results. Analytics verifier also proves shared room and `public_match_start` path. | still needs hosted rerun |
+| Private room flow works end to end | Proven locally, not hosted-proven | On Friday, July 31, 2026, a fresh rerun of `movie-buff:smoke-private` passed through final results across 10 rounds. | still needs hosted rerun |
 | Ready check works | Proven locally, not hosted-proven | public and private smoke passes; analytics include `player_ready` | still needs hosted rerun |
 | Round intro -> play -> results -> next round works reliably | Proven locally, not hosted-proven | public and private smoke both advance through full rounds | still needs hosted rerun |
 | Answer submit works reliably | Proven locally, not hosted-proven | public/private smoke and analytics verifier both record answer path | still needs hosted rerun |
-| Hint behavior works correctly | Proven locally, not hosted-proven | `movie-buff:smoke-timer` proves hint deducts time and does not auto-start playback | still needs hosted rerun |
-| Timer only follows authoritative server state | Proven locally, not hosted-proven | `movie-buff:smoke-timer` passes | still needs hosted rerun |
+| Hint behavior works correctly | Proven locally, not hosted-proven | A fresh Friday, July 31, 2026 rerun of `movie-buff:smoke-timer` proved hint deducts time and does not auto-start playback. | still needs hosted rerun |
+| Timer only follows authoritative server state | Proven locally, not hosted-proven | A fresh Friday, July 31, 2026 rerun of `movie-buff:smoke-timer` passed with the authoritative sequence `30 -> 25 -> 25 -> 24 -> 22`. | still needs hosted rerun |
 | No dead buttons or broken routes in core flow | Proven locally, not hosted-proven | local launch suite passes; route health passes; public/private/leave smoke paths pass | still needs hosted rerun |
-| Leave / back / exit flows exist where needed | Proven locally, not hosted-proven | `movie-buff:smoke-leave` and `movie-buff:smoke-public-leave` both pass with DB-backed verification | still needs hosted rerun |
-| Admin pages needed for live operations load | Proven locally, not hosted-proven | route health returns `200` for `/admin/movies`, `/admin/analytics/clips`, `/admin/analytics/rotation`, `/admin/analytics/qa`, `/admin/analytics/matches` | still needs hosted rerun |
+| Leave / back / exit flows exist where needed | Proven locally, not hosted-proven | `movie-buff:smoke-leave` and a fresh Friday, July 31, 2026 rerun of `movie-buff:smoke-public-leave` both pass with DB-backed verification. The public leave rerun proved one player can leave round 1 back to the lobby while the room stays `active`, active player count drops to `1`, and `player_left` is recorded without false `match_abandoned`. | still needs hosted rerun |
+| Admin pages needed for live operations load | Proven locally, not hosted-proven | route health now returns `200` for `/admin/movies`, `/admin/sources`, `/admin/analytics/clips`, `/admin/analytics/rotation`, `/admin/analytics/qa`, and `/admin/analytics/matches`. On Friday, July 31, 2026, a fresh authenticated browser proof using a real admin session also passed `/api/admin/access`, rendered the `/admin/movies` library shell, and rendered `/admin/sources` with live registry content after the source-registry grant fix. Local DB evidence confirms `content_sources` count = `6`. | still needs hosted rerun |
 | Clip delivery is fast and stable enough for live play | Proven locally for current launch-gated pool, not hosted-proven | public/private smoke pass; launch gate excludes on-demand generation stalls | still needs hosted rerun |
 | Pool / rotation behavior avoids stale repeats well enough for soft launch | Soft-launch viable locally, not fully broad-launch proven | `movie-buff:pool-health` shows healthy primary/secondary reserve; analytics verifier proves weighted rotation and gating | still needs hosted rerun and broader live confidence |
 | Enough playable movie coverage exists for soft launch | Soft-launch viable locally | `49` active launch-safe source-backed rows; lane split `10 / 22 / 17`; warmed reserve materially above original minimums | broader launch coverage still limited |
 | Analytics capture key gameplay and failure events | Proven locally | `movie-buff:verify-analytics` proves lifecycle, runtime-edge, completion, public start, failure, and abandonment events | still needs hosted rerun |
 | Deployment requirements and go-live steps are documented | Proven | deployment checklist, soft-launch runbook, and production handoff pack all exist and align with current scripts | none in repo |
-| Hosted deployment parity is proven against the real target | Not proven | full-suite preflight now passes every local launch-critical step except `deploy_env`; `deploy_env` fails correctly because `.env.production.example` contains placeholders | real production URL, real Supabase values, migration application, and hosted rerun are still missing |
+| Buff Games auth entry/session flow works | Proven locally, not hosted-proven | On Friday, July 31, 2026, `movie-buff:smoke-auth` passed and proved sign-in route load, sign-up route load, account creation through the auth layer, signed-in account shell load, session persistence across reload, sign-out redirect, and signed-out account-shell state in a clean browser context. | still needs hosted rerun |
+| Hosted deployment parity is proven against the real target | Not proven | A fresh Friday, July 31, 2026 rerun of `movie-buff:check-launch-migrations` passed. A fresh rerun of `movie-buff:check-deploy-env` failed because all four production values are still missing from `process.env`. A fresh rerun of `movie-buff-hosted-preflight --env-file .env.production.example --base-url http://127.0.0.1:3001` failed exactly because `.env.production.example` still contains placeholder values for all four required production keys. | real production URL, real Supabase values, migration application, and hosted rerun are still missing |
 
 ## Bottom-line verdict
 
@@ -81,6 +94,7 @@ It is not yet hosted-launch-proven.
 Finished to a strong local standard:
 
 - public flow
+- auth flow
 - private flow
 - leave flows
 - timer behavior
@@ -117,6 +131,10 @@ Not finished because evidence is still missing:
 3. Hosted migration state is not yet proven
    - repo presence is proven
    - hosted application is not
+
+4. Hosted admin parity is still missing
+   - local admin proof is now present
+   - hosted `/admin/movies` and `/admin/sources` still need real authenticated verification
 
 ## Current truthful status statement
 

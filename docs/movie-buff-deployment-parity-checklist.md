@@ -7,6 +7,7 @@ Date: Thursday, July 30, 2026
 Companion execution document:
 
 - [movie-buff-production-handoff-pack.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-production-handoff-pack.md)
+- [movie-buff-production-setup-worksheet.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-production-setup-worksheet.md)
 
 What is currently true in the repo:
 
@@ -77,19 +78,49 @@ node .\scripts\movie-buff-deployment-env-check.mjs --env-file .env.production.ex
 
 As of Friday, July 31, 2026, that example-file check correctly fails because the example file still contains placeholder values and is not launch-ready by itself.
 
+Fresh gate result from Friday, July 31, 2026:
+
+- `npm run movie-buff:check-deploy-env` fails against `process.env`
+- all four required hosted values are still missing:
+  - `NEXT_PUBLIC_APP_URL`
+  - `NEXT_PUBLIC_SUPABASE_URL`
+  - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+  - `SUPABASE_SERVICE_ROLE_KEY`
+
 ## Minimum production migration set
 
 The hosted database must include at least the launch-critical Movie Buff migrations already proven locally, including:
 
 - `202607300100_movie_buff_clip_analytics_and_round_timing.sql`
+- `202607300240_movie_buff_public_room_created_event_in_rpc.sql`
 - `202607300220_movie_buff_playback_launch_timeout_buffer.sql`
 - `202607300310_movie_buff_public_match_autostart.sql`
 - `202607300330_movie_buff_public_ready_autostart_rpc.sql`
 - `202607300340_movie_buff_analytics_rls_lockdown.sql`
 - `202607301430_movie_buff_public_matchmaking_creation_lock.sql`
 - `202607301700_movie_buff_launch_gate_fast_media_only.sql`
+- `202607311950_movie_buff_source_registry.sql`
+- `202607311958_movie_buff_source_registry_grants.sql`
 
 If hosted migration state does not include those, launch parity is not achieved.
+
+Important hosted parity note as of Friday, July 31, 2026:
+
+- the known hosted public-match blocker was not just “public flow unverified”
+- it was a concrete RPC parity failure:
+  - hosted Supabase could report that `public.find_or_create_movie_buff_public_room(...)` was missing from the schema cache
+- the repo now protects against that better in two ways:
+  - `npm run movie-buff:check-launch-migrations` now explicitly requires `202607300240_movie_buff_public_room_created_event_in_rpc.sql`
+  - the hosted repair artifact at `scripts/generated/movie-buff-hosted-round-runtime-patch.sql` now also includes the latest `find_or_create_movie_buff_public_room(uuid, text, integer, integer)` definition, the authenticated execute grant, and `notify pgrst, 'reload schema';`
+
+That means a hosted SQL hotfix now exists in-repo for the known public matchmaking blocker instead of relying on assumed migration state.
+
+Important hosted admin parity note as of Friday, July 31, 2026:
+
+- both production bootstrap SQL files in the repo are still missing the newer source-registry schema/grant path
+- the repo now includes a dedicated hosted source-registry recovery artifact:
+  - `scripts/generated/movie-buff-hosted-source-registry-patch.sql`
+- use that artifact if hosted `/admin/sources` fails because `content_sources` / `content_source_items` or their grants are missing
 
 ## Minimum pre-launch command checks
 
@@ -98,6 +129,7 @@ From repo root:
 ```powershell
 npm run movie-buff:local-launch-suite
 npm run movie-buff:check-launch-migrations
+npm run movie-buff:check-bootstrap-artifacts
 npm run movie-buff:check-deploy-env
 npx tsc --noEmit
 npm run movie-buff:verify-analytics
@@ -108,6 +140,7 @@ Expected minimum:
 
 - local launch suite passes
 - launch-critical migration presence check passes
+- bootstrap and hosted recovery artifact check passes
 - deployment env check passes
 - typecheck passes
 - analytics verifier passes
@@ -155,10 +188,48 @@ npm run movie-buff:hosted-preflight -- --env-file .env.production.example --base
 That preflight runs:
 
 - launch migration presence check
+- bootstrap and hosted recovery artifact check
 - deployment env validation
 - route health check against the provided base URL
 
 As of Friday, July 31, 2026, the preflight works locally and correctly fails when the env file still contains placeholder production values.
+
+Fresh preflight result from Friday, July 31, 2026:
+
+- `launch_migrations`: pass
+- `bootstrap_artifacts`: pass
+- `route_health`: pass
+- overall preflight: fail
+- failure reason: `deploy_env`
+- exact failure cause: `.env.production.example` still contains placeholder values for all four required production keys
+
+If hosted public matchmaking specifically fails with an RPC-not-found or schema-cache error, apply this artifact in hosted Supabase SQL editor before re-running the public smoke:
+
+```powershell
+scripts\generated\movie-buff-hosted-round-runtime-patch.sql
+```
+
+Minimum expected post-apply verification:
+
+- hosted SQL apply succeeds
+- hosted schema reload runs
+- `Find Match` enters the waiting room
+- two anonymous players land in the same public room
+- ready check advances to round 1
+
+If hosted admin/source-registry specifically fails because the source registry is missing or unreadable, apply this artifact in hosted Supabase SQL editor before re-running authenticated admin checks:
+
+```powershell
+scripts\generated\movie-buff-hosted-source-registry-patch.sql
+```
+
+Minimum expected post-apply verification:
+
+- hosted SQL apply succeeds
+- hosted schema reload runs
+- `/api/admin/access` returns `200` for a valid admin session
+- hosted `/admin/movies` renders
+- hosted `/admin/sources` renders source registry content
 
 There is also now a broader full-suite mode:
 
@@ -169,6 +240,7 @@ node .\scripts\movie-buff-hosted-preflight.mjs --env-file .env.production.exampl
 As of Friday, July 31, 2026, that full-suite run proves all local launch-critical checks other than real hosted env parity:
 
 - `launch_migrations`: pass
+- `bootstrap_artifacts`: pass
 - `route_health`: pass
 - `public_smoke`: pass
 - `private_smoke`: pass
@@ -197,6 +269,18 @@ development environment is green across:
 - analytics verification
 - pool health snapshot
 - production build
+
+Important current note from Friday, July 31, 2026:
+
+- the full local suite was still too long to finish inside one 300-second shell budget during the latest pass
+- do not treat that timeout as a failing gate by itself
+- the individual launch-critical sub-checks rerun in the same pass still produced fresh local proof for:
+  - `movie-buff:smoke-public`
+  - `movie-buff:smoke-private`
+  - `movie-buff:smoke-public-leave`
+  - `movie-buff:smoke-timer`
+  - `movie-buff:check-launch-migrations`
+  - `movie-buff:check-deploy-env`
 
 There is also now a dedicated abandonment regression:
 

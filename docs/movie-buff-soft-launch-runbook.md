@@ -23,6 +23,22 @@ The current target is:
 - private/internal test-ready in 2 to 5 focused workdays
 - soft-launch-ready in about 1 to 2 weeks
 
+Fresh evidence update for Friday, July 31, 2026:
+
+- `npm run movie-buff:smoke-public`: pass
+- `npm run movie-buff:smoke-private`: pass
+- `npm run movie-buff:smoke-public-leave`: pass
+- `npm run movie-buff:smoke-timer`: pass
+- `npm run movie-buff:check-launch-migrations`: pass
+- `npm run movie-buff:check-deploy-env`: fail because production values are still undefined
+- `node .\scripts\movie-buff-hosted-preflight.mjs --env-file .env.production.example --base-url http://127.0.0.1:3001`: fail because the example env file still contains placeholder values
+
+Additional hosted recovery artifact now present:
+
+- `scripts/generated/movie-buff-hosted-source-registry-patch.sql`
+  - use this if hosted authenticated admin checks fail because `/admin/sources`
+    is missing its source-registry schema or grants
+
 ## Required services
 
 Movie Buff currently depends on:
@@ -78,12 +94,14 @@ node .\scripts\movie-buff-deployment-env-check.mjs --env-file .env.production.ex
 
 The local launch-blocker pass on Thursday, July 30, 2026 applied:
 
+- `supabase/migrations/202607300240_movie_buff_public_room_created_event_in_rpc.sql`
 - `supabase/migrations/202607300310_movie_buff_public_match_autostart.sql`
 - `supabase/migrations/202607300330_movie_buff_public_ready_autostart_rpc.sql`
 - `supabase/migrations/202607301430_movie_buff_public_matchmaking_creation_lock.sql`
 
 That migration changes public-match start behavior so:
 
+- the public-matchmaking RPC returns the explicit room shape the current client expects, including `created_new`
 - public rooms no longer require a host-only start click
 - public rooms require at least 2 ready players
 - the public waiting room can auto-start once the ready condition is satisfied
@@ -180,6 +198,7 @@ Current note:
 - that smoke test was the proof used to catch and validate the public-room creation race fix in `202607301430_movie_buff_public_matchmaking_creation_lock.sql`
 - this closes the main local public-flow proof gap; the remaining replay target is the hosted environment once deployment parity exists
 - public leave/abandon behavior now also has a local regression: `npm run movie-buff:smoke-public-leave` proves one player can leave a live shared public match without cancelling the room for the remaining player
+- if the hosted target still throws a schema-cache or RPC-not-found error for public matchmaking, apply `scripts/generated/movie-buff-hosted-round-runtime-patch.sql` in the hosted Supabase SQL editor and rerun the public smoke before treating hosted parity as failed for unknown reasons
 
 ### 3. Private room smoke
 
@@ -226,6 +245,7 @@ Current note:
 Required proof:
 
 - `/admin/movies` loads with real rows
+- `/admin/sources` loads with real rows
 - `/admin/analytics/clips` loads with real data
 - navigation between admin sections works
 - refresh actions do not error
@@ -233,6 +253,14 @@ Required proof:
 Current note:
 
 - movies and clip analytics pages were live-verified on Thursday, July 30, 2026
+- on Friday, July 31, 2026, the source-registry data layer was re-verified directly in local Postgres:
+  - `content_sources` count = `6`
+  - current sample rows include Library of Congress, Internet Archive, Public Domain Movie, European Film Gateway, and Creative Commons catalogs
+- on Friday, July 31, 2026, a fresh authenticated browser proof using a real admin session also verified:
+  - `/api/admin/access` returned `200`
+  - `/admin/movies` rendered the Movie Library admin shell
+  - `/admin/sources` rendered the Source Registry content after the source-registry grant fix
+- on Friday, July 31, 2026, `npm run movie-buff:route-health` was expanded to cover `/admin/sources` as an automated protected-route health target in addition to the existing admin analytics surfaces
 
 ### 5. Analytics smoke
 
@@ -422,7 +450,7 @@ Do not call Movie Buff soft-launch-ready until all of these are true:
 
 ## Immediate next actions
 
-1. live-prove the 2-player public auto-start path
-2. live-prove post-fix `Next Round`
-3. live-prove final-results exit
-4. run a short clip-latency and repeat-diversity sample
+1. define the real hosted deployment target and set production env values
+2. apply and verify hosted migration parity
+3. rerun public/private/leave/timer/admin checks against the hosted target
+4. re-prove authenticated local admin content for `/admin/movies` and `/admin/sources`

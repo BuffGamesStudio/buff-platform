@@ -1336,9 +1336,13 @@ async function getClipSourceByRoundId(roundId: string) {
     throw new Error(roundError.message);
   }
 
-  const clipId = (
-    roundRow as { clip_id?: string } | null
-  )?.clip_id;
+  const round = roundRow as
+    | {
+        clip_id?: string | null;
+      }
+    | null;
+
+  const clipId = round?.clip_id;
 
   if (!clipId) {
     throw new Error(

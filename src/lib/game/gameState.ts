@@ -1,7 +1,6 @@
 ﻿import type { RealtimeChannel } from "@supabase/supabase-js";
 
 import { supabase } from "@/lib/supabase";
-import { ensurePlayerProfile } from "@/lib/game/playerProfile";
 import {
   getLobby,
   type GameRoom,
@@ -34,22 +33,18 @@ export async function getCurrentUserId(): Promise<string> {
   } = await supabase.auth.getSession();
 
   if (session?.user) {
+    if (session.user.is_anonymous === true) {
+      throw new Error(
+        "You must sign in with a Buff Games account to continue."
+      );
+    }
+
     return session.user.id;
   }
 
-  const { data, error } =
-    await supabase.auth.signInAnonymously();
-
-  if (error || !data.user) {
-    throw new Error(
-      error?.message ??
-        "Unable to create a player session."
-    );
-  }
-
-  await ensurePlayerProfile(data.user.id);
-
-  return data.user.id;
+  throw new Error(
+    "You must sign in with a Buff Games account to continue."
+  );
 }
 
 export async function findCurrentRoomId(

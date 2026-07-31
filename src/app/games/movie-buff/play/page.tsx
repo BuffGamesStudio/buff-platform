@@ -480,6 +480,20 @@ export default function MovieBuffPlayPage() {
           }
         );
       } catch (initializeError) {
+        if (
+          initializeError instanceof Error &&
+          initializeError.message ===
+            "You must sign in with a Buff Games account to continue."
+        ) {
+          navigateTo(
+            `/sign-in?next=${encodeURIComponent(
+              `/games/movie-buff/play${window.location.search}`
+            )}`,
+            true
+          );
+          return;
+        }
+
         setError(
           initializeError instanceof Error
             ? initializeError.message

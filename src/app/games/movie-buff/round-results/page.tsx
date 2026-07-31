@@ -126,7 +126,7 @@ export default function RoundResultsPage() {
             resolvedRoundId
           ) {
             navigateTo(
-              `/games/movie-buff/round-intro?roomId=${encodeURIComponent(
+              `/games/movie-buff/board-preview?roomId=${encodeURIComponent(
                 resolvedRoomId
               )}`,
               true
@@ -245,7 +245,7 @@ export default function RoundResultsPage() {
                 }
               } catch {
                 navigateTo(
-                  `/games/movie-buff/round-intro?roomId=${encodeURIComponent(
+                  `/games/movie-buff/board-preview?roomId=${encodeURIComponent(
                     resolvedRoomId
                   )}`,
                   true
@@ -255,6 +255,20 @@ export default function RoundResultsPage() {
           );
 
       } catch (initializeError) {
+        if (
+          initializeError instanceof Error &&
+          initializeError.message ===
+            "You must sign in with a Buff Games account to continue."
+        ) {
+          navigateTo(
+            `/sign-in?next=${encodeURIComponent(
+              `/games/movie-buff/round-results${window.location.search}`
+            )}`,
+            true
+          );
+          return;
+        }
+
         setError(
           initializeError instanceof Error
             ? initializeError.message
@@ -297,6 +311,33 @@ export default function RoundResultsPage() {
     setError("");
 
     try {
+      const resolveResponse = await fetch(
+        "/api/movie-buff/board/resolve",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            roomId,
+          }),
+        }
+      );
+
+      if (!resolveResponse.ok) {
+        const payload =
+          (await resolveResponse.json().catch(
+            () => null
+          )) as {
+            error?: string;
+          } | null;
+
+        throw new Error(
+          payload?.error ??
+            "Unable to resolve the selected board tile."
+        );
+      }
+
       const result =
         await advanceMovieBuffRound(
           roomId
@@ -315,7 +356,7 @@ export default function RoundResultsPage() {
       }
 
       navigateTo(
-        `/games/movie-buff/round-intro?roomId=${encodeURIComponent(
+        `/games/movie-buff/board-preview?roomId=${encodeURIComponent(
           roomId
         )}`
       );

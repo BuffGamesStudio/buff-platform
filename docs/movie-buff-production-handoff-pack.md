@@ -14,10 +14,15 @@ It does not assume a specific host vendor. It does assume:
 - the launch-critical migration set already proven locally must exist in the
   hosted database before any launch decision is made
 
+Vendor-specific companion:
+
+- [movie-buff-vercel-supabase-production-setup.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-vercel-supabase-production-setup.md)
+
 ## Current proven baseline
 
 As of Friday, July 31, 2026, the following are already proven locally:
 
+- Buff Games auth entry/session flow passes
 - public match flow passes end to end
 - private room flow passes end to end
 - private in-round leave behavior passes
@@ -31,6 +36,25 @@ As of Friday, July 31, 2026, the following are already proven locally:
   - secondary: `fan 23 / buff 49 / buffster 33`
 
 The top unresolved blocker is hosted deployment parity.
+
+Fresh evidence update from Friday, July 31, 2026:
+
+- `npm run movie-buff:smoke-public`: pass
+- `npm run movie-buff:smoke-auth`: pass
+- `npm run movie-buff:smoke-private`: pass
+- `npm run movie-buff:smoke-public-leave`: pass
+- `npm run movie-buff:smoke-admin`: pass
+- `npm run movie-buff:smoke-timer`: pass
+- `npm run movie-buff:check-bootstrap-artifacts`: pass
+- `npm run movie-buff:check-launch-migrations`: pass
+- `npm run movie-buff:check-deploy-env`: fail because the real production values are still missing
+- `npm run build`: pass
+
+Additional hosted recovery artifact now present:
+
+- `scripts/generated/movie-buff-hosted-source-registry-patch.sql`
+  - use this if hosted `/admin/sources` fails because the source-registry schema
+    or grants are missing
 
 ## Section 1: required production values
 
@@ -71,11 +95,14 @@ These migration files are the minimum hosted baseline:
 
 - `202607300100_movie_buff_clip_analytics_and_round_timing.sql`
 - `202607300220_movie_buff_playback_launch_timeout_buffer.sql`
+- `202607300240_movie_buff_public_room_created_event_in_rpc.sql`
 - `202607300310_movie_buff_public_match_autostart.sql`
 - `202607300330_movie_buff_public_ready_autostart_rpc.sql`
 - `202607300340_movie_buff_analytics_rls_lockdown.sql`
 - `202607301430_movie_buff_public_matchmaking_creation_lock.sql`
 - `202607301700_movie_buff_launch_gate_fast_media_only.sql`
+- `202607311950_movie_buff_source_registry.sql`
+- `202607311958_movie_buff_source_registry_grants.sql`
 
 Hosted rollout is not valid unless these are applied in the production
 database.
@@ -101,6 +128,16 @@ Expected:
 
 ```powershell
 npm run movie-buff:check-launch-migrations
+```
+
+Expected:
+
+- pass
+
+### Step 2B: confirm hosted recovery artifacts are present and current
+
+```powershell
+npm run movie-buff:check-bootstrap-artifacts
 ```
 
 Expected:
@@ -138,12 +175,15 @@ node .\scripts\movie-buff-hosted-preflight.mjs --env-file .env.production --base
 Expected:
 
 - `launch_migrations`: pass
+- `bootstrap_artifacts`: pass
 - `deploy_env`: pass
 - `route_health`: pass
 - `public_smoke`: pass
+- `auth_smoke`: pass
 - `private_smoke`: pass
 - `leave_smoke`: pass
 - `public_leave_smoke`: pass
+- `admin_smoke`: pass
 - `timer_smoke`: pass
 - `analytics_verifier`: pass
 
@@ -157,6 +197,7 @@ Manual checks:
 - private room can be created
 - leave/back actions exist where expected
 - admin movies page loads
+- admin sources page loads
 - admin analytics pages load
 - no visible `localhost` redirects
 
@@ -176,6 +217,7 @@ Mark each item before soft launch:
 | Private smoke passes against hosted target | |
 | Private leave smoke passes against hosted target | |
 | Public shared-leave smoke passes against hosted target | |
+| Admin smoke passes against hosted target | |
 | Timer smoke passes against hosted target | |
 | Admin pages load on hosted target | |
 | Runtime pool warmed before session | |

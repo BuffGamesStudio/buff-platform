@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { provisionLocalSmokeSession } from "./movie-buff-smoke-auth.mjs";
 
 const PLAYWRIGHT_ENTRY =
   process.env.PLAYWRIGHT_ENTRY ??
@@ -152,6 +153,22 @@ async function clickUnique(page, role, name) {
   );
 }
 
+async function fillUnique(page, placeholder, value) {
+  const locator = page.getByPlaceholder(
+    placeholder,
+    { exact: true },
+  );
+  const count = await locator.count();
+  assert(
+    count === 1,
+    `Expected one input with placeholder "${placeholder}", found ${count}.`,
+  );
+  await locator.click();
+  await locator.press("ControlOrMeta+A");
+  await locator.press("Backspace");
+  await locator.type(value);
+}
+
 function urlMatchesPattern(url, pattern) {
   return url.includes(
     pattern.replace(/\*\*/g, "").replace(/\*/g, ""),
@@ -180,6 +197,94 @@ async function waitForEitherUrl(page, patterns) {
 
   throw new Error(
     `Timed out waiting for any URL in: ${patterns.join(", ")}`,
+  );
+}
+
+async function waitForBoardPreviewReady(page) {
+  await page.waitForFunction(
+    () =>
+      document.body?.innerText?.includes(
+        "Prototype board",
+      ) &&
+      (Array.from(
+        document.querySelectorAll("button"),
+      ).some((button) =>
+        (button.textContent ?? "")
+          .trim()
+          .includes("Select to lock this round"),
+      ) ||
+        document.body?.innerText?.includes(
+          "Board persistence is temporarily unavailable for this room.",
+        ) ||
+        document.body?.innerText?.includes(
+          "Continue to Clip Round",
+        )),
+    undefined,
+    { timeout: 30000 },
+  );
+}
+
+async function selectFirstBoardTile(page) {
+  await waitForBoardPreviewReady(page);
+
+  const continueButton = page.getByRole("link", {
+    name: "Continue to Clip Round",
+  });
+
+  if ((await continueButton.count()) === 1) {
+    await continueButton.click();
+    await page.waitForURL(
+      "**/games/movie-buff/play?**",
+    );
+    return;
+  }
+
+  const tileButton = page
+    .locator("button")
+    .filter({
+      hasText: "Select to lock this round",
+    })
+    .first();
+
+  const count = await tileButton.count();
+  assert(
+    count >= 1,
+    "No selectable board tile was available.",
+  );
+
+  await tileButton.click();
+  await page.waitForURL(
+    "**/games/movie-buff/play?**",
+  );
+}
+
+async function enterLobbyWithLocalTestAccount(page) {
+  const { storageKey, sessionString } =
+    await provisionLocalSmokeSession(
+      "public-leave",
+    );
+  await page.addInitScript(
+    ({ key, value }) => {
+      window.localStorage.setItem(key, value);
+    },
+    {
+      key: storageKey,
+      value: sessionString,
+    },
+  );
+  await page.goto(`${APP_URL}/games/movie-buff/lobby`, {
+    waitUntil: "domcontentloaded",
+  });
+
+  await page.waitForFunction(
+    () =>
+      !document.body?.innerText?.includes(
+        "Checking your Buff Games account...",
+      ) &&
+      document.body?.innerText?.includes("Create Room") &&
+      document.body?.innerText?.includes("Find Match"),
+    undefined,
+    { timeout: 45000 },
   );
 }
 
@@ -267,15 +372,21 @@ async function enterPublicMatch(page) {
 async function resolveIntoPlay(page) {
   await waitForEitherUrl(page, [
     "**/games/movie-buff/round-intro?**",
+    "**/games/movie-buff/board-preview?**",
     "**/games/movie-buff/play?**",
   ]);
 
   if (page.url().includes("/round-intro")) {
     await waitForRoundIntroReady(page);
     await clickUnique(page, "button", "Start Round");
-    await page.waitForURL(
+    await waitForEitherUrl(page, [
+      "**/games/movie-buff/board-preview?**",
       "**/games/movie-buff/play?**",
-    );
+    ]);
+  }
+
+  if (page.url().includes("/board-preview")) {
+    await selectFirstBoardTile(page);
   }
 }
 
@@ -334,22 +445,8 @@ const result = {
 
 try {
   await Promise.all([
-    pageOne.goto(`${APP_URL}/games/movie-buff`, {
-      waitUntil: "domcontentloaded",
-    }),
-    pageTwo.goto(`${APP_URL}/games/movie-buff`, {
-      waitUntil: "domcontentloaded",
-    }),
-  ]);
-
-  await Promise.all([
-    clickUnique(pageOne, "link", "Play Now"),
-    clickUnique(pageTwo, "link", "Play Now"),
-  ]);
-
-  await Promise.all([
-    pageOne.waitForURL("**/games/movie-buff/lobby"),
-    pageTwo.waitForURL("**/games/movie-buff/lobby"),
+    enterLobbyWithLocalTestAccount(pageOne),
+    enterLobbyWithLocalTestAccount(pageTwo),
   ]);
 
   await Promise.all([

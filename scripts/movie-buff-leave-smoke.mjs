@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { provisionLocalSmokeSession } from "./movie-buff-smoke-auth.mjs";
 
 const PLAYWRIGHT_ENTRY =
   process.env.PLAYWRIGHT_ENTRY ??
@@ -152,6 +153,22 @@ async function clickUnique(page, role, name) {
   );
 }
 
+async function fillUnique(page, placeholder, value) {
+  const locator = page.getByPlaceholder(
+    placeholder,
+    { exact: true },
+  );
+  const count = await locator.count();
+  assert(
+    count === 1,
+    `Expected one input with placeholder "${placeholder}", found ${count}.`,
+  );
+  await locator.click();
+  await locator.press("ControlOrMeta+A");
+  await locator.press("Backspace");
+  await locator.type(value);
+}
+
 async function waitForEitherUrl(page, patterns) {
   const currentUrl = page.url();
 
@@ -176,6 +193,34 @@ async function waitForEitherUrl(page, patterns) {
 
   throw new Error(
     `Timed out waiting for any URL in: ${patterns.join(", ")}`,
+  );
+}
+
+async function enterLobbyWithLocalTestAccount(page) {
+  const { storageKey, sessionString } =
+    await provisionLocalSmokeSession("leave");
+  await page.addInitScript(
+    ({ key, value }) => {
+      window.localStorage.setItem(key, value);
+    },
+    {
+      key: storageKey,
+      value: sessionString,
+    },
+  );
+  await page.goto(`${APP_URL}/games/movie-buff/lobby`, {
+    waitUntil: "domcontentloaded",
+  });
+
+  await page.waitForFunction(
+    () =>
+      !document.body?.innerText?.includes(
+        "Checking your Buff Games account...",
+      ) &&
+      document.body?.innerText?.includes("Create Room") &&
+      document.body?.innerText?.includes("Find Match"),
+    undefined,
+    { timeout: 45000 },
   );
 }
 
@@ -295,12 +340,7 @@ const result = {
 };
 
 try {
-  await page.goto(`${APP_URL}/games/movie-buff`, {
-    waitUntil: "domcontentloaded",
-  });
-
-  await clickUnique(page, "link", "Play Now");
-  await page.waitForURL("**/games/movie-buff/lobby");
+  await enterLobbyWithLocalTestAccount(page);
   result.checkpoints.lobby = {
     page: page.url(),
   };

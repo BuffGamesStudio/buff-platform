@@ -7,6 +7,7 @@ import {
   Clapperboard,
   Film,
   LayoutDashboard,
+  LibraryBig,
   ShieldAlert,
   Shuffle,
   Settings,
@@ -22,6 +23,11 @@ const navigation = [
     name: "Content Library",
     href: "/admin/movies",
     icon: Film,
+  },
+  {
+    name: "Source Registry",
+    href: "/admin/sources",
+    icon: LibraryBig,
   },
   {
     name: "Clip Analytics",
