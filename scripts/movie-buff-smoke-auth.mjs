@@ -49,6 +49,14 @@ if (!supabaseUrl || !supabaseKey) {
   );
 }
 
+const serviceRoleKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ??
+  localEnv.SUPABASE_SERVICE_ROLE_KEY;
+const smokeEmailDomain =
+  process.env.MOVIE_BUFF_SMOKE_EMAIL_DOMAIN ??
+  localEnv.MOVIE_BUFF_SMOKE_EMAIL_DOMAIN ??
+  "example.com";
+
 const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
     autoRefreshToken: false,
@@ -56,22 +64,65 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   },
 });
 
+const adminSupabase = serviceRoleKey
+  ? createClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+  : null;
+
 export async function provisionLocalSmokeAccount(label) {
   const uniqueId = `${Date.now()}-${Math.random()
     .toString(36)
     .slice(2, 8)}`;
-  const email = `moviebuff-${label}-${uniqueId}@example.com`;
+  const email = `moviebuff-${label}-${uniqueId}@${smokeEmailDomain}`;
   const password = "MovieBuffLocal123!";
 
-  const { error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
+  const createViaSignup = async () =>
+    supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          display_name: `Movie Buff ${label}`,
+        },
+      },
+    });
+
+  const createViaAdmin = async () => {
+    if (!adminSupabase) {
+      return {
+        error: new Error(
+          "No service role key available for admin smoke-account provisioning.",
+        ),
+      };
+    }
+
+    return adminSupabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
         display_name: `Movie Buff ${label}`,
       },
-    },
-  });
+    });
+  };
+
+  let { error } = await createViaSignup();
+
+  if (error && adminSupabase) {
+    const normalizedMessage = error.message.toLowerCase();
+    const shouldFallbackToAdmin =
+      normalizedMessage.includes("rate limit") ||
+      normalizedMessage.includes("invalid");
+
+    if (shouldFallbackToAdmin) {
+      const adminResult = await createViaAdmin();
+      error = adminResult.error ?? null;
+    }
+  }
 
   if (error) {
     throw new Error(

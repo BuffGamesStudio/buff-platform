@@ -279,6 +279,64 @@ async function waitForRoundIntroReady(page) {
   );
 }
 
+async function waitForBoardPreviewReady(page) {
+  await page.waitForFunction(
+    () =>
+      document.body?.innerText?.includes(
+        "Prototype board",
+      ) &&
+      (Array.from(
+        document.querySelectorAll("button"),
+      ).some((button) =>
+        (button.textContent ?? "")
+          .trim()
+          .includes("Select to lock this round"),
+      ) ||
+        document.body?.innerText?.includes(
+          "Board persistence is temporarily unavailable for this room.",
+        ) ||
+        document.body?.innerText?.includes(
+          "Continue to Clip Round",
+        )),
+    undefined,
+    { timeout: 30000 },
+  );
+}
+
+async function selectFirstBoardTile(page) {
+  await waitForBoardPreviewReady(page);
+
+  const continueButton = page.getByRole("link", {
+    name: "Continue to Clip Round",
+  });
+
+  if ((await continueButton.count()) === 1) {
+    await continueButton.click();
+    await page.waitForURL(
+      "**/games/movie-buff/play?**",
+    );
+    return;
+  }
+
+  const tileButton = page
+    .locator("button")
+    .filter({
+      hasText: "Select to lock this round",
+    })
+    .first();
+
+  const count = await tileButton.count();
+  assert(
+    count >= 1,
+    "No selectable board tile was available.",
+  );
+
+  await tileButton.click();
+  await page.waitForURL(
+    "**/games/movie-buff/play?**",
+  );
+}
+
 async function waitForAnswerFormReady(page) {
   await page.waitForFunction(
     () =>
@@ -370,15 +428,21 @@ try {
 
   await waitForEitherUrl(page, [
     "**/games/movie-buff/round-intro?**",
+    "**/games/movie-buff/board-preview?**",
     "**/games/movie-buff/play?**",
   ]);
 
   if (page.url().includes("/round-intro")) {
     await waitForRoundIntroReady(page);
     await clickUnique(page, "button", "Start Round");
-    await page.waitForURL(
+    await waitForEitherUrl(page, [
+      "**/games/movie-buff/board-preview?**",
       "**/games/movie-buff/play?**",
-    );
+    ]);
+  }
+
+  if (page.url().includes("/board-preview")) {
+    await selectFirstBoardTile(page);
   }
 
   await waitForAnswerFormReady(page);
