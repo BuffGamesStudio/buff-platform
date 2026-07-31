@@ -52,6 +52,8 @@ const requiredNeedlesByArtifact = {
     "answer_submitted",
     "answer_correct",
     "answer_wrong",
+    "player_left",
+    "match_abandoned",
     "notify pgrst, 'reload schema';",
   ],
   "hosted source-registry patch": [

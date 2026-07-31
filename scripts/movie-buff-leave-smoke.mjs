@@ -1,5 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import fs from "node:fs";
+import path from "node:path";
+import { createClient } from "@supabase/supabase-js";
 import { provisionLocalSmokeSession } from "./movie-buff-smoke-auth.mjs";
 
 const PLAYWRIGHT_ENTRY =
@@ -17,6 +20,56 @@ const CHROME_EXECUTABLE =
 const { chromium } = await import(
   pathToFileURL(PLAYWRIGHT_ENTRY).href
 );
+
+function loadLocalEnv() {
+  const envPath = path.join(process.cwd(), ".env.local");
+  const parsed = {};
+
+  if (!fs.existsSync(envPath)) {
+    return parsed;
+  }
+
+  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmed.indexOf("=");
+
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const value = trimmed.slice(separatorIndex + 1).trim();
+
+    if (key) {
+      parsed[key] = value;
+    }
+  }
+
+  return parsed;
+}
+
+const localEnv = loadLocalEnv();
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ??
+  localEnv.NEXT_PUBLIC_SUPABASE_URL;
+const serviceRoleKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ??
+  localEnv.SUPABASE_SERVICE_ROLE_KEY;
+
+const adminSupabase =
+  supabaseUrl && serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      })
+    : null;
 
 function assert(condition, message) {
   if (!condition) {
@@ -353,6 +406,67 @@ async function waitForAnswerFormReady(page) {
   );
 }
 
+function isLocalBaseUrl(url) {
+  return /127\.0\.0\.1|localhost/i.test(url);
+}
+
+async function verifyHostedLeaveState(roomId) {
+  assert(
+    adminSupabase,
+    "Hosted leave verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+  );
+
+  const [
+    roomResult,
+    playersResult,
+    eventsResult,
+  ] = await Promise.all([
+    adminSupabase
+      .from("game_rooms")
+      .select("id, status, finished_at")
+      .eq("id", roomId)
+      .maybeSingle(),
+    adminSupabase
+      .from("room_players")
+      .select("player_id")
+      .eq("room_id", roomId)
+      .is("left_at", null),
+    adminSupabase
+      .from("movie_buff_round_events")
+      .select("event_type")
+      .eq("room_id", roomId),
+  ]);
+
+  if (roomResult.error) {
+    throw new Error(roomResult.error.message);
+  }
+
+  if (playersResult.error) {
+    throw new Error(playersResult.error.message);
+  }
+
+  if (eventsResult.error) {
+    throw new Error(eventsResult.error.message);
+  }
+
+  const eventsByType = {};
+
+  for (const row of eventsResult.data ?? []) {
+    const key = row.event_type;
+    eventsByType[key] = (eventsByType[key] ?? 0) + 1;
+  }
+
+  return {
+    roomId,
+    roomStatus: roomResult.data?.status ?? null,
+    finishedAtPresent:
+      roomResult.data?.finished_at != null,
+    activePlayerCount:
+      (playersResult.data ?? []).length,
+    eventsByType,
+  };
+}
+
 function buildLeaveVerificationSql(roomId) {
   return `
 select json_build_object(
@@ -457,13 +571,14 @@ try {
     page: page.url(),
   };
 
-  const containerName = resolveDbContainerName();
-  const verification = extractJsonLine(
-    runSql(
-      containerName,
-      buildLeaveVerificationSql(roomId),
-    ),
-  );
+  const verification = isLocalBaseUrl(APP_URL)
+    ? extractJsonLine(
+        runSql(
+          resolveDbContainerName(),
+          buildLeaveVerificationSql(roomId),
+        ),
+      )
+    : await verifyHostedLeaveState(roomId);
 
   assert(
     verification.roomStatus === "cancelled",

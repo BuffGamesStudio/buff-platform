@@ -1,5 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import fs from "node:fs";
+import path from "node:path";
+import { createClient } from "@supabase/supabase-js";
 import { provisionLocalSmokeSession } from "./movie-buff-smoke-auth.mjs";
 
 const PLAYWRIGHT_ENTRY =
@@ -17,6 +20,56 @@ const CHROME_EXECUTABLE =
 const { chromium } = await import(
   pathToFileURL(PLAYWRIGHT_ENTRY).href,
 );
+
+function loadLocalEnv() {
+  const envPath = path.join(process.cwd(), ".env.local");
+  const parsed = {};
+
+  if (!fs.existsSync(envPath)) {
+    return parsed;
+  }
+
+  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmed.indexOf("=");
+
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const value = trimmed.slice(separatorIndex + 1).trim();
+
+    if (key) {
+      parsed[key] = value;
+    }
+  }
+
+  return parsed;
+}
+
+const localEnv = loadLocalEnv();
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ??
+  localEnv.NEXT_PUBLIC_SUPABASE_URL;
+const serviceRoleKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ??
+  localEnv.SUPABASE_SERVICE_ROLE_KEY;
+
+const adminSupabase =
+  supabaseUrl && serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      })
+    : null;
 
 function assert(condition, message) {
   if (!condition) {
@@ -263,7 +316,11 @@ async function selectFirstBoardTile(page) {
 }
 
 async function enterLobbyWithLocalTestAccount(page) {
-  const { storageKey, sessionString } =
+  const {
+    storageKey,
+    sessionString,
+    session,
+  } =
     await provisionLocalSmokeSession(
       "public-leave",
     );
@@ -290,6 +347,8 @@ async function enterLobbyWithLocalTestAccount(page) {
     undefined,
     { timeout: 45000 },
   );
+
+  return session.user.id;
 }
 
 async function waitForWaitingRoomReady(page) {
@@ -340,6 +399,114 @@ async function waitForAnswerFormReady(page) {
       ),
     undefined,
     { timeout: 30000 },
+  );
+}
+
+async function ensureReadyForPublicMatch(page) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (!page.url().includes("/waiting-room")) {
+      return;
+    }
+
+    const readyButton = page.getByRole("button", {
+      name: "I'm Ready",
+    });
+
+    if ((await readyButton.count()) === 1) {
+      await readyButton.click();
+      await page.waitForTimeout(1000);
+      continue;
+    }
+
+    const readyStateDetected =
+      (await page
+        .getByRole("button", { name: "Ready!" })
+        .count()) === 1 ||
+      (await page.waitForFunction(
+        () =>
+          !window.location.pathname.includes(
+            "/games/movie-buff/waiting-room",
+          ),
+        undefined,
+        { timeout: 1000 },
+      ).then(
+        () => true,
+        () => false,
+      ));
+
+    if (readyStateDetected) {
+      return;
+    }
+  }
+}
+
+async function waitForHostedReadyState(
+  roomId,
+  playerContexts,
+) {
+  assert(
+    adminSupabase,
+    "Hosted public leave verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+  );
+
+  const deadline = Date.now() + 45000;
+
+  while (Date.now() < deadline) {
+    const { data, error } = await adminSupabase
+      .from("room_players")
+      .select("player_id, is_ready, left_at")
+      .eq("room_id", roomId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const activePlayers = (data ?? []).filter(
+      (row) => row.left_at == null,
+    );
+    const readyPlayers = activePlayers.filter(
+      (row) => row.is_ready === true,
+    );
+
+    if (
+      activePlayers.length >= 2 &&
+      readyPlayers.length >= 2
+    ) {
+      return {
+        activePlayerCount: activePlayers.length,
+        readyPlayerCount: readyPlayers.length,
+      };
+    }
+
+    for (const context of playerContexts) {
+      const playerRow = activePlayers.find(
+        (row) =>
+          row.player_id === context.playerId,
+      );
+
+      if (
+        playerRow &&
+        playerRow.is_ready !== true &&
+        context.page.url().includes("/waiting-room")
+      ) {
+        const readyButton =
+          context.page.getByRole("button", {
+            name: "I'm Ready",
+          });
+
+        if ((await readyButton.count()) === 1) {
+          await readyButton.click();
+        }
+      }
+    }
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, 1000),
+    );
+  }
+
+  throw new Error(
+    `Timed out waiting for hosted ready state for room ${roomId}.`,
   );
 }
 
@@ -484,7 +651,8 @@ const result = {
 };
 
 try {
-  await Promise.all([
+  const [playerOneId, playerTwoId] =
+    await Promise.all([
     enterLobbyWithLocalTestAccount(pageOne),
     enterLobbyWithLocalTestAccount(pageTwo),
   ]);
@@ -514,12 +682,30 @@ try {
     pageOne: roomUrlOne,
     pageTwo: roomUrlTwo,
     roomId: roomIdOne,
+    playerOneId,
+    playerTwoId,
   };
 
   await Promise.all([
-    clickUnique(pageOne, "button", "I'm Ready"),
-    clickUnique(pageTwo, "button", "I'm Ready"),
+    ensureReadyForPublicMatch(pageOne),
+    ensureReadyForPublicMatch(pageTwo),
   ]);
+
+  if (!isLocalBaseUrl(APP_URL)) {
+    result.checkpoints.readyState = await waitForHostedReadyState(
+      roomIdOne,
+      [
+        {
+          playerId: playerOneId,
+          page: pageOne,
+        },
+        {
+          playerId: playerTwoId,
+          page: pageTwo,
+        },
+      ],
+    );
+  }
 
   await Promise.all([
     resolveIntoPlay(pageOne),
