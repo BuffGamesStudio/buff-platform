@@ -1,6 +1,12 @@
 ﻿"use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   ArrowLeft,
   Crown,
@@ -14,36 +20,12 @@ import {
   Trophy,
 } from "lucide-react";
 
-const finalStandings = [
-  {
-    rank: 1,
-    name: "CinemaKing",
-    score: 12480,
-    correct: 9,
-    streak: 6,
-  },
-  {
-    rank: 2,
-    name: "ShaTheSolutionist",
-    score: 11350,
-    correct: 8,
-    streak: 5,
-  },
-  {
-    rank: 3,
-    name: "MovieMaster24",
-    score: 9875,
-    correct: 7,
-    streak: 4,
-  },
-  {
-    rank: 4,
-    name: "FilmFanatic",
-    score: 7420,
-    correct: 5,
-    streak: 2,
-  },
-];
+import {
+  getMovieBuffFinalResults,
+  type MovieBuffFinalResults,
+  type MovieBuffFinalStanding,
+} from "@/lib/game/roundService";
+import { getMovieBuffPlayerTier } from "@/lib/game/movieBuffPlayerTier";
 
 function rankStyle(rank: number) {
   if (rank === 1) {
@@ -63,21 +45,422 @@ function rankStyle(rank: number) {
 
 function rankIcon(rank: number) {
   if (rank === 1) {
-    return <Crown size={26} className="text-yellow-400" />;
+    return (
+      <Crown
+        size={26}
+        className="text-yellow-400"
+      />
+    );
   }
 
   if (rank === 2) {
-    return <Medal size={26} className="text-zinc-300" />;
+    return (
+      <Medal
+        size={26}
+        className="text-zinc-300"
+      />
+    );
   }
 
   if (rank === 3) {
-    return <Medal size={26} className="text-orange-500" />;
+    return (
+      <Medal
+        size={26}
+        className="text-orange-500"
+      />
+    );
   }
 
-  return <span className="text-lg font-black text-zinc-500">{rank}</span>;
+  return (
+    <span className="text-lg font-black text-zinc-500">
+      {rank}
+    </span>
+  );
+}
+
+function placementLabel(position: number) {
+  if (position === 1) {
+    return "1st";
+  }
+
+  if (position === 2) {
+    return "2nd";
+  }
+
+  if (position === 3) {
+    return "3rd";
+  }
+
+  return `${position}th`;
+}
+
+function placementSummary(
+  position: number,
+  isTied = false
+) {
+  const label = placementLabel(position);
+
+  return isTied ? `T-${label}` : label;
+}
+
+function placementPhrase(
+  position: number,
+  isTied = false
+) {
+  const label = placementLabel(position);
+
+  return isTied
+    ? `tied for ${label}`
+    : label;
+}
+
+function finalStandingTieKey(
+  standing: MovieBuffFinalStanding
+) {
+  return [
+    standing.score,
+    standing.correctAnswers,
+    standing.accuracy,
+  ].join(":");
+}
+
+function buildStandingPlacements(
+  standings: MovieBuffFinalStanding[]
+) {
+  const groupSizes = new Map<string, number>();
+
+  standings.forEach((standing) => {
+    const key = finalStandingTieKey(standing);
+
+    groupSizes.set(
+      key,
+      (groupSizes.get(key) ?? 0) + 1
+    );
+  });
+
+  const placements = new Map<
+    string,
+    {
+      rank: number;
+      isTied: boolean;
+    }
+  >();
+
+  let previousKey = "";
+  let previousRank = 0;
+
+  standings.forEach((standing, index) => {
+    const key = finalStandingTieKey(standing);
+
+    const rank =
+      key === previousKey
+        ? previousRank
+        : index + 1;
+
+    placements.set(standing.playerId, {
+      rank,
+      isTied:
+        (groupSizes.get(key) ?? 0) > 1,
+    });
+
+    previousKey = key;
+    previousRank = rank;
+  });
+
+  return placements;
 }
 
 export default function FinalResultsPage() {
+  const router = useRouter();
+
+  const [results, setResults] =
+    useState<MovieBuffFinalResults | null>(
+      null
+    );
+
+  const [loading, setLoading] =
+    useState(true);
+  const [sharing, setSharing] =
+    useState(false);
+  const [message, setMessage] =
+    useState("");
+  const [error, setError] =
+    useState("");
+
+  const navigateTo = useCallback(
+    (destination: string, replace = false) => {
+      if (typeof window !== "undefined") {
+        if (replace) {
+          window.location.replace(destination);
+          return;
+        }
+
+        window.location.assign(destination);
+        return;
+      }
+
+      if (replace) {
+        router.replace(destination);
+        return;
+      }
+
+      router.push(destination);
+    },
+    [router]
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    async function initialize() {
+      try {
+        const parameters =
+          new URLSearchParams(
+            window.location.search
+          );
+
+        const resolvedRoomId =
+          parameters.get("roomId") ?? "";
+
+        if (!resolvedRoomId) {
+          navigateTo(
+            "/games/movie-buff/lobby",
+            true
+          );
+          return;
+        }
+
+        const finalResults =
+          await getMovieBuffFinalResults(
+            resolvedRoomId
+          );
+
+        if (!active) {
+          return;
+        }
+
+        setResults(finalResults);
+      } catch (initializeError) {
+        setError(
+          initializeError instanceof Error
+            ? initializeError.message
+            : "Unable to load final results."
+        );
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void initialize();
+
+    return () => {
+      active = false;
+    };
+  }, [navigateTo]);
+
+  const currentPlayer = useMemo(() => {
+    if (!results) {
+      return null;
+    }
+
+    return (
+      results.standings.find(
+        (player) =>
+          player.playerId ===
+          results.playerId
+      ) ?? null
+    );
+  }, [results]);
+
+  const standingPlacements = useMemo(
+    () =>
+      results
+        ? buildStandingPlacements(
+            results.standings
+          )
+        : new Map(),
+    [results]
+  );
+
+  const currentPosition = useMemo(() => {
+    if (!results) {
+      return null;
+    }
+
+    return (
+      standingPlacements.get(
+        results.playerId
+      ) ?? null
+    );
+  }, [results, standingPlacements]);
+
+  const champion =
+    results?.standings[0] ?? null;
+
+  const topPosition = useMemo(() => {
+    if (!champion) {
+      return null;
+    }
+
+    return (
+      standingPlacements.get(
+        champion.playerId
+      ) ?? null
+    );
+  }, [champion, standingPlacements]);
+
+  const isTieAtTop =
+    topPosition?.isTied === true &&
+    topPosition.rank === 1;
+
+  const currentPlayerTiedForFirst =
+    currentPosition?.isTied === true &&
+    currentPosition.rank === 1;
+
+  const winnerIsCurrentPlayer =
+    currentPosition?.rank === 1 &&
+    currentPosition.isTied === false;
+
+  const currentPlacementText =
+    currentPosition
+      ? placementPhrase(
+          currentPosition.rank,
+          currentPosition.isTied
+        )
+      : null;
+
+  const currentPlacementSummary =
+    currentPosition
+      ? placementSummary(
+          currentPosition.rank,
+          currentPosition.isTied
+        )
+      : null;
+
+  const championResultText = isTieAtTop
+    ? currentPlayerTiedForFirst
+      ? `You tied for 1st with ${currentPlayer?.score.toLocaleString()} points.`
+      : `The match ended in a tie for 1st. You finished ${currentPlacementText}.`
+    : winnerIsCurrentPlayer
+    ? `You are the Movie Buff champion with ${currentPlayer?.score.toLocaleString()} points.`
+    : `${champion?.displayName} won the match. You finished ${currentPlacementText}.`;
+
+  const buffsterResultText = isTieAtTop
+    ? currentPlayerTiedForFirst
+      ? `You tied for 1st with ${currentPlayer?.correctAnswers} correct answers and ${currentPlayer?.score.toLocaleString()} points.`
+      : `You finished ${currentPlacementText} with ${currentPlayer?.correctAnswers} correct answers and ${currentPlayer?.score.toLocaleString()} points.`
+    : winnerIsCurrentPlayer
+    ? `You finished first with ${currentPlayer?.correctAnswers} correct answers.`
+    : `You finished ${currentPlacementText} with ${currentPlayer?.correctAnswers} correct answers and ${currentPlayer?.score.toLocaleString()} points.`;
+
+  const sharePlacementText =
+    currentPosition
+      ? placementPhrase(
+          currentPosition.rank,
+          currentPosition.isTied
+        )
+      : null;
+
+  async function handleShare() {
+    if (
+      !results ||
+      !currentPlayer ||
+      !sharePlacementText ||
+      sharing
+    ) {
+      return;
+    }
+
+    setSharing(true);
+    setMessage("");
+
+    const shareText =
+      `I finished ${sharePlacementText} in Movie Buff with ` +
+      `${currentPlayer.score.toLocaleString()} points ` +
+      `and ${currentPlayer.correctAnswers} correct answers.`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "Movie Buff Results",
+          text: shareText,
+        });
+
+        setMessage("Results shared.");
+      } else {
+        await navigator.clipboard.writeText(
+          shareText
+        );
+
+        setMessage(
+          "Results copied to your clipboard."
+        );
+      }
+    } catch (shareError) {
+      if (
+        shareError instanceof Error &&
+        shareError.name === "AbortError"
+      ) {
+        setMessage("");
+      } else {
+        setMessage(
+          "Unable to share results."
+        );
+      }
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-black text-white">
+        <p className="text-2xl font-black">
+          Loading final results...
+        </p>
+      </main>
+    );
+  }
+
+  if (
+    error ||
+    !results ||
+    !currentPlayer ||
+    !champion ||
+    !currentPosition ||
+    !currentPlacementSummary ||
+    !currentPlacementText ||
+    !topPosition
+  ) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-black px-6 text-white">
+        <div className="max-w-xl rounded-3xl border border-red-700 bg-red-950/30 p-8 text-center">
+          <h1 className="text-3xl font-black">
+            Final Results Unavailable
+          </h1>
+
+          <p className="mt-4 text-red-300">
+            {error ||
+              "The final match data could not be loaded."}
+          </p>
+
+          <button
+            type="button"
+            onClick={() =>
+              navigateTo(
+                "/games/movie-buff/lobby"
+              )
+            }
+            className="mt-7 inline-flex rounded-xl bg-red-600 px-7 py-4 font-black transition hover:bg-red-700"
+          >
+            Return to Lobby
+          </button>
+        </div>
+      </main>
+    );
+  }
   return (
     <main className="min-h-screen bg-black text-white">
       <header className="border-b border-zinc-800 bg-zinc-950/95">
@@ -87,16 +470,23 @@ export default function FinalResultsPage() {
               Match Complete
             </p>
 
-            <h1 className="text-2xl font-black">Movie Buff</h1>
+            <h1 className="text-2xl font-black">
+              Movie Buff
+            </h1>
           </div>
 
-          <Link
-            href="/games/movie-buff/lobby"
+          <button
+            type="button"
+            onClick={() =>
+              navigateTo(
+                "/games/movie-buff/lobby"
+              )
+            }
             className="flex items-center gap-2 text-sm font-bold text-zinc-400 transition hover:text-white"
           >
             <ArrowLeft size={18} />
             Back to Lobby
-          </Link>
+          </button>
         </div>
       </header>
 
@@ -111,75 +501,68 @@ export default function FinalResultsPage() {
           </p>
 
           <h2 className="mt-3 text-5xl font-black md:text-7xl">
-            Great Game!
+            {currentPlayerTiedForFirst
+              ? "It's a Tie!"
+              : winnerIsCurrentPlayer
+              ? "You Won!"
+              : "Great Game!"}
           </h2>
 
           <p className="mx-auto mt-4 max-w-2xl text-lg text-zinc-300">
-            You finished second and proved that you know your movies.
+            {championResultText}
           </p>
 
           <div className="mt-8 flex flex-wrap justify-center gap-4">
-            <div className="rounded-2xl border border-zinc-800 bg-black/70 px-7 py-5">
-              <p className="text-sm text-zinc-500">Final Position</p>
-              <p className="mt-1 text-3xl font-black text-red-500">2nd</p>
-            </div>
+            <SummaryCard
+              label="Final Position"
+              value={currentPlacementSummary}
+              emphasized
+            />
 
-            <div className="rounded-2xl border border-zinc-800 bg-black/70 px-7 py-5">
-              <p className="text-sm text-zinc-500">Final Score</p>
-              <p className="mt-1 text-3xl font-black">11,350</p>
-            </div>
+            <SummaryCard
+              label="Final Score"
+              value={currentPlayer.score.toLocaleString()}
+            />
 
-            <div className="rounded-2xl border border-zinc-800 bg-black/70 px-7 py-5">
-              <p className="text-sm text-zinc-500">Correct Answers</p>
-              <p className="mt-1 text-3xl font-black">8 of 10</p>
-            </div>
+            <SummaryCard
+              label="Correct Answers"
+              value={`${currentPlayer.correctAnswers} of ${results.totalRounds}`}
+            />
           </div>
         </div>
 
         <div className="mb-8 grid gap-4 md:grid-cols-4">
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
-            <div className="flex items-center gap-3">
+          <StatCard
+            icon={
               <Star className="text-yellow-400" />
+            }
+            label="Accuracy"
+            value={`${currentPlayer.accuracy}%`}
+          />
 
-              <div>
-                <p className="text-sm text-zinc-500">Accuracy</p>
-                <p className="text-xl font-black">80%</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
-            <div className="flex items-center gap-3">
+          <StatCard
+            icon={
               <Sparkles className="text-purple-400" />
+            }
+            label="Current Streak"
+            value={`${currentPlayer.currentStreak} correct`}
+          />
 
-              <div>
-                <p className="text-sm text-zinc-500">Best Streak</p>
-                <p className="text-xl font-black">5 correct</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
-            <div className="flex items-center gap-3">
+          <StatCard
+            icon={
               <Film className="text-blue-400" />
+            }
+            label="Rounds Played"
+            value={`${results.completedRounds} of ${results.totalRounds}`}
+          />
 
-              <div>
-                <p className="text-sm text-zinc-500">Best Category</p>
-                <p className="text-xl font-black">Action</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
-            <div className="flex items-center gap-3">
+          <StatCard
+            icon={
               <Trophy className="text-red-500" />
-
-              <div>
-                <p className="text-sm text-zinc-500">XP Earned</p>
-                <p className="text-xl font-black">+1,250 XP</p>
-              </div>
-            </div>
-          </div>
+            }
+            label="Match Score"
+            value={currentPlayer.score.toLocaleString()}
+          />
         </div>
 
         <div className="grid gap-8 xl:grid-cols-[1fr_360px]">
@@ -195,49 +578,96 @@ export default function FinalResultsPage() {
                 </h2>
               </div>
 
-              <Crown className="text-yellow-400" size={34} />
+              <Crown
+                className="text-yellow-400"
+                size={34}
+              />
             </div>
 
             <div className="space-y-4">
-              {finalStandings.map((player) => (
-                <div
-                  key={player.rank}
-                  className={`flex flex-col gap-4 rounded-2xl border p-5 sm:flex-row sm:items-center sm:justify-between ${rankStyle(
-                    player.rank,
-                  )} ${
-                    player.name === "ShaTheSolutionist"
-                      ? "ring-2 ring-red-600"
-                      : ""
-                  }`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-950">
-                      {rankIcon(player.rank)}
-                    </div>
+              {results.standings.map(
+                (
+                  player:
+                    MovieBuffFinalStanding,
+                  index
+                ) => {
+                  const rank = index + 1;
+                  const placement =
+                    standingPlacements.get(
+                      player.playerId
+                    ) ?? {
+                      rank,
+                      isTied: false,
+                    };
+                  const isCurrentPlayer =
+                    player.playerId ===
+                    results.playerId;
 
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-black">{player.name}</h3>
+                  return (
+                    <div
+                      key={player.playerId}
+                      className={`flex flex-col gap-4 rounded-2xl border p-5 sm:flex-row sm:items-center sm:justify-between ${rankStyle(
+                        placement.rank
+                      )} ${
+                        isCurrentPlayer
+                          ? "ring-2 ring-red-600"
+                          : ""
+                      }`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-950">
+                          {rankIcon(
+                            placement.rank
+                          )}
+                        </div>
 
-                        {player.name === "ShaTheSolutionist" && (
-                          <span className="rounded-full bg-red-600 px-2 py-1 text-xs font-black">
-                            YOU
-                          </span>
-                        )}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-black">
+                              {
+                                player.displayName
+                              }
+                            </h3>
+
+                            {isCurrentPlayer && (
+                              <span className="rounded-full bg-red-600 px-2 py-1 text-xs font-black">
+                                YOU
+                              </span>
+                            )}
+
+                            {placement.isTied && (
+                              <span className="rounded-full border border-zinc-700 px-2 py-1 text-xs font-black text-zinc-300">
+                                TIE
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="mt-1 text-sm text-zinc-500">
+                            {getMovieBuffPlayerTier(
+                              player.score
+                            )}{" "}
+                            ·{" "}
+                            {
+                              player.correctAnswers
+                            }
+                            /
+                            {
+                              results.totalRounds
+                            }{" "}
+                            correct ·{" "}
+                            {player.accuracy}%
+                            accuracy
+                          </p>
+                        </div>
                       </div>
 
-                      <p className="mt-1 text-sm text-zinc-500">
-                        {player.correct}/10 correct · Best streak:{" "}
-                        {player.streak}
+                      <p className="text-2xl font-black">
+                        {player.score.toLocaleString()}
                       </p>
                     </div>
-                  </div>
-
-                  <p className="text-2xl font-black">
-                    {player.score.toLocaleString()}
-                  </p>
-                </div>
-              ))}
+                  );
+                }
+              )}
             </div>
           </section>
 
@@ -248,41 +678,121 @@ export default function FinalResultsPage() {
               </p>
 
               <h3 className="mt-3 text-2xl font-black">
-                Strong performance!
+                {currentPlayerTiedForFirst
+                  ? "Tie at the top!"
+                  : winnerIsCurrentPlayer
+                  ? "Champion performance!"
+                  : "Strong performance!"}
               </h3>
 
               <p className="mt-3 text-zinc-300">
-                You were only 1,130 points away from first place. Keep that
-                streak alive in the next match.
+                {buffsterResultText}
               </p>
             </div>
 
-            <Link
-              href="/games/movie-buff/waiting-room"
+            <button
+              type="button"
+              onClick={() =>
+                navigateTo(
+                  "/games/movie-buff/lobby"
+                )
+              }
               className="flex w-full items-center justify-center gap-3 rounded-xl bg-red-600 px-8 py-5 text-xl font-black transition hover:bg-red-700"
             >
               <RotateCcw size={24} />
               Play Again
-            </Link>
+            </button>
 
             <button
               type="button"
-              className="flex w-full items-center justify-center gap-3 rounded-xl border border-zinc-700 px-8 py-4 font-black transition hover:border-red-500"
+              onClick={handleShare}
+              disabled={sharing}
+              className="flex w-full items-center justify-center gap-3 rounded-xl border border-zinc-700 px-8 py-4 font-black transition hover:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Share2 size={20} />
-              Share Results
+
+              {sharing
+                ? "Sharing..."
+                : "Share Results"}
             </button>
 
-            <Link
-              href="/games/movie-buff/lobby"
+            {message && (
+              <p className="text-center text-sm font-bold text-zinc-400">
+                {message}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={() =>
+                navigateTo(
+                  "/games/movie-buff/lobby"
+                )
+              }
               className="flex w-full items-center justify-center gap-3 rounded-xl border border-zinc-700 px-8 py-4 font-black text-zinc-400 transition hover:border-red-500 hover:text-white"
             >
               <Home size={20} />
               Return to Lobby
-            </Link>
+            </button>
           </aside>
         </div>
       </section>
     </main>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  emphasized = false,
+}: {
+  label: string;
+  value: string;
+  emphasized?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-black/70 px-7 py-5">
+      <p className="text-sm text-zinc-500">
+        {label}
+      </p>
+
+      <p
+        className={`mt-1 text-3xl font-black ${
+          emphasized
+            ? "text-red-500"
+            : "text-white"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function StatCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+      <div className="flex items-center gap-3">
+        {icon}
+
+        <div>
+          <p className="text-sm text-zinc-500">
+            {label}
+          </p>
+
+          <p className="text-xl font-black">
+            {value}
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -535,3 +535,82 @@ values
   ('Perfect Picture', 'perfect-picture', 'Get every answer correct in a match.', 'trophy', 500, 100, 'perfect_match', 1),
   ('Speed Demon', 'speed-demon', 'Submit a correct answer in under three seconds.', 'clock', 300, 75, 'response_time_ms', 3000),
   ('Buffster Beater', 'buffster-beater', 'Defeat Buffster in Challenge AI mode.', 'bot', 500, 100, 'ai_wins', 1);
+
+-- =========================================================
+-- Non-recursive Movie Buff room policies
+-- =========================================================
+
+do $$
+declare
+  policy_record record;
+begin
+  for policy_record in
+    select schemaname, tablename, policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename in ('game_rooms', 'room_players')
+  loop
+    execute format(
+      'drop policy if exists %I on %I.%I',
+      policy_record.policyname,
+      policy_record.schemaname,
+      policy_record.tablename
+    );
+  end loop;
+end
+$$;
+
+alter table public.game_rooms enable row level security;
+alter table public.room_players enable row level security;
+
+create policy "game_rooms_select"
+on public.game_rooms
+for select
+to authenticated
+using (true);
+
+create policy "game_rooms_insert"
+on public.game_rooms
+for insert
+to authenticated
+with check (auth.uid() = host_id);
+
+create policy "game_rooms_update"
+on public.game_rooms
+for update
+to authenticated
+using (auth.uid() = host_id)
+with check (auth.uid() = host_id);
+
+create policy "game_rooms_delete"
+on public.game_rooms
+for delete
+to authenticated
+using (auth.uid() = host_id);
+
+create policy "room_players_select"
+on public.room_players
+for select
+to authenticated
+using (left_at is null);
+
+create policy "room_players_insert"
+on public.room_players
+for insert
+to authenticated
+with check (auth.uid() = player_id);
+
+create policy "room_players_update"
+on public.room_players
+for update
+to authenticated
+using (auth.uid() = player_id)
+with check (auth.uid() = player_id);
+
+create policy "room_players_delete"
+on public.room_players
+for delete
+to authenticated
+using (auth.uid() = player_id);
+
+notify pgrst, 'reload schema';

@@ -42,7 +42,10 @@ const players = [
 
 export default function Leaderboard() {
   return (
-    <section className="bg-black py-24">
+    <section
+      id="leaderboards"
+      className="bg-black py-24"
+    >
       <div className="mx-auto max-w-6xl px-8">
 
         <div className="mb-14 text-center">

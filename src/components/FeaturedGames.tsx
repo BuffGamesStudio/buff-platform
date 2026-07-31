@@ -1,12 +1,18 @@
-"use client";
+﻿"use client";
 
-import { Clapperboard, Tv, Trophy, Users, Star } from "lucide-react";
+import Link from "next/link";
+import {
+  Clapperboard,
+  Tv,
+  Trophy,
+  Users,
+  Star,
+} from "lucide-react";
 
 export default function FeaturedGames() {
   return (
-    <section className="bg-black py-24">
+    <section id="games" className="relative z-10 bg-black py-24">
       <div className="mx-auto max-w-7xl px-8">
-
         <div className="mb-16 text-center">
           <h2 className="text-5xl font-black text-white">
             Choose Your Game
@@ -19,13 +25,13 @@ export default function FeaturedGames() {
         </div>
 
         <div className="grid gap-8 lg:grid-cols-2">
-
           <div className="group rounded-3xl border border-red-700 bg-gradient-to-br from-zinc-900 to-black p-10 transition duration-300 hover:-translate-y-2 hover:border-red-500 hover:shadow-2xl hover:shadow-red-900/30">
-
             <div className="mb-8 flex items-center gap-5">
-
               <div className="rounded-2xl bg-red-600 p-4">
-                <Clapperboard size={44} className="text-white" />
+                <Clapperboard
+                  size={44}
+                  className="text-white"
+                />
               </div>
 
               <div>
@@ -37,7 +43,6 @@ export default function FeaturedGames() {
                   Live Movie Trivia
                 </p>
               </div>
-
             </div>
 
             <p className="mb-8 text-lg leading-8 text-zinc-300">
@@ -46,36 +51,46 @@ export default function FeaturedGames() {
             </p>
 
             <div className="mb-10 space-y-4 text-zinc-300">
-
               <div className="flex items-center gap-3">
-                <Users className="text-red-500" size={20} />
+                <Users
+                  className="text-red-500"
+                  size={20}
+                />
                 Live Multiplayer
               </div>
 
               <div className="flex items-center gap-3">
-                <Trophy className="text-red-500" size={20} />
+                <Trophy
+                  className="text-red-500"
+                  size={20}
+                />
                 Daily Tournaments
               </div>
 
               <div className="flex items-center gap-3">
-                <Star className="text-red-500" size={20} />
+                <Star
+                  className="text-red-500"
+                  size={20}
+                />
                 Global Rankings
               </div>
-
             </div>
 
-            <button className="rounded-xl bg-red-600 px-8 py-4 text-lg font-bold text-white transition hover:bg-red-700">
+            <Link
+              href="/games/movie-buff/lobby"
+              className="inline-flex items-center justify-center rounded-xl bg-red-600 px-8 py-4 text-lg font-bold text-white transition hover:bg-red-700"
+            >
               Play Movie Buff
-            </button>
-
+            </Link>
           </div>
 
           <div className="group rounded-3xl border border-blue-700 bg-gradient-to-br from-zinc-900 to-black p-10 transition duration-300 hover:-translate-y-2 hover:border-blue-500 hover:shadow-2xl hover:shadow-blue-900/30">
-
             <div className="mb-8 flex items-center gap-5">
-
               <div className="rounded-2xl bg-blue-600 p-4">
-                <Tv size={44} className="text-white" />
+                <Tv
+                  size={44}
+                  className="text-white"
+                />
               </div>
 
               <div>
@@ -87,7 +102,6 @@ export default function FeaturedGames() {
                   TV Show Trivia
                 </p>
               </div>
-
             </div>
 
             <p className="mb-8 text-lg leading-8 text-zinc-300">
@@ -96,33 +110,42 @@ export default function FeaturedGames() {
             </p>
 
             <div className="mb-10 space-y-4 text-zinc-300">
-
               <div className="flex items-center gap-3">
-                <Users className="text-blue-400" size={20} />
+                <Users
+                  className="text-blue-400"
+                  size={20}
+                />
                 Multiplayer Matches
               </div>
 
               <div className="flex items-center gap-3">
-                <Trophy className="text-blue-400" size={20} />
+                <Trophy
+                  className="text-blue-400"
+                  size={20}
+                />
                 Weekly Challenges
               </div>
 
               <div className="flex items-center gap-3">
-                <Star className="text-blue-400" size={20} />
+                <Star
+                  className="text-blue-400"
+                  size={20}
+                />
                 Coming Soon
               </div>
-
             </div>
 
-            <button className="rounded-xl border border-blue-500 px-8 py-4 text-lg font-bold text-blue-400 transition hover:bg-blue-500 hover:text-white">
+            <button
+              type="button"
+              disabled
+              className="cursor-not-allowed rounded-xl border border-blue-500 px-8 py-4 text-lg font-bold text-blue-400 opacity-70"
+            >
               Coming Soon
             </button>
-
           </div>
-
         </div>
-
       </div>
     </section>
   );
 }
+
