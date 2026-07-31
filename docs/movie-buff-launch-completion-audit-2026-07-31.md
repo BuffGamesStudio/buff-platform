@@ -130,6 +130,23 @@ Interpretation:
 - the hosted rotation-summary blocker is closed
 - the earlier mismatch was consistent with route rendering behavior before the explicit `force-dynamic` page fix shipped in `7116a74`
 
+Additional operator-account proof completed on Friday, July 31, 2026:
+
+- the currently signed-in hosted browser session on `https://movie-buff-sigma.vercel.app/account` is:
+  - `Signed in.`
+  - `This is still an anonymous session. Upgrade it to a full Buff Games account before launch use.`
+- hosted auth inventory check using the production Supabase admin API shows:
+  - total auth users: `168`
+  - anonymous users: `1`
+  - real non-test full accounts: `0`
+  - current hosted inventory is composed of anonymous guest state plus smoke/test accounts, not a real launch operator identity
+
+Interpretation:
+
+- Movie Buff's hosted auth and admin system now work for a verified admin user
+- but there is still no real non-test Buff Games operator account available in production
+- launch readiness therefore still depends on creating or upgrading a real Buff Games account and assigning the correct admin role before launch use
+
 Coverage/pool evidence restored during this pass:
 
 - `node .\scripts\movie-buff-pool-health.mjs` now reports hosted coverage truthfully even when hosted is still on the legacy content path
@@ -158,7 +175,7 @@ Coverage/pool evidence restored during this pass:
 | Timer only follows authoritative server state | Proven hosted | hosted timer smoke passes | none |
 | No dead buttons or broken routes in core flow | Proven for core flow | hosted preflight route/gameplay suite passes | non-core route quality can still improve later |
 | Leave / back / exit flows exist where needed | Proven hosted | hosted private leave and shared public leave both pass | none |
-| Admin pages needed for live operations load and reflect real data | Proven for the currently verified hosted launch scope | hosted proof now covers `/admin/movies`, `/admin/sources`, `/admin/analytics/clips`, and authenticated production rotation-summary output on `/admin/analytics/rotation` | verify the intended real operator account has admin role before launch day |
+| Admin pages needed for live operations load and reflect real data | Proven for the currently verified hosted launch scope | hosted proof now covers `/admin/movies`, `/admin/sources`, `/admin/analytics/clips`, and authenticated production rotation-summary output on `/admin/analytics/rotation` | create or upgrade a real Buff Games operator account and verify it has admin role before launch day |
 | Clip delivery is fast and stable enough for live play | Proven for current soft-launch pool path | hosted full-suite gameplay passes; launch gate avoids on-demand-only stalls | broader scale remains unproven |
 | Pool / rotation behavior avoids stale repeats well enough for soft launch | Partially proven | runtime pool depth is healthy; hosted gameplay uses warmed assets; coverage verifier now works again in hosted legacy mode | weighted content-engine rotation/admin visibility is not fully hosted-parity proven |
 | Enough playable movie coverage exists for soft launch | Proven for soft-launch minimum, not broader public depth | hosted legacy gameplay inventory is `49` active source-backed rows with balanced difficulty spread; pool reserves are materially above shallow minimums | still below the user's larger long-term content target |
@@ -172,7 +189,7 @@ Coverage/pool evidence restored during this pass:
 
 | Blocker | Owner area | Current status | Evidence | Next fix | Severity |
 |---|---|---|---|---|---|
-| Real launch operator account provisioning is not yet verified | Admin ops | Open | hosted admin path now works for authenticated admin users, but the current Edge browser session used in manual checking was not an admin account | verify or promote the intended Buff Games operator account before launch day | High |
+| No real production operator account exists yet | Auth + admin ops | Open | hosted account page shows the live browser is still anonymous; hosted auth inventory shows `0` real non-test full accounts in production | create or upgrade a real Buff Games account, grant it admin, sign in with it, and verify hosted admin access end to end | Critical |
 | Hosted content-engine/source registry REST parity is incomplete | Supabase schema + admin ops | Open | direct hosted REST reads still fail for `content_items`, `content_media`, `content_sources`, and `content_source_items`, even though `/admin/movies` and `/admin/sources` now render useful fallback/live data | apply the missing hosted schema/grants or keep verified fallback paths only where they are operationally sufficient | High |
 | Hosted admin smoke needed stronger data assertions | Verifier coverage | Mitigated | strengthened hosted admin smoke now proves movie count and source count instead of only headings | keep this stronger verifier and rerun after each hosted admin fix | Medium |
 
@@ -199,7 +216,7 @@ Movie Buff is closer to soft launch than it was earlier on Friday, July 31, 2026
 
 It is now hosted-proven for the core player path.
 
-It is not yet fully soft-launch-ready because a fresh full launch audit still needs to be rerun after the latest hosted admin fix and because the intended operator admin account still needs to be verified.
+It is not yet fully soft-launch-ready because a fresh full launch audit still needs to be rerun after the latest hosted admin fix and because there is still no real production operator/admin account in hosted auth.
 
 ## Current truthful status statement
 
@@ -208,5 +225,6 @@ ready-check, timer, leave flow, and round progression on
 `https://movie-buff-sigma.vercel.app`, and hosted admin now proves real movie,
 source, clip analytics, and rotation-summary data for authenticated admin
 requests. The remaining launch-readiness gap from this pass is operational:
-verify the intended real admin/operator account and then rerun the full launch
-audit against the current hosted deployment.
+create or upgrade a real Buff Games operator account, grant it admin, verify it
+on hosted production, and then rerun the full launch audit against the current
+deployment.
