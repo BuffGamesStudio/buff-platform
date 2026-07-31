@@ -1556,6 +1556,17 @@ async function listGlobalPoolCandidates() {
       .not("legacy_clip_id", "is", null);
 
   if (mediaError) {
+    const normalizedMessage =
+      mediaError.message.toLowerCase();
+
+    if (
+      normalizedMessage.includes("content_media") &&
+      (normalizedMessage.includes("schema cache") ||
+        normalizedMessage.includes("does not exist"))
+    ) {
+      return [] satisfies GlobalPoolCandidate[];
+    }
+
     throw new Error(mediaError.message);
   }
 
@@ -1615,10 +1626,34 @@ async function listGlobalPoolCandidates() {
   ]);
 
   if (contentError) {
+    const normalizedMessage =
+      contentError.message.toLowerCase();
+
+    if (
+      normalizedMessage.includes("content_items") &&
+      (normalizedMessage.includes("schema cache") ||
+        normalizedMessage.includes("does not exist"))
+    ) {
+      return [] satisfies GlobalPoolCandidate[];
+    }
+
     throw new Error(contentError.message);
   }
 
   if (analyticsError) {
+    const normalizedMessage =
+      analyticsError.message.toLowerCase();
+
+    if (
+      normalizedMessage.includes(
+        "movie_buff_clip_analytics",
+      ) &&
+      (normalizedMessage.includes("schema cache") ||
+        normalizedMessage.includes("does not exist"))
+    ) {
+      return [] satisfies GlobalPoolCandidate[];
+    }
+
     throw new Error(analyticsError.message);
   }
 
