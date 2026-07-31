@@ -67,6 +67,24 @@ type EventRow = {
   payload: Record<string, unknown> | null;
 };
 
+type LegacyMovieRow = {
+  id: string;
+  title: string;
+  release_year: number | null;
+  difficulty: string;
+  is_active: boolean;
+};
+
+type LegacyClipRow = {
+  id: string;
+  movie_id: string;
+  clip_type: string | null;
+  media_url: string | null;
+  source_url: string | null;
+  licensing_status: string | null;
+  is_active: boolean;
+};
+
 export type MovieBuffClipAdminRow = {
   contentMediaId: string;
   contentId: string;
@@ -176,6 +194,121 @@ function isMissingAnalyticsContentSchema(
   );
 }
 
+async function listLegacyMovieBuffClipAdminRows(
+  limit?: number
+): Promise<MovieBuffClipAdminRow[]> {
+  const [
+    { data: moviesData, error: moviesError },
+    { data: clipsData, error: clipsError },
+  ] = await Promise.all([
+    supabaseAdmin
+      .from("movies")
+      .select(
+        "id, title, release_year, difficulty, is_active"
+      ),
+    supabaseAdmin
+      .from("clips")
+      .select(
+        "id, movie_id, clip_type, media_url, source_url, licensing_status, is_active"
+      ),
+  ]);
+
+  if (moviesError) {
+    throw new Error(moviesError.message);
+  }
+
+  if (clipsError) {
+    throw new Error(clipsError.message);
+  }
+
+  const movieById = new Map(
+    (((moviesData ?? []) as unknown) as LegacyMovieRow[]).map(
+      (row) => [row.id, row]
+    )
+  );
+
+  let rows = (((clipsData ?? []) as unknown) as LegacyClipRow[])
+    .map((clipRow) => {
+      const movieRow =
+        movieById.get(clipRow.movie_id);
+
+      return {
+        contentMediaId: clipRow.id,
+        contentId: clipRow.movie_id,
+        legacyClipId: clipRow.id,
+        movieTitle:
+          movieRow?.title ?? "Untitled movie",
+        releaseYear:
+          movieRow?.release_year ?? null,
+        sourceName: null,
+        sourceUrl:
+          clipRow.source_url ??
+          clipRow.media_url ??
+          null,
+        licenseStatus:
+          clipRow.licensing_status ?? "pending",
+        publicationStatus: movieRow?.is_active
+          ? "published"
+          : "draft",
+        movieIsActive: movieRow?.is_active ?? true,
+        mediaType:
+          clipRow.clip_type?.toLowerCase() ===
+          "audio"
+            ? "audio"
+            : "video",
+        section: "any",
+        targetDifficulty:
+          getMovieBuffDifficultyLabel(
+            movieRow?.difficulty ?? "medium"
+          ),
+        clipStartSeconds: null,
+        clipEndSeconds: null,
+        clipDurationSeconds: null,
+        clipTitle: null,
+        clipIsActive: clipRow.is_active,
+        clipIsHidden: false,
+        totalPlays: 0,
+        totalCorrect: 0,
+        totalWrong: 0,
+        totalHintsUsed: 0,
+        totalTimeouts: 0,
+        totalLoadSuccess: 0,
+        totalLoadFailures: 0,
+        sampleSize: 0,
+        confidenceFactor: 0,
+        avgAnswerTimeSeconds: 0,
+        correctRate: 0,
+        hintRate: 0,
+        difficultyScore: 50,
+        systemDifficultyLabel:
+          getMovieBuffDifficultyLabel(
+            movieRow?.difficulty ?? "medium"
+          ),
+        qualityScore: clipRow.is_active ? 100 : 0,
+        rotationScore: clipRow.is_active ? 50 : 0,
+        rotationWeight: clipRow.is_active ? 50 : 0,
+        adminBoost: 0,
+        status: clipRow.is_active
+          ? "active"
+          : "retired",
+        qualityFlags: [],
+        lastPlayedAt: null,
+        lastLoadedAt: null,
+        updatedAt: null,
+      } satisfies MovieBuffClipAdminRow;
+    })
+    .sort((left, right) =>
+      (right.releaseYear ?? 0) -
+      (left.releaseYear ?? 0)
+    );
+
+  if (typeof limit === "number") {
+    rows = rows.slice(0, limit);
+  }
+
+  return rows;
+}
+
 export async function listMovieBuffClipAdminRows(
   limit?: number
 ): Promise<MovieBuffClipAdminRow[]> {
@@ -204,7 +337,9 @@ export async function listMovieBuffClipAdminRows(
         mediaError.message,
       )
     ) {
-      return [];
+      return listLegacyMovieBuffClipAdminRows(
+        limit
+      );
     }
 
     throw new Error(mediaError.message);

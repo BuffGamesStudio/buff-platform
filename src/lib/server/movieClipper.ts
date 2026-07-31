@@ -130,6 +130,19 @@ type MovieBuffGlobalPoolWarmSummary = {
   skippedByCooldown: boolean;
 };
 
+type LegacyGlobalPoolRow = {
+  id: string;
+  movie_id: string;
+  clip_type: string | null;
+  is_active: boolean;
+};
+
+type LegacyGlobalPoolMovieRow = {
+  id: string;
+  title: string | null;
+  difficulty: string | null;
+};
+
 const GLOBAL_POOL_LABELS: DifficultyPoolLabel[] = [
   "Fan",
   "Buff",
@@ -167,6 +180,23 @@ function normalizeClipKind(value: string | null | undefined): ClipKind {
   return value?.toLowerCase() === "audio"
     ? "audio"
     : "video";
+}
+
+function isMissingContentEngineSchemaMessage(
+  message: string | null | undefined,
+) {
+  const normalizedMessage =
+    message?.toLowerCase() ?? "";
+
+  return (
+    (normalizedMessage.includes("content_media") ||
+      normalizedMessage.includes("content_items") ||
+      normalizedMessage.includes(
+        "movie_buff_clip_analytics",
+      )) &&
+    (normalizedMessage.includes("schema cache") ||
+      normalizedMessage.includes("does not exist"))
+  );
 }
 
 function normalizeDifficultyPoolLabel(
@@ -1556,15 +1586,76 @@ async function listGlobalPoolCandidates() {
       .not("legacy_clip_id", "is", null);
 
   if (mediaError) {
-    const normalizedMessage =
-      mediaError.message.toLowerCase();
-
     if (
-      normalizedMessage.includes("content_media") &&
-      (normalizedMessage.includes("schema cache") ||
-        normalizedMessage.includes("does not exist"))
+      isMissingContentEngineSchemaMessage(
+        mediaError.message,
+      )
     ) {
-      return [] satisfies GlobalPoolCandidate[];
+      const [
+        {
+          data: legacyClipRows,
+          error: legacyClipError,
+        },
+        {
+          data: legacyMovieRows,
+          error: legacyMovieError,
+        },
+      ] = await Promise.all([
+        supabaseAdmin
+          .from("clips")
+          .select(
+            "id, movie_id, clip_type, is_active"
+          )
+          .eq("is_active", true),
+        supabaseAdmin
+          .from("movies")
+          .select("id, title, difficulty"),
+      ]);
+
+      if (legacyClipError) {
+        throw new Error(legacyClipError.message);
+      }
+
+      if (legacyMovieError) {
+        throw new Error(legacyMovieError.message);
+      }
+
+      const legacyMovieById = new Map(
+        (((legacyMovieRows ?? []) as unknown) as LegacyGlobalPoolMovieRow[]).map(
+          (row) => [row.id, row]
+        )
+      );
+
+      return (((legacyClipRows ?? []) as unknown) as LegacyGlobalPoolRow[]).map(
+        (row) => {
+          const movieRow =
+            legacyMovieById.get(row.movie_id);
+
+          return {
+            contentId: row.movie_id,
+            contentMediaId: row.id,
+            difficultyLabel:
+              normalizeDifficultyPoolLabel(
+                movieRow?.difficulty,
+              ),
+            movieTitle:
+              movieRow?.title?.trim() ||
+              "Movie Buff clip",
+            clipType: normalizeClipKind(
+              row.clip_type,
+            ),
+            qualityScore: 100,
+            rotationWeight: 50,
+            status: row.is_active
+              ? "active"
+              : "retired",
+            lastPlayedAt: null,
+            totalPlays: 0,
+            sourceUrl: null,
+            fallbackMediaUrl: null,
+          } satisfies GlobalPoolCandidate;
+        }
+      );
     }
 
     throw new Error(mediaError.message);
@@ -1626,13 +1717,10 @@ async function listGlobalPoolCandidates() {
   ]);
 
   if (contentError) {
-    const normalizedMessage =
-      contentError.message.toLowerCase();
-
     if (
-      normalizedMessage.includes("content_items") &&
-      (normalizedMessage.includes("schema cache") ||
-        normalizedMessage.includes("does not exist"))
+      isMissingContentEngineSchemaMessage(
+        contentError.message,
+      )
     ) {
       return [] satisfies GlobalPoolCandidate[];
     }
@@ -1641,15 +1729,10 @@ async function listGlobalPoolCandidates() {
   }
 
   if (analyticsError) {
-    const normalizedMessage =
-      analyticsError.message.toLowerCase();
-
     if (
-      normalizedMessage.includes(
-        "movie_buff_clip_analytics",
-      ) &&
-      (normalizedMessage.includes("schema cache") ||
-        normalizedMessage.includes("does not exist"))
+      isMissingContentEngineSchemaMessage(
+        analyticsError.message,
+      )
     ) {
       return [] satisfies GlobalPoolCandidate[];
     }
