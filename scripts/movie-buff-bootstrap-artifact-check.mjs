@@ -49,6 +49,9 @@ const requiredNeedlesByArtifact = {
   ],
   "hosted runtime patch": [
     "find_or_create_movie_buff_public_room",
+    "answer_submitted",
+    "answer_correct",
+    "answer_wrong",
     "notify pgrst, 'reload schema';",
   ],
   "hosted source-registry patch": [

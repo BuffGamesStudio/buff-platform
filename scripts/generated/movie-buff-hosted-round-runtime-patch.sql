@@ -1294,6 +1294,7 @@ declare
   v_applied_hint_bonus integer := 0;
   v_movie_title text;
   v_normalized_title text;
+  v_legacy_clip_id uuid;
   v_submitted_normalized text;
   v_elapsed_seconds integer;
   v_is_correct boolean;
@@ -1304,6 +1305,7 @@ declare
   v_new_score integer;
   v_new_streak integer;
   v_new_lives integer;
+  v_match_id uuid;
   v_answer_id uuid;
 begin
   if auth.uid() is null then
@@ -1327,6 +1329,7 @@ begin
   end if;
 
   select
+    m.id,
     mr.id,
     mr.started_at,
     player_playback.playback_started_at,
@@ -1334,8 +1337,10 @@ begin
     coalesce(player_hint.penalty_seconds, 0),
     mr.time_limit_seconds,
     mo.title,
-    mo.normalized_title
+    mo.normalized_title,
+    c.id
   into
+    v_match_id,
     v_round_id,
     v_started_at,
     v_playback_started_at,
@@ -1343,7 +1348,8 @@ begin
     v_hint_penalty_seconds,
     v_time_limit,
     v_movie_title,
-    v_normalized_title
+    v_normalized_title,
+    v_legacy_clip_id
   from public.game_rooms as gr
   join public.matches as m
     on m.room_id = gr.id
@@ -1505,6 +1511,56 @@ begin
     lives = v_new_lives
   where room_id = p_room_id
     and player_id = auth.uid();
+
+  insert into public.movie_buff_round_events (
+    event_type,
+    room_id,
+    match_id,
+    round_id,
+    player_id,
+    legacy_clip_id,
+    payload
+  )
+  values (
+    'answer_submitted',
+    p_room_id,
+    v_match_id,
+    v_round_id,
+    auth.uid(),
+    v_legacy_clip_id,
+    jsonb_build_object(
+      'answerLength', length(trim(p_submitted_answer)),
+      'answerTimeSeconds', v_elapsed_seconds,
+      'answeredBeforePlayback', v_playback_started_at is null,
+      'usedHint', v_hint_used_at is not null
+    )
+  );
+
+  insert into public.movie_buff_round_events (
+    event_type,
+    room_id,
+    match_id,
+    round_id,
+    player_id,
+    legacy_clip_id,
+    payload
+  )
+  values (
+    case
+      when v_is_correct then 'answer_correct'
+      else 'answer_wrong'
+    end,
+    p_room_id,
+    v_match_id,
+    v_round_id,
+    auth.uid(),
+    v_legacy_clip_id,
+    jsonb_build_object(
+      'answerTimeSeconds', v_elapsed_seconds,
+      'answeredBeforePlayback', v_playback_started_at is null,
+      'usedHint', v_hint_used_at is not null
+    )
+  );
 
   return query
   select
