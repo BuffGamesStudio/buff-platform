@@ -55,6 +55,28 @@ type CategoryRow = {
   description: string | null;
 };
 
+type LegacyMovieListRow = {
+  id: string;
+  title: string;
+  release_year: number | null;
+  poster_url: string | null;
+  difficulty: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type LegacyClipListRow = {
+  movie_id: string;
+  id: string;
+  clip_type: string;
+  media_url: string | null;
+  source_url: string | null;
+  source_name: string | null;
+  licensing_status: string;
+  is_active: boolean;
+};
+
 export type AdminMovieListItem = {
   id: string;
   title: string;
@@ -327,6 +349,19 @@ function formatMovieOpsLabel(value: string) {
     .split("_")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function isMissingContentEngineSchema(
+  message: string | null | undefined,
+) {
+  const normalizedMessage =
+    message?.toLowerCase() ?? "";
+
+  return (
+    normalizedMessage.includes("content_") &&
+    (normalizedMessage.includes("schema cache") ||
+      normalizedMessage.includes("does not exist"))
+  );
 }
 
 function hasGeneratedClipSignature(
@@ -1143,218 +1178,376 @@ export async function listAdminCategories(): Promise<
 export async function listAdminMovies(): Promise<
   AdminMovieListItem[]
 > {
-  const contentTypeId = await getMovieContentTypeId();
+  try {
+    const contentTypeId = await getMovieContentTypeId();
 
-  const { data: contentItems, error: contentItemsError } =
-    await supabaseAdmin
-      .from("content_items")
-      .select(
-        [
-          "id",
-          "title",
-          "release_year",
-          "poster_url",
-          "difficulty",
-          "publication_status",
-          "licensing_status",
-          "source_name",
-          "source_url",
-          "is_active",
-          "metadata",
-          "created_at",
-        ].join(","),
-      )
-      .eq("content_type_id", contentTypeId)
-      .order("created_at", { ascending: false });
+    const { data: contentItems, error: contentItemsError } =
+      await supabaseAdmin
+        .from("content_items")
+        .select(
+          [
+            "id",
+            "title",
+            "release_year",
+            "poster_url",
+            "difficulty",
+            "publication_status",
+            "licensing_status",
+            "source_name",
+            "source_url",
+            "is_active",
+            "metadata",
+            "created_at",
+          ].join(","),
+        )
+        .eq("content_type_id", contentTypeId)
+        .order("created_at", { ascending: false });
 
-  if (contentItemsError) {
-    throw new Error(contentItemsError.message);
+    if (contentItemsError) {
+      throw new Error(contentItemsError.message);
+    }
+
+    const items =
+      (contentItems ?? []) as unknown as ContentItemRow[];
+    const contentIds = items.map((item) => item.id);
+
+    if (contentIds.length === 0) {
+      return [];
+    }
+
+    const [
+      { data: mediaRows, error: mediaError },
+      { data: categoryLinks, error: categoryLinksError },
+      {
+        data: movieAnalyticsRows,
+        error: movieAnalyticsError,
+      },
+    ] = await Promise.all([
+      supabaseAdmin
+        .from("content_media")
+        .select(
+          "content_id, media_url, source_url, metadata, is_hidden, is_active, media_type"
+        )
+        .in("content_id", contentIds)
+        .in("media_type", ["video", "audio"])
+        .eq("is_active", true),
+      supabaseAdmin
+        .from("content_categories")
+        .select("content_id, category_id, is_primary")
+        .in("content_id", contentIds),
+      supabaseAdmin
+        .from("movie_buff_movie_analytics")
+        .select(
+          "content_id, total_clip_count, playable_clip_count, total_plays, total_hints_used, last_played_at"
+        )
+        .in("content_id", contentIds),
+    ]);
+
+    if (mediaError) {
+      throw new Error(mediaError.message);
+    }
+
+    if (categoryLinksError) {
+      throw new Error(categoryLinksError.message);
+    }
+
+    if (movieAnalyticsError) {
+      throw new Error(movieAnalyticsError.message);
+    }
+
+    const links =
+      (categoryLinks ?? []) as unknown as CategoryLinkRow[];
+    const categoryIds = Array.from(
+      new Set(links.map((link) => link.category_id)),
+    );
+    const categories =
+      await getAdminCategoriesByIds(categoryIds);
+
+    const mediaCountByContent = new Map<string, number>();
+    const mediaRowsByContent = new Map<string, MediaRow[]>();
+
+    for (const media of (mediaRows ?? []) as unknown as MediaRow[]) {
+      mediaCountByContent.set(
+        media.content_id,
+        (mediaCountByContent.get(media.content_id) ?? 0) + 1,
+      );
+
+      const existingMedia =
+        mediaRowsByContent.get(media.content_id) ?? [];
+      existingMedia.push(media);
+      mediaRowsByContent.set(
+        media.content_id,
+        existingMedia,
+      );
+    }
+
+    const categoryNameById = new Map(
+      categories.map((item) => [item.id, item.name]),
+    );
+    const movieAnalyticsByContentId = new Map(
+      (
+        (movieAnalyticsRows as MovieAnalyticsRow[] | null) ??
+        []
+      ).map((row) => [row.content_id, row])
+    );
+
+    const linksByContent =
+      new Map<string, CategoryLinkRow[]>();
+
+    for (const link of links) {
+      const existingLinks =
+        linksByContent.get(link.content_id) ?? [];
+      existingLinks.push(link);
+      linksByContent.set(link.content_id, existingLinks);
+    }
+
+    return items.map((item) => {
+      const movieLinks =
+        linksByContent.get(item.id) ?? [];
+      const primaryLink =
+        movieLinks.find((link) => link.is_primary) ??
+        movieLinks[0];
+      const categoryName = primaryLink
+        ? categoryNameById.get(primaryLink.category_id) ??
+          "Uncategorized"
+        : "Uncategorized";
+      const movieAnalytics =
+        movieAnalyticsByContentId.get(item.id);
+      const movieMediaRows =
+        mediaRowsByContent.get(item.id) ?? [];
+      const clipCount =
+        movieAnalytics?.total_clip_count ??
+        mediaCountByContent.get(item.id) ??
+        0;
+      const playableClipCount =
+        movieAnalytics?.playable_clip_count ?? 0;
+      const hasGeneratedMedia =
+        movieMediaRows.some(hasGeneratedClipSignature);
+      const lifecycleStatus =
+        item.publication_status === "archived"
+          ? "retired"
+          : item.is_active === false
+            ? "inactive"
+            : "active";
+      const ingestStatus =
+        clipCount === 0
+          ? "metadata_only"
+          : playableClipCount > 0
+            ? "ready"
+            : "needs_review";
+      const autoClipStatus = hasGeneratedMedia
+        ? playableClipCount > 0
+          ? "generated_ready"
+          : "generated_pending"
+        : clipCount > 0
+          ? "manual"
+          : "not_configured";
+
+      return {
+        id: item.id,
+        title: item.title,
+        year: item.release_year,
+        posterUrl: item.poster_url,
+        category: categoryName,
+        sourceName: item.source_name,
+        sourceUrl: item.source_url,
+        countryOrOrigin: extractMetadataString(
+          item.metadata,
+          [
+            "countryOrOrigin",
+            "country",
+            "originCountry",
+            "country_of_origin",
+          ],
+        ),
+        language: extractMetadataString(
+          item.metadata,
+          [
+            "originalLanguage",
+            "language",
+            "primaryLanguage",
+            "spokenLanguage",
+          ],
+        ),
+        clips: clipCount,
+        playableClips: playableClipCount,
+        totalPlays:
+          movieAnalytics?.total_plays ?? 0,
+        totalHintsUsed:
+          movieAnalytics?.total_hints_used ?? 0,
+        lastPlayedAt:
+          movieAnalytics?.last_played_at ?? null,
+        ingestStatus:
+          formatMovieOpsLabel(ingestStatus),
+        autoClipStatus:
+          formatMovieOpsLabel(autoClipStatus),
+        lifecycleStatus:
+          formatMovieOpsLabel(lifecycleStatus),
+        difficulty: formatLabel(item.difficulty),
+        license: formatLabel(item.licensing_status),
+        publicationStatus: formatLabel(
+          item.publication_status,
+        ),
+        status: getMovieStatus(
+          item.publication_status,
+          clipCount,
+        ),
+        createdAt: item.created_at,
+      };
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      isMissingContentEngineSchema(error.message)
+    ) {
+      return listLegacyAdminMovies();
+    }
+
+    throw error;
   }
+}
 
-  const items =
-    (contentItems ?? []) as unknown as ContentItemRow[];
-  const contentIds = items.map((item) => item.id);
-
-  if (contentIds.length === 0) {
-    return [];
-  }
-
+async function listLegacyAdminMovies(): Promise<
+  AdminMovieListItem[]
+> {
   const [
-    { data: mediaRows, error: mediaError },
-    { data: categoryLinks, error: categoryLinksError },
+    { data: movies, error: moviesError },
+    { data: clips, error: clipsError },
     {
-      data: movieAnalyticsRows,
-      error: movieAnalyticsError,
+      data: movieCategories,
+      error: movieCategoriesError,
     },
   ] = await Promise.all([
     supabaseAdmin
-      .from("content_media")
+      .from("movies")
       .select(
-        "content_id, media_url, source_url, metadata, is_hidden, is_active, media_type"
+        "id, title, release_year, poster_url, difficulty, is_active, created_at, updated_at"
       )
-      .in("content_id", contentIds)
-      .in("media_type", ["video", "audio"])
-      .eq("is_active", true),
+      .order("created_at", { ascending: false }),
     supabaseAdmin
-      .from("content_categories")
-      .select("content_id, category_id, is_primary")
-      .in("content_id", contentIds),
-    supabaseAdmin
-      .from("movie_buff_movie_analytics")
+      .from("clips")
       .select(
-        "content_id, total_clip_count, playable_clip_count, total_plays, total_hints_used, last_played_at"
-      )
-      .in("content_id", contentIds),
+        "movie_id, id, clip_type, media_url, source_url, source_name, licensing_status, is_active"
+      ),
+    supabaseAdmin
+      .from("movie_categories")
+      .select("movie_id, category_id"),
   ]);
 
-  if (mediaError) {
-    throw new Error(mediaError.message);
+  if (moviesError) {
+    throw new Error(moviesError.message);
   }
 
-  if (categoryLinksError) {
-    throw new Error(categoryLinksError.message);
+  if (clipsError) {
+    throw new Error(clipsError.message);
   }
 
-  if (movieAnalyticsError) {
-    throw new Error(movieAnalyticsError.message);
+  if (movieCategoriesError) {
+    throw new Error(movieCategoriesError.message);
   }
 
-  const links =
-    (categoryLinks ?? []) as unknown as CategoryLinkRow[];
+  const typedMovies =
+    (movies ?? []) as unknown as LegacyMovieListRow[];
+  const typedClips =
+    (clips ?? []) as unknown as LegacyClipListRow[];
+  const typedMovieCategories =
+    ((movieCategories ?? []) as unknown as Array<{
+      movie_id: string;
+      category_id: string;
+    }>);
+
   const categoryIds = Array.from(
-    new Set(links.map((link) => link.category_id)),
+    new Set(
+      typedMovieCategories.map(
+        (link) => link.category_id,
+      ),
+    ),
   );
   const categories =
-    await getAdminCategoriesByIds(categoryIds);
-
-  const mediaCountByContent = new Map<string, number>();
-  const mediaRowsByContent = new Map<string, MediaRow[]>();
-
-  for (const media of (mediaRows ?? []) as unknown as MediaRow[]) {
-    mediaCountByContent.set(
-      media.content_id,
-      (mediaCountByContent.get(media.content_id) ?? 0) + 1,
-    );
-
-    const existingMedia =
-      mediaRowsByContent.get(media.content_id) ?? [];
-    existingMedia.push(media);
-    mediaRowsByContent.set(
-      media.content_id,
-      existingMedia,
-    );
-  }
-
+    categoryIds.length > 0
+      ? await getAdminCategoriesByIds(categoryIds)
+      : [];
   const categoryNameById = new Map(
-    categories.map((item) => [item.id, item.name]),
-  );
-  const movieAnalyticsByContentId = new Map(
-    (
-      (movieAnalyticsRows as MovieAnalyticsRow[] | null) ??
-      []
-    ).map((row) => [row.content_id, row])
+    categories.map((category) => [
+      category.id,
+      category.name,
+    ]),
   );
 
-  const linksByContent = new Map<string, CategoryLinkRow[]>();
+  const primaryCategoryByMovieId = new Map<
+    string,
+    string
+  >();
 
-  for (const link of links) {
-    const existingLinks =
-      linksByContent.get(link.content_id) ?? [];
-    existingLinks.push(link);
-    linksByContent.set(link.content_id, existingLinks);
+  for (const link of typedMovieCategories) {
+    if (!primaryCategoryByMovieId.has(link.movie_id)) {
+      primaryCategoryByMovieId.set(
+        link.movie_id,
+        link.category_id,
+      );
+    }
   }
 
-  return items.map((item) => {
-    const movieLinks = linksByContent.get(item.id) ?? [];
-    const primaryLink =
-      movieLinks.find((link) => link.is_primary) ??
-      movieLinks[0];
-    const categoryName = primaryLink
-      ? categoryNameById.get(primaryLink.category_id) ??
-        "Uncategorized"
-      : "Uncategorized";
-    const movieAnalytics =
-      movieAnalyticsByContentId.get(item.id);
-    const movieMediaRows =
-      mediaRowsByContent.get(item.id) ?? [];
-    const clipCount =
-      movieAnalytics?.total_clip_count ??
-      mediaCountByContent.get(item.id) ??
-      0;
-    const playableClipCount =
-      movieAnalytics?.playable_clip_count ?? 0;
-    const hasGeneratedMedia =
-      movieMediaRows.some(hasGeneratedClipSignature);
-    const lifecycleStatus =
-      item.publication_status === "archived"
-        ? "retired"
-        : item.is_active === false
-          ? "inactive"
-          : "active";
-    const ingestStatus =
-      clipCount === 0
-        ? "metadata_only"
-        : playableClipCount > 0
-          ? "ready"
-          : "needs_review";
-    const autoClipStatus = hasGeneratedMedia
-      ? playableClipCount > 0
-        ? "generated_ready"
-        : "generated_pending"
-      : clipCount > 0
-        ? "manual"
-        : "not_configured";
+  const clipsByMovieId = new Map<
+    string,
+    LegacyClipListRow[]
+  >();
+
+  for (const clip of typedClips) {
+    const existingClips =
+      clipsByMovieId.get(clip.movie_id) ?? [];
+    existingClips.push(clip);
+    clipsByMovieId.set(clip.movie_id, existingClips);
+  }
+
+  return typedMovies.map((movie) => {
+    const movieClips =
+      clipsByMovieId.get(movie.id) ?? [];
+    const activeClips = movieClips.filter(
+      (clip) => clip.is_active,
+    );
+    const primaryClip = activeClips[0] ?? movieClips[0] ?? null;
+    const categoryName =
+      categoryNameById.get(
+        primaryCategoryByMovieId.get(movie.id) ?? "",
+      ) ?? "Uncategorized";
 
     return {
-      id: item.id,
-      title: item.title,
-      year: item.release_year,
-      posterUrl: item.poster_url,
+      id: movie.id,
+      title: movie.title,
+      year: movie.release_year,
+      posterUrl: movie.poster_url,
       category: categoryName,
-      sourceName: item.source_name,
-      sourceUrl: item.source_url,
-      countryOrOrigin: extractMetadataString(
-        item.metadata,
-        [
-          "countryOrOrigin",
-          "country",
-          "originCountry",
-          "country_of_origin",
-        ],
-      ),
-      language: extractMetadataString(
-        item.metadata,
-        [
-          "originalLanguage",
-          "language",
-          "primaryLanguage",
-          "spokenLanguage",
-        ],
-      ),
-      clips: clipCount,
-      playableClips: playableClipCount,
-      totalPlays:
-        movieAnalytics?.total_plays ?? 0,
-      totalHintsUsed:
-        movieAnalytics?.total_hints_used ?? 0,
-      lastPlayedAt:
-        movieAnalytics?.last_played_at ?? null,
+      sourceName: primaryClip?.source_name ?? null,
+      sourceUrl: primaryClip?.source_url ?? null,
+      countryOrOrigin: null,
+      language: null,
+      clips: movieClips.length,
+      playableClips: activeClips.length,
+      totalPlays: 0,
+      totalHintsUsed: 0,
+      lastPlayedAt: null,
       ingestStatus:
-        formatMovieOpsLabel(ingestStatus),
-      autoClipStatus:
-        formatMovieOpsLabel(autoClipStatus),
-      lifecycleStatus:
-        formatMovieOpsLabel(lifecycleStatus),
-      difficulty: formatLabel(item.difficulty),
-      license: formatLabel(item.licensing_status),
-      publicationStatus: formatLabel(
-        item.publication_status,
+        movieClips.length > 0
+          ? "Legacy Ready"
+          : "Metadata Only",
+      autoClipStatus: "Legacy Manual",
+      lifecycleStatus: movie.is_active
+        ? "Active"
+        : "Inactive",
+      difficulty: formatLabel(movie.difficulty),
+      license: formatLabel(
+        primaryClip?.licensing_status ?? "pending",
       ),
-      status: getMovieStatus(
-        item.publication_status,
-        clipCount,
-      ),
-      createdAt: item.created_at,
+      publicationStatus: movie.is_active
+        ? "Published"
+        : "Archived",
+      status: movie.is_active
+        ? activeClips.length > 0
+          ? "Ready"
+          : "Missing media"
+        : "Archived",
+      createdAt: movie.created_at,
     };
   });
 }

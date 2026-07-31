@@ -1,6 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import fs from "node:fs";
+import path from "node:path";
 
+import { createClient } from "@supabase/supabase-js";
 import { provisionLocalSmokeSession } from "./movie-buff-smoke-auth.mjs";
 
 const PLAYWRIGHT_ENTRY =
@@ -18,6 +21,56 @@ const CHROME_EXECUTABLE =
 const { chromium } = await import(
   pathToFileURL(PLAYWRIGHT_ENTRY).href
 );
+
+function loadLocalEnv() {
+  const envPath = path.join(process.cwd(), ".env.local");
+  const parsed = {};
+
+  if (!fs.existsSync(envPath)) {
+    return parsed;
+  }
+
+  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmed.indexOf("=");
+
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const value = trimmed.slice(separatorIndex + 1).trim();
+
+    if (key) {
+      parsed[key] = value;
+    }
+  }
+
+  return parsed;
+}
+
+const localEnv = loadLocalEnv();
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ??
+  localEnv.NEXT_PUBLIC_SUPABASE_URL;
+const serviceRoleKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ??
+  localEnv.SUPABASE_SERVICE_ROLE_KEY;
+
+const adminSupabase =
+  supabaseUrl && serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      })
+    : null;
 
 function assert(condition, message) {
   if (!condition) {
@@ -82,6 +135,81 @@ function runDockerSql(sql) {
   return sqlResult.stdout.trim();
 }
 
+async function grantAdminRole(userId) {
+  if (adminSupabase) {
+    const { error } = await adminSupabase
+      .from("profiles")
+      .update({
+        platform_role: "admin",
+      })
+      .eq("id", userId);
+
+    if (!error) {
+      return "service-role-profile";
+    }
+
+    const normalizedMessage =
+      error.message.toLowerCase();
+
+    if (
+      normalizedMessage.includes("platform_role") &&
+      normalizedMessage.includes("schema cache")
+    ) {
+      const {
+        data: userData,
+        error: userLookupError,
+      } = await adminSupabase.auth.admin.getUserById(
+        userId,
+      );
+
+      if (userLookupError || !userData.user) {
+        throw new Error(
+          `Hosted admin role lookup failed: ${
+            userLookupError?.message ??
+            "User not found."
+          }`,
+        );
+      }
+
+      const currentAppMetadata =
+        userData.user.app_metadata ?? {};
+
+      const { error: metadataError } =
+        await adminSupabase.auth.admin.updateUserById(
+          userId,
+          {
+            app_metadata: {
+              ...currentAppMetadata,
+              platform_role: "admin",
+            },
+          },
+        );
+
+      if (metadataError) {
+        throw new Error(
+          `Hosted admin metadata grant failed: ${metadataError.message}`,
+        );
+      }
+
+      return "service-role-app-metadata";
+    }
+
+    throw new Error(
+      `Hosted admin role grant failed: ${error.message}`,
+    );
+  }
+
+  runDockerSql(
+    [
+      `update public.profiles`,
+      `set platform_role = 'admin'`,
+      `where id = '${userId}'::uuid;`,
+    ].join(" "),
+  );
+
+  return "docker";
+}
+
 const browser = await chromium.launch({
   headless: true,
   executablePath: CHROME_EXECUTABLE,
@@ -105,14 +233,7 @@ try {
   );
 
   const userId = session.user.id;
-
-  runDockerSql(
-    [
-      `update public.profiles`,
-      `set platform_role = 'admin'`,
-      `where id = '${userId}'::uuid;`,
-    ].join(" "),
-  );
+  const grantMethod = await grantAdminRole(userId);
 
   await page.addInitScript(
     ({ key, value }) => {
@@ -157,6 +278,7 @@ try {
     url: page.url(),
     hasMovieLibrary: true,
     hasAdminAccessGate: false,
+    grantMethod,
   };
 
   await page.goto(`${APP_URL}/admin/sources`, {

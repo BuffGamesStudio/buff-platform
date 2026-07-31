@@ -61,6 +61,99 @@ export type ContentSourceSummary = {
   lastSuccessfulIngestAt: string | null;
 };
 
+const FALLBACK_CONTENT_SOURCES: ContentSourceSummary[] = [
+  {
+    id: "fallback-library-of-congress",
+    slug: "library-of-congress-national-screening-room",
+    name: "Library of Congress",
+    type: "archive",
+    baseUrl:
+      "https://www.loc.gov/collections/national-screening-room/",
+    country: "United States",
+    language: "English",
+    trustLevel: "high",
+    legalBasis: "item_level_rights_validation",
+    clipIngestSuitability: "approved",
+    watchSuitability: "approved",
+    validationRule:
+      "Require item-level confirmation before gameplay use; treat archive trust as high but not universal.",
+    autoIngestAllowed: false,
+    isActive: true,
+    policyState: "approved_now",
+    notes:
+      "Highest-trust historical source for Movie Buff foundation.",
+    lastCheckedAt: null,
+    lastSuccessfulIngestAt: null,
+  },
+  {
+    id: "fallback-internet-archive",
+    slug: "internet-archive-verified-pd-cc",
+    name: "Internet Archive",
+    type: "archive",
+    baseUrl: "https://archive.org/details/feature_films",
+    country: "International",
+    language: "Mixed",
+    trustLevel: "medium",
+    legalBasis:
+      "verified_public_domain_or_creative_commons_only",
+    clipIngestSuitability: "approved",
+    watchSuitability: "approved",
+    validationRule:
+      "Only approve items with explicit public-domain or Creative Commons rights basis.",
+    autoIngestAllowed: false,
+    isActive: true,
+    policyState: "approved_now",
+    notes:
+      "Best practical ingest source, but still requires item-level rights validation.",
+    lastCheckedAt: null,
+    lastSuccessfulIngestAt: null,
+  },
+  {
+    id: "fallback-public-domain-movie",
+    slug: "public-domain-movie-discovery",
+    name: "Public Domain Movie",
+    type: "catalog",
+    baseUrl: "https://publicdomainmovie.net/",
+    country: "United States",
+    language: "English",
+    trustLevel: "low",
+    legalBasis: "discovery_only_manual_confirmation",
+    clipIngestSuitability: "conditional",
+    watchSuitability: "conditional",
+    validationRule:
+      "Use only as a discovery layer; do not treat source claims as final legal authority.",
+    autoIngestAllowed: false,
+    isActive: true,
+    policyState: "discovery_only",
+    notes:
+      "Useful for discovery, but not sufficient as standalone gameplay-rights proof.",
+    lastCheckedAt: null,
+    lastSuccessfulIngestAt: null,
+  },
+  {
+    id: "fallback-european-film-gateway",
+    slug: "european-film-gateway",
+    name: "European Film Gateway",
+    type: "archive",
+    baseUrl: "https://www.europeanfilmgateway.eu/",
+    country: "International",
+    language: "Mixed",
+    trustLevel: "medium",
+    legalBasis: "item_level_rights_validation",
+    clipIngestSuitability: "conditional",
+    watchSuitability: "conditional",
+    validationRule:
+      "Rights vary by item; validate each title before clip or watch approval.",
+    autoIngestAllowed: false,
+    isActive: true,
+    policyState: "conditional_next",
+    notes:
+      "Useful international discovery lane once item rights are explicit.",
+    lastCheckedAt: null,
+    lastSuccessfulIngestAt: null,
+  },
+];
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceRoleKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -114,6 +207,19 @@ function readPolicyState(
   }
 }
 
+function isMissingContentSourcesSchema(
+  message: string | null | undefined,
+) {
+  const normalizedMessage =
+    message?.toLowerCase() ?? "";
+
+  return (
+    normalizedMessage.includes("content_sources") &&
+    (normalizedMessage.includes("schema cache") ||
+      normalizedMessage.includes("does not exist"))
+  );
+}
+
 export async function listContentSources(): Promise<
   ContentSourceSummary[]
 > {
@@ -143,6 +249,10 @@ export async function listContentSources(): Promise<
     .order("source_name", { ascending: true });
 
   if (error) {
+    if (isMissingContentSourcesSchema(error.message)) {
+      return FALLBACK_CONTENT_SOURCES;
+    }
+
     throw new Error(error.message);
   }
 

@@ -23,6 +23,36 @@ export class AdminAuthError extends Error {
   }
 }
 
+function readAdminRoleFromUserMetadata(user: {
+  app_metadata?: Record<string, unknown> | null;
+  user_metadata?: Record<string, unknown> | null;
+}) {
+  const appRole = user.app_metadata?.platform_role;
+  const userRole = user.user_metadata?.platform_role;
+
+  if (typeof appRole === "string" && appRole.trim()) {
+    return appRole.trim().toLowerCase();
+  }
+
+  if (typeof userRole === "string" && userRole.trim()) {
+    return userRole.trim().toLowerCase();
+  }
+
+  return null;
+}
+
+function isMissingPlatformRoleSchema(
+  message: string | null | undefined,
+) {
+  const normalizedMessage =
+    message?.toLowerCase() ?? "";
+
+  return (
+    normalizedMessage.includes("platform_role") &&
+    normalizedMessage.includes("schema cache")
+  );
+}
+
 function getBearerToken(request: Request) {
   const authorizationHeader =
     request.headers.get("authorization");
@@ -148,13 +178,29 @@ export async function requireAdminRequest(
       .maybeSingle();
 
   if (profileError) {
+    if (isMissingPlatformRoleSchema(profileError.message)) {
+      const metadataRole =
+        readAdminRoleFromUserMetadata(user);
+
+      if (metadataRole === ADMIN_ROLE) {
+        return {
+          userId: user.id,
+          platformRole: ADMIN_ROLE,
+        };
+      }
+    }
+
     throw new AdminAuthError(
       "Admin access could not be verified.",
       500,
     );
   }
 
-  if (profile?.platform_role !== ADMIN_ROLE) {
+  const resolvedPlatformRole =
+    profile?.platform_role ??
+    readAdminRoleFromUserMetadata(user);
+
+  if (resolvedPlatformRole !== ADMIN_ROLE) {
     throw new AdminAuthError(
       "You do not have permission to use Movie Buff admin.",
       403,
@@ -163,7 +209,7 @@ export async function requireAdminRequest(
 
   return {
     userId: user.id,
-    platformRole: profile.platform_role,
+    platformRole: resolvedPlatformRole,
   };
 }
 
