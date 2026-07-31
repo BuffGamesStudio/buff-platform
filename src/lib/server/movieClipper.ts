@@ -38,8 +38,8 @@ type ClipKind = "video" | "audio";
 type ClipPoolScope = "preview" | "round" | "pool";
 type DifficultyPoolLabel =
   | "Fan"
-  | "Buff"
-  | "Buffster";
+  | "Fanatic"
+  | "Buff";
 type PoolTier = "primary" | "secondary";
 
 type ClipSourceRecord = {
@@ -147,8 +147,8 @@ type LegacyGlobalPoolMovieRow = {
 
 const GLOBAL_POOL_LABELS: DifficultyPoolLabel[] = [
   "Fan",
+  "Fanatic",
   "Buff",
-  "Buffster",
 ];
 const PRIMARY_POOL_TARGET_PER_LABEL = 4;
 const SECONDARY_POOL_TARGET_PER_LABEL = 8;
@@ -217,14 +217,15 @@ function normalizeDifficultyPoolLabel(
   }
 
   if (
+    normalized === "buff" ||
     normalized === "buffster" ||
     normalized === "hard" ||
     normalized === "expert"
   ) {
-    return "Buffster";
+    return "Buff";
   }
 
-  return "Buff";
+  return "Fanatic";
 }
 
 function toPublicUrl(absolutePath: string) {
@@ -1447,9 +1448,9 @@ async function getClipSourceByLegacyClipId(clipId: string) {
           ? "Fan"
           : difficultyValue === "hard" ||
               difficultyValue === "expert"
-            ? "Buffster"
+            ? "Buff"
           : difficultyValue
-              ? "Buff"
+              ? "Fanatic"
               : null;
   }
 
@@ -1834,8 +1835,8 @@ async function readGlobalPoolInventory(
     Record<PoolTier, number>
   > = {
     Fan: { primary: 0, secondary: 0 },
+    Fanatic: { primary: 0, secondary: 0 },
     Buff: { primary: 0, secondary: 0 },
-    Buffster: { primary: 0, secondary: 0 },
   };
   const perMediaReadyCounts = new Map<
     string,

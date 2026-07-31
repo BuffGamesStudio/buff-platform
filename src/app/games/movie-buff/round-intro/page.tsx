@@ -299,7 +299,7 @@ export default function RoundIntroPage() {
 
         <div className="mt-10 rounded-3xl border border-red-700/50 bg-gradient-to-br from-red-950/50 via-zinc-950 to-black p-6">
           <p className="text-sm font-black uppercase tracking-[0.3em] text-red-400">
-            Buffster Says
+            Buff Says
           </p>
 
           <p className="mt-3 text-2xl font-black">

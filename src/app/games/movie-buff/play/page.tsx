@@ -1929,7 +1929,7 @@ export default function MovieBuffPlayPage() {
 
                 <div>
                   <p className="text-sm font-black uppercase tracking-[0.25em] text-red-400">
-                    Buffster Says
+                    Buff Says
                   </p>
 
                   <p className="mt-2 text-xl font-black">

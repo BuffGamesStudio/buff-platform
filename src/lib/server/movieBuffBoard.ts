@@ -884,7 +884,7 @@ export async function getMovieBuffBoardPreview(): Promise<MovieBuffBoardPreview>
         id: "player-1",
         name: "Shaheed",
         score: 1200,
-        tier: "Buff",
+        tier: "Fanatic",
         isCurrentSelector: true,
       },
       {
@@ -898,7 +898,7 @@ export async function getMovieBuffBoardPreview(): Promise<MovieBuffBoardPreview>
         id: "player-3",
         name: "Casey",
         score: 1600,
-        tier: "Buff",
+        tier: "Fanatic",
         isCurrentSelector: false,
       },
     ],

@@ -529,7 +529,7 @@ export default function WaitingRoomPage() {
 
               <div>
                 <p className="text-sm font-bold uppercase tracking-[0.25em] text-red-400">
-                  Buffster Says
+                  Buff Says
                 </p>
 
                 <h2 className="text-3xl font-black">
@@ -715,7 +715,7 @@ export default function WaitingRoomPage() {
                     <p className="font-black">
                       {room
                         ? getMovieBuffDifficultyLabel(room.difficulty)
-                        : "Buff"}
+                        : "Fanatic"}
                     </p>
                   </div>
                 </div>

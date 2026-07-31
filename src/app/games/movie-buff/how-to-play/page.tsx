@@ -91,11 +91,11 @@ export default function MovieBuffHowToPlayPage() {
                 range: "0-999 points",
               },
               {
-                tier: "Buff",
+                tier: "Fanatic",
                 range: "1,000-2,499 points",
               },
               {
-                tier: "Buffster",
+                tier: "Buff",
                 range: "2,500+ points",
               },
             ] as Array<{

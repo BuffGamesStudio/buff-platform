@@ -120,7 +120,7 @@ export default function AccountPage() {
 
               {account.isAnonymous && (
                 <p className="mt-3 rounded-2xl border border-yellow-700 bg-yellow-500/10 px-4 py-3 text-sm font-bold text-yellow-300">
-                  This is still an anonymous session. Upgrade it to a full Buff Games account before launch use.
+                  This is still an anonymous session. To continue with a real Buff Games account, leave guest mode and create or sign in to a full account before launch use.
                 </p>
               )}
 
@@ -134,7 +134,7 @@ export default function AccountPage() {
                   className="rounded-xl bg-red-600 px-6 py-4 font-black text-white transition hover:bg-red-700"
                 >
                   {account.isAnonymous
-                    ? "Upgrade Account"
+                    ? "Create Real Account"
                     : "Launch Movie Buff"}
                 </Link>
 

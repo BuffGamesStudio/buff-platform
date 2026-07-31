@@ -674,7 +674,7 @@ export default function FinalResultsPage() {
           <aside className="space-y-6">
             <div className="rounded-3xl border border-red-700/50 bg-gradient-to-br from-red-950/40 via-zinc-950 to-black p-7">
               <p className="text-sm font-bold uppercase tracking-[0.2em] text-red-400">
-                Buffster Says
+                Buff Says
               </p>
 
               <h3 className="mt-3 text-2xl font-black">

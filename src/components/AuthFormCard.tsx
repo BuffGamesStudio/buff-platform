@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 import {
+  getCurrentUser,
   signInWithEmail,
   signInWithGoogle,
+  signOut,
   signUpWithEmail,
 } from "@/lib/auth/auth";
 
@@ -17,7 +18,6 @@ export default function AuthFormCard({
   mode: "sign-in" | "sign-up";
   nextTarget?: string;
 }) {
-  const router = useRouter();
   const [displayName, setDisplayName] =
     useState("");
   const [email, setEmail] = useState("");
@@ -30,6 +30,17 @@ export default function AuthFormCard({
     useState("");
 
   const isSignUp = mode === "sign-up";
+
+  async function exitAnonymousSessionIfNeeded() {
+    const currentUser = await getCurrentUser();
+
+    if (currentUser?.is_anonymous === true) {
+      await signOut();
+      return true;
+    }
+
+    return false;
+  }
 
   async function handleSubmit(
     event: React.FormEvent<HTMLFormElement>,
@@ -46,6 +57,9 @@ export default function AuthFormCard({
 
     try {
       if (isSignUp) {
+        const exitedAnonymousSession =
+          await exitAnonymousSessionIfNeeded();
+
         await signUpWithEmail(
           email,
           password,
@@ -54,12 +68,14 @@ export default function AuthFormCard({
         );
 
         setMessage(
-          "Account created. If email confirmation is enabled, check your inbox. You can still continue into Buff Games after sign-in.",
+          exitedAnonymousSession
+            ? "Guest mode has been exited. Finish email verification if prompted, then sign in to continue with your Buff Games account."
+            : "Account created. Finish email verification if prompted, then sign in to continue with your Buff Games account.",
         );
-        window.location.assign(nextTarget);
         return;
       }
 
+      await exitAnonymousSessionIfNeeded();
       await signInWithEmail(email, password);
       window.location.assign(nextTarget);
     } catch (authError) {
@@ -83,9 +99,18 @@ export default function AuthFormCard({
     setMessage("");
 
     try {
+      const exitedAnonymousSession =
+        await exitAnonymousSessionIfNeeded();
+
       await signInWithGoogle(
         `${window.location.origin}${nextTarget.startsWith("/") ? nextTarget : `/${nextTarget}`}`,
       );
+
+      if (exitedAnonymousSession) {
+        setMessage(
+          "Guest mode has been exited. Continue with Google to enter a real Buff Games account.",
+        );
+      }
     } catch (authError) {
       setError(
         authError instanceof Error
@@ -108,7 +133,7 @@ export default function AuthFormCard({
 
       <p className="mt-4 text-zinc-300">
         {isSignUp
-          ? "Create your Buff Games account first, then launch Movie Buff from inside your account."
+          ? "Create your Buff Games account first, then launch Movie Buff from inside your account. If you are in guest mode, this will exit that guest session before account creation."
           : "Sign in to your Buff Games account, then enter Movie Buff from inside your account."}
       </p>
 

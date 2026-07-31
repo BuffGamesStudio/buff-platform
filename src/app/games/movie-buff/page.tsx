@@ -18,14 +18,21 @@ export default function MovieBuffPage() {
         </p>
 
         <p className="mb-12 max-w-2xl text-base leading-7 text-zinc-500">
-          Sign in to your Buff Games account first, then launch Movie Buff from
-          inside your account hub.
+          Start Movie Buff directly from here, or enter your Buff Games account
+          for the full account hub.
         </p>
 
         <div className="mb-6 flex flex-wrap justify-center gap-6">
           <Link
-            href="/account"
+            href="/games/movie-buff/lobby"
             className="rounded-xl bg-red-600 px-10 py-5 text-xl font-bold transition hover:bg-red-700"
+          >
+            PLAY MOVIE BUFF
+          </Link>
+
+          <Link
+            href="/account"
+            className="rounded-xl border border-zinc-700 px-10 py-5 text-xl font-bold transition hover:border-red-500"
           >
             ENTER BUFF GAMES
           </Link>

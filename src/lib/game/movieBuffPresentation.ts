@@ -5,11 +5,11 @@ export const movieBuffDifficultyOptions = [
   },
   {
     value: "medium",
-    label: "Buff",
+    label: "Fanatic",
   },
   {
     value: "hard",
-    label: "Buffster",
+    label: "Buff",
   },
 ] as const;
 

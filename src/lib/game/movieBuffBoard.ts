@@ -72,19 +72,19 @@ export const movieBuffBoardBandPresentation: Record<
     points: 400,
   },
   fanatic_600: {
-    label: "Buff - 600",
+    label: "Fanatic - 600",
     points: 600,
   },
   fanatic_800: {
-    label: "Buff - 800",
+    label: "Fanatic - 800",
     points: 800,
   },
   buff_1000: {
-    label: "Buffster - 1000",
+    label: "Buff - 1000",
     points: 1000,
   },
   buff_1200: {
-    label: "Buffster - 1200",
+    label: "Buff - 1200",
     points: 1200,
   },
 };

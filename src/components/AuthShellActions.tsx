@@ -142,7 +142,7 @@ export default function AuthShellActions({
         href="/sign-up"
         className="rounded-xl bg-red-600 px-5 py-3 font-bold text-white transition hover:bg-red-700"
       >
-        {anonymous ? "Upgrade Account" : "Sign Up"}
+        {anonymous ? "Create Real Account" : "Sign Up"}
       </Link>
 
       {anonymous ? (

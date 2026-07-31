@@ -708,7 +708,7 @@ export default function RoundResultsPage() {
 
                 <div>
                   <p className="text-sm font-bold uppercase tracking-[0.2em] text-red-400">
-                    Buffster Says
+                    Buff Says
                   </p>
 
                   <p className="mt-2 font-black">

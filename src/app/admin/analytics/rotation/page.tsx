@@ -56,7 +56,7 @@ export default async function AdminRotationControlPage() {
 
               <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
                 The warm pool sits above per-round generation. It keeps ready
-                variants across Fan, Buff, and Buffster, while respecting
+                variants across Fan, Fanatic, and Buff, while respecting
                 quality gating, cooldown-style exclusions, and diversity caps.
               </p>
             </div>

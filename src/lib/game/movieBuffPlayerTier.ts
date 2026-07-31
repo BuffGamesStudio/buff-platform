@@ -1,17 +1,17 @@
 export type MovieBuffPlayerTier =
   | "Fan"
-  | "Buff"
-  | "Buffster";
+  | "Fanatic"
+  | "Buff";
 
 export function getMovieBuffPlayerTier(
   score: number,
 ): MovieBuffPlayerTier {
   if (score >= 2500) {
-    return "Buffster";
+    return "Buff";
   }
 
   if (score >= 1000) {
-    return "Buff";
+    return "Fanatic";
   }
 
   return "Fan";
@@ -23,9 +23,9 @@ export function getMovieBuffPlayerTierDescription(
   switch (tier) {
     case "Fan":
       return "loves movies and is finding their groove";
+    case "Fanatic":
+      return "locked in and spotting films with sharper recall";
     case "Buff":
-      return "knows their films and plays with confidence";
-    case "Buffster":
       return "top-tier movie mind with elite recall";
     default:
       return "";
