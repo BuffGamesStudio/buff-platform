@@ -100,6 +100,12 @@ Additional hosted evidence gathered during this pass:
   - `clips`: count `49`
 - direct hosted REST reads to content-engine/admin tables
   - fail with schema-cache/table-not-found responses
+- strengthened hosted admin smoke now proves:
+  - `/admin/movies`: `49` visible movies
+  - `/admin/sources`: `4` registered sources
+  - `/admin/analytics/clips`: still `0` tracked clips on hosted
+  - `/admin/analytics/rotation`: still `0` eligible clips and `0` primary ready assets on hosted
+  - `/admin/analytics/qa`: still `0` watchlist size on hosted
 
 Coverage/pool evidence restored during this pass:
 
@@ -129,7 +135,7 @@ Coverage/pool evidence restored during this pass:
 | Timer only follows authoritative server state | Proven hosted | hosted timer smoke passes | none |
 | No dead buttons or broken routes in core flow | Proven for core flow | hosted preflight route/gameplay suite passes | non-core route quality can still improve later |
 | Leave / back / exit flows exist where needed | Proven hosted | hosted private leave and shared public leave both pass | none |
-| Admin pages needed for live operations load and reflect real data | Not proven | hosted admin smoke currently proves route/shell access, but direct hosted REST reads show `content_items`, `content_media`, `movie_buff_clip_analytics`, `content_sources`, and `content_source_items` are not exposed in hosted REST; code contains fallback behavior for missing schemas | real hosted content/admin parity still missing |
+| Admin pages needed for live operations load and reflect real data | Partially proven, still blocked | strengthened hosted admin smoke proves real data on `/admin/movies` and `/admin/sources`, but hosted `/admin/analytics/clips`, `/admin/analytics/rotation`, and `/admin/analytics/qa` still render zero-value admin state | hosted analytics/admin parity still missing for clip operations |
 | Clip delivery is fast and stable enough for live play | Proven for current soft-launch pool path | hosted full-suite gameplay passes; launch gate avoids on-demand-only stalls | broader scale remains unproven |
 | Pool / rotation behavior avoids stale repeats well enough for soft launch | Partially proven | runtime pool depth is healthy; hosted gameplay uses warmed assets; coverage verifier now works again in hosted legacy mode | weighted content-engine rotation/admin visibility is not fully hosted-parity proven |
 | Enough playable movie coverage exists for soft launch | Proven for soft-launch minimum, not broader public depth | hosted legacy gameplay inventory is `49` active source-backed rows with balanced difficulty spread; pool reserves are materially above shallow minimums | still below the user's larger long-term content target |
@@ -143,9 +149,9 @@ Coverage/pool evidence restored during this pass:
 
 | Blocker | Owner area | Current status | Evidence | Next fix | Severity |
 |---|---|---|---|---|---|
-| Hosted content-engine/admin schema parity is missing | Supabase schema + admin ops | Open | hosted REST cannot read `content_items`, `content_media`, `movie_buff_clip_analytics`, `content_sources`, or `content_source_items`; code falls back or empties in those cases | apply the missing hosted content-engine/source-registry schema and grants, reload schema cache, then rerun hosted admin verification with real data assertions | Critical |
-| Hosted admin smoke is too weak to prove live data | Verifier coverage | Open | current hosted admin smoke can pass on route/shell markers even when live content tables are unavailable | strengthen hosted admin verifier to assert real movie rows and non-fallback analytics/source data | High |
-| Hosted clip analytics visibility is not real yet | Admin analytics | Open | hosted gameplay event log works, but `movie_buff_clip_analytics` is unavailable through hosted REST | restore hosted analytics table exposure or add a temporary verified legacy analytics fallback only if schema repair cannot land immediately | High |
+| Hosted clip analytics and rotation parity is missing | Supabase schema + admin ops | Open | hosted REST cannot read `movie_buff_clip_analytics`; strengthened hosted admin smoke proves `/admin/analytics/clips` = `0`, `/admin/analytics/rotation` = `0` eligible clips / `0` primary ready assets, `/admin/analytics/qa` = `0` watchlist size | restore hosted analytics exposure or deploy the legacy fallback path and prove non-zero admin analytics on hosted | Critical |
+| Hosted content-engine/source registry REST parity is incomplete | Supabase schema + admin ops | Open | direct hosted REST reads still fail for `content_items`, `content_media`, `content_sources`, and `content_source_items`, even though `/admin/movies` and `/admin/sources` now render useful fallback/live data | apply the missing hosted schema/grants or keep verified fallback paths only where they are operationally sufficient | High |
+| Hosted admin smoke needed stronger data assertions | Verifier coverage | Mitigated | strengthened hosted admin smoke now proves movie count and source count instead of only headings | keep this stronger verifier and rerun after each hosted admin fix | Medium |
 
 ### 2. Important but deferrable
 
@@ -176,6 +182,7 @@ It is not yet fully soft-launch-ready because hosted live-ops/admin data parity 
 
 As of Friday, July 31, 2026, Movie Buff is hosted-green for core gameplay, auth,
 ready-check, timer, leave flow, and round progression on
-`https://movie-buff-sigma.vercel.app`, but it is not yet fully soft-launch-ready
-because the hosted content-engine/admin data path is still incomplete and current
-admin proofs are not strong enough to confirm real live-ops visibility.
+`https://movie-buff-sigma.vercel.app`, and hosted admin now proves real movie
+and source data, but it is still not fully soft-launch-ready because hosted clip
+analytics, rotation control, and QA health are still rendering zero-value admin
+state instead of production-true analytics.

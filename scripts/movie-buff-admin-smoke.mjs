@@ -236,6 +236,29 @@ async function waitForAdminPageReady(page) {
   return page.locator("body").innerText();
 }
 
+async function waitForBodyPattern(
+  page,
+  pattern,
+  timeout = 60000,
+) {
+  await page.waitForFunction(
+    ({ source, flags }) => {
+      const bodyText =
+        document.body?.innerText ?? "";
+      return new RegExp(source, flags).test(
+        bodyText,
+      );
+    },
+    {
+      source: pattern.source,
+      flags: pattern.flags,
+    },
+    { timeout },
+  );
+
+  return page.locator("body").innerText();
+}
+
 async function verifyAdminPage(
   page,
   checkpointKey,
@@ -265,6 +288,18 @@ async function verifyAdminPage(
     hasAdminAccessGate: false,
     markers,
   };
+}
+
+function parseFirstIntegerMatch(
+  body,
+  pattern,
+  message,
+) {
+  const match = body.match(pattern);
+
+  assert(match, message);
+
+  return Number.parseInt(match[1], 10);
 }
 
 try {
@@ -312,6 +347,10 @@ try {
   });
 
   const moviesBody = await waitForAdminPageReady(page);
+  const moviesDataBody = await waitForBodyPattern(
+    page,
+    /\d+\s+of\s+\d+\s+movies?\s+visible/i,
+  );
 
   assert(
     moviesBody.includes("Movie Library"),
@@ -330,6 +369,11 @@ try {
     hasMovieLibrary: true,
     hasAdminAccessGate: false,
     grantMethod,
+    visibleMovies: parseFirstIntegerMatch(
+      moviesDataBody,
+      /(\d+)\s+of\s+(\d+)\s+movies?\s+visible/i,
+      "Movie Library did not render a visible movie count.",
+    ),
   };
 
   await page.goto(`${APP_URL}/admin/sources`, {
@@ -337,6 +381,10 @@ try {
   });
 
   const sourcesBody = await waitForAdminPageReady(page);
+  const sourcesDataBody = await waitForBodyPattern(
+    page,
+    /REGISTERED SOURCES\s+\d+/i,
+  );
 
   assert(
     sourcesBody.includes("Source Registry"),
@@ -360,6 +408,11 @@ try {
     hasSourceRegistry: true,
     hasRegistryMetrics: true,
     hasAdminAccessGate: false,
+    registeredSources: parseFirstIntegerMatch(
+      sourcesDataBody,
+      /REGISTERED SOURCES\s+(\d+)/i,
+      "Source Registry did not render the registered-sources metric.",
+    ),
   };
 
   await verifyAdminPage(
@@ -368,6 +421,16 @@ try {
     "/admin/analytics/clips",
     ["Clip Analytics", "Clip-level scoring"],
   );
+
+  result.checkpoints.clipAnalytics.trackedClips =
+    parseFirstIntegerMatch(
+      await waitForBodyPattern(
+        page,
+        /\d+\s+tracked playable clips/i,
+      ),
+      /(\d+)\s+tracked playable clips/i,
+      "Clip Analytics did not render a tracked-clip count.",
+    );
 
   await verifyAdminPage(
     page,
@@ -379,6 +442,23 @@ try {
     ],
   );
 
+  const rotationBody = await waitForBodyPattern(
+    page,
+    /Eligible clips:\s+\d+/i,
+  );
+  result.checkpoints.rotationControl.eligibleClips =
+    parseFirstIntegerMatch(
+      rotationBody,
+      /Eligible clips:\s+(\d+)/i,
+      "Rotation Control did not render eligible clip counts.",
+    );
+  result.checkpoints.rotationControl.primaryReadyAssets =
+    parseFirstIntegerMatch(
+      rotationBody,
+      /Primary ready:\s+(\d+)/i,
+      "Rotation Control did not render primary ready asset counts.",
+    );
+
   await verifyAdminPage(
     page,
     "qaContentHealth",
@@ -386,12 +466,25 @@ try {
     ["QA / Content Health", "WATCHLIST SIZE"],
   );
 
+  result.checkpoints.qaContentHealth.watchlistSize =
+    parseFirstIntegerMatch(
+      await waitForBodyPattern(
+        page,
+        /WATCHLIST SIZE\s+\d+/i,
+      ),
+      /WATCHLIST SIZE\s+(\d+)/i,
+      "QA / Content Health did not render a watchlist-size count.",
+    );
+
   await verifyAdminPage(
     page,
     "matchAnalytics",
     "/admin/analytics/matches",
     ["Match Analytics", "Recent room summaries"],
   );
+
+  result.checkpoints.matchAnalytics.hasRecentRoomSummaries =
+    true;
 
   const apiAccess = await page.evaluate(
     async () => {
