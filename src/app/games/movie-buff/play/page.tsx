@@ -6,6 +6,7 @@ import {
   FormEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -504,26 +505,35 @@ export default function MovieBuffPlayPage() {
     };
   }, [loadPlayers, navigateTo]);
 
-  useEffect(() => {
-    const resetTimer = window.setTimeout(() => {
-      redirectStarted.current = false;
-      maximumPlayedTime.current = 0;
-      mediaReadyRoundRef.current = null;
-      clipLoadedRoundRef.current = null;
-      playbackPreparedRoundRef.current =
-        null;
-      playbackSyncRoundRef.current = null;
-      clipFailedRoundRef.current = null;
-      timeoutLoggedRoundRef.current = null;
+  useLayoutEffect(() => {
+    redirectStarted.current = false;
+    maximumPlayedTime.current = 0;
+    mediaReadyRoundRef.current = null;
+    clipLoadedRoundRef.current = null;
+    playbackPreparedRoundRef.current =
+      null;
+    playbackSyncRoundRef.current = null;
+    clipFailedRoundRef.current = null;
+    timeoutLoggedRoundRef.current = null;
 
-      setMediaReady(false);
-      setMediaStarted(false);
-      setMediaFailed(false);
-      setMediaStarting(false);
-      setHintPending(false);
-    }, 0);
+    if (clipStartTimeoutRef.current) {
+      window.clearTimeout(
+        clipStartTimeoutRef.current
+      );
+      clipStartTimeoutRef.current = null;
+    }
 
-    return () => window.clearTimeout(resetTimer);
+    const media = mediaRef.current;
+
+    if (media && !media.paused) {
+      media.pause();
+    }
+
+    setMediaReady(false);
+    setMediaStarted(false);
+    setMediaFailed(false);
+    setMediaStarting(false);
+    setHintPending(false);
   }, [roundData?.roundId]);
 
   const syncRoundState = useCallback(
@@ -1507,6 +1517,10 @@ export default function MovieBuffPlayPage() {
                 !mediaFailed && (
                   <div className="relative flex min-h-[420px] items-center justify-center bg-black">
                     <video
+                      key={
+                        roundData?.roundId ??
+                        mediaUrl
+                      }
                       ref={(element) => {
                         mediaRef.current =
                           element;
@@ -1586,6 +1600,10 @@ export default function MovieBuffPlayPage() {
                 !mediaFailed && (
                   <div className="relative flex min-h-[420px] items-center justify-center p-8">
                     <audio
+                      key={
+                        roundData?.roundId ??
+                        mediaUrl
+                      }
                       ref={(element) => {
                         mediaRef.current =
                           element;
@@ -1680,6 +1698,10 @@ export default function MovieBuffPlayPage() {
                     )}
 
                     <Image
+                      key={
+                        roundData?.roundId ??
+                        mediaUrl
+                      }
                       src={mediaUrl}
                       alt="Movie challenge"
                       fill
