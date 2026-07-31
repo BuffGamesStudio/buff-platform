@@ -373,14 +373,17 @@ try {
     page,
     "rotationControl",
     "/admin/analytics/rotation",
-    ["Rotation Control", "Global ready pool"],
+    [
+      "Rotation Control",
+      "Rotation is weighted, not purely random.",
+    ],
   );
 
   await verifyAdminPage(
     page,
     "qaContentHealth",
     "/admin/analytics/qa",
-    ["QA / Content Health", "Watchlist size"],
+    ["QA / Content Health", "WATCHLIST SIZE"],
   );
 
   await verifyAdminPage(
