@@ -16,6 +16,7 @@ type BoardEligibleMediaRow = {
   id: string;
   content_id: string;
   board_band: string | null;
+  legacy_clip_id: string | null;
   media_url: string | null;
   quality_score: number | null;
   is_active: boolean;
@@ -38,12 +39,34 @@ type BoardEligibleMediaRow = {
 };
 
 type EligibleBoardMedia = {
-  contentMediaId: string;
-  contentId: string;
+  clipId: string | null;
+  contentMediaId: string | null;
+  contentId: string | null;
   contentTitle: string;
   boardBand: MovieBuffBoardTileBand;
   mediaUrl: string;
   qualityScore: number;
+};
+
+type LegacyBoardClipRow = {
+  id: string;
+  movie_id: string;
+  difficulty: string | null;
+  media_url: string | null;
+  clip_type: string | null;
+  is_active: boolean;
+  movies: {
+    id: string;
+    title: string | null;
+    is_active: boolean;
+  } | null;
+  movie_categories: Array<{
+    categories: {
+      id: string;
+      name: string;
+      slug: string;
+    } | null;
+  }> | null;
 };
 
 type EligibleBoardCategory = {
@@ -72,6 +95,7 @@ type PersistedBoardTileRow = {
   band: MovieBuffBoardTileBand;
   point_value: number;
   is_used: boolean;
+  clip_id: string | null;
   content_media_id: string | null;
 };
 
@@ -134,6 +158,45 @@ function getTierLabel(band: MovieBuffBoardTileBand) {
   );
 }
 
+function isPermissionDeniedError(
+  message: string | null | undefined,
+) {
+  const normalizedMessage =
+    message?.toLowerCase() ?? "";
+
+  return (
+    normalizedMessage.includes("permission denied") ||
+    normalizedMessage.includes("42501")
+  );
+}
+
+function isUnavailableBoardTableError(
+  message: string | null | undefined,
+) {
+  const normalizedMessage =
+    message?.toLowerCase() ?? "";
+
+  return (
+    normalizedMessage.includes("movie_buff_board") &&
+    (normalizedMessage.includes("schema cache") ||
+      normalizedMessage.includes("does not exist") ||
+      isPermissionDeniedError(normalizedMessage))
+  );
+}
+
+function isUnavailableContentEngineError(
+  message: string | null | undefined,
+) {
+  const normalizedMessage =
+    message?.toLowerCase() ?? "";
+
+  return (
+    isPermissionDeniedError(normalizedMessage) ||
+    normalizedMessage.includes("content_media") ||
+    normalizedMessage.includes("content_items")
+  );
+}
+
 function createEligibleCategory(
   category: {
     id: string;
@@ -165,6 +228,7 @@ async function listEligibleBoardCategories(): Promise<
         id,
         content_id,
         board_band,
+        legacy_clip_id,
         media_url,
         quality_score,
         is_active,
@@ -190,6 +254,10 @@ async function listEligibleBoardCategories(): Promise<
     .not("board_band", "is", null);
 
   if (error) {
+    if (isUnavailableContentEngineError(error.message)) {
+      return [];
+    }
+
     throw new Error(error.message);
   }
 
@@ -246,6 +314,7 @@ async function listEligibleBoardCategories(): Promise<
       (existing.playableTileCountByBand[band] ?? 0) + 1;
 
     existing.mediaByBand[band].push({
+      clipId: row.legacy_clip_id ?? null,
       contentMediaId: row.id,
       contentId: content.id,
       contentTitle: content.title,
@@ -309,6 +378,117 @@ function buildFallbackDraftFromLobby(
   };
 }
 
+function mapLegacyDifficultyToBoardBands(
+  difficulty: string | null | undefined,
+): MovieBuffBoardTileBand[] {
+  const normalized = String(difficulty ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (normalized === "easy" || normalized === "fan") {
+    return ["fan_200", "fan_400"];
+  }
+
+  if (
+    normalized === "hard" ||
+    normalized === "expert" ||
+    normalized === "buffster"
+  ) {
+    return ["buff_1000", "buff_1200"];
+  }
+
+  return ["fanatic_600", "fanatic_800"];
+}
+
+async function listLegacyEligibleBoardCategories(): Promise<
+  EligibleBoardCategory[]
+> {
+  const { data, error } = await supabaseAdmin
+    .from("clips")
+    .select(
+      `
+        id,
+        movie_id,
+        difficulty,
+        media_url,
+        clip_type,
+        is_active,
+        movies:movie_id (
+          id,
+          title,
+          is_active
+        ),
+        movie_categories:movie_id (
+          categories:category_id (
+            id,
+            name,
+            slug
+          )
+        )
+      `,
+    )
+    .eq("is_active", true)
+    .eq("clip_type", "video");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rows = (data ?? []) as unknown as LegacyBoardClipRow[];
+  const categoryMap = new Map<string, EligibleBoardCategory>();
+
+  for (const row of rows) {
+    const movie = row.movies;
+    const mediaUrl = row.media_url?.trim() ?? "";
+
+    if (!movie?.id || !movie.is_active || mediaUrl.length === 0) {
+      continue;
+    }
+
+    const category = row.movie_categories?.find(
+      (link) => link.categories,
+    )?.categories;
+
+    if (!category) {
+      continue;
+    }
+
+    const bands = mapLegacyDifficultyToBoardBands(row.difficulty);
+    const existing =
+      categoryMap.get(category.id) ??
+      (() => {
+        const next = createEligibleCategory(category, {
+          content_items: null,
+        } as BoardEligibleMediaRow);
+        categoryMap.set(category.id, next);
+        return next;
+      })();
+
+    for (const band of bands) {
+      existing.playableTileCountByBand[band] =
+        (existing.playableTileCountByBand[band] ?? 0) + 1;
+
+      existing.mediaByBand[band].push({
+        clipId: row.id,
+        contentMediaId: null,
+        contentId: movie.id,
+        contentTitle: movie.title?.trim() || "Movie Buff clip",
+        boardBand: band,
+        mediaUrl,
+        qualityScore: 100,
+      });
+    }
+  }
+
+  return Array.from(categoryMap.values())
+    .filter((category) =>
+      movieBuffBoardTileBands.every(
+        (band) => (category.playableTileCountByBand[band] ?? 0) > 0,
+      ),
+    )
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 async function listRoomPlayers(
   roomId: string,
 ): Promise<RoomPlayerRow[]> {
@@ -330,6 +510,10 @@ async function listRoomPlayers(
     .order("joined_at", { ascending: true });
 
   if (error) {
+    if (isPermissionDeniedError(error.message)) {
+      return [];
+    }
+
     throw new Error(error.message);
   }
 
@@ -351,6 +535,7 @@ function toPreviewTile(
       : currentTileId === tile.id
         ? "locked"
         : "available",
+    clipId: tile.clip_id ?? undefined,
     contentMediaId: tile.content_media_id ?? undefined,
   };
 }
@@ -420,12 +605,13 @@ async function getPersistedBoard(
           label,
           era_bucket,
           primary_genre,
-          movie_buff_board_tiles (
+        movie_buff_board_tiles (
             id,
             tile_order,
             band,
             point_value,
             is_used,
+            clip_id,
             content_media_id
           )
         )
@@ -435,6 +621,10 @@ async function getPersistedBoard(
     .maybeSingle();
 
   if (error) {
+    if (isUnavailableBoardTableError(error.message)) {
+      return null;
+    }
+
     throw new Error(error.message);
   }
 
@@ -447,7 +637,12 @@ export async function createMovieBuffBoardDraft(): Promise<MovieBuffBoardDraft> 
     listMovieBuffLobbyCategories().catch(() => []),
   ]);
 
-  if (eligibleCategories.length === 0) {
+  const boardCategories =
+    eligibleCategories.length > 0
+      ? eligibleCategories
+      : await listLegacyEligibleBoardCategories().catch(() => []);
+
+  if (boardCategories.length === 0) {
     return buildFallbackDraftFromLobby(
       lobbyCategories
         .filter((category) => category.id !== null)
@@ -463,7 +658,7 @@ export async function createMovieBuffBoardDraft(): Promise<MovieBuffBoardDraft> 
   }
 
   const draftCategories: MovieBuffBoardDraftCategory[] =
-    eligibleCategories.slice(0, 6).map((category, categoryIndex) => ({
+    boardCategories.slice(0, 6).map((category, categoryIndex) => ({
       id: toPreviewId("category", categoryIndex),
       categoryId: category.id,
       label: category.label,
@@ -480,7 +675,9 @@ export async function createMovieBuffBoardDraft(): Promise<MovieBuffBoardDraft> 
           label: movieBuffBoardBandPresentation[band].label,
           pointValue: movieBuffBoardBandPresentation[band].points,
           status: "available",
-          contentMediaId: selectedMedia?.contentMediaId,
+          clipId: selectedMedia?.clipId ?? undefined,
+          contentMediaId:
+            selectedMedia?.contentMediaId ?? undefined,
           contentTitle: selectedMedia?.contentTitle ?? null,
         };
       }),
@@ -569,14 +766,15 @@ export async function ensureMovieBuffBoardForRoom(
         throw new Error("Board category mapping failed");
       }
 
-      return {
-        board_id: boardId,
-        board_category_id: boardCategoryId,
-        tile_order: tileIndex,
-        band: tile.band,
-        point_value: tile.pointValue,
-        content_media_id: tile.contentMediaId ?? null,
-      };
+        return {
+          board_id: boardId,
+          board_category_id: boardCategoryId,
+          tile_order: tileIndex,
+          band: tile.band,
+          point_value: tile.pointValue,
+          clip_id: tile.clipId ?? null,
+          content_media_id: tile.contentMediaId ?? null,
+        };
     }),
   );
 

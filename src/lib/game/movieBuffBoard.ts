@@ -38,6 +38,7 @@ export type MovieBuffBoardTilePreview = {
   pointValue: number;
   status: MovieBuffBoardTileStatus;
   contentMediaId?: string;
+  clipId?: string;
   contentTitle?: string | null;
 };
 
