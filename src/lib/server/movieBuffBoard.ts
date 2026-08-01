@@ -333,11 +333,6 @@ async function listEligibleBoardCategories(): Promise<
   }
 
   return Array.from(categoryMap.values())
-    .filter((category) =>
-      movieBuffBoardTileBands.every(
-        (band) => (category.playableTileCountByBand[band] ?? 0) > 0,
-      ),
-    )
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
@@ -481,11 +476,6 @@ async function listLegacyEligibleBoardCategories(): Promise<
   }
 
   return Array.from(categoryMap.values())
-    .filter((category) =>
-      movieBuffBoardTileBands.every(
-        (band) => (category.playableTileCountByBand[band] ?? 0) > 0,
-      ),
-    )
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
@@ -666,7 +656,13 @@ export async function createMovieBuffBoardDraft(): Promise<MovieBuffBoardDraft> 
       eraBucket: category.eraBucket,
       primaryGenre: category.primaryGenre,
       tiles: movieBuffBoardTileBands.map((band, tileIndex) => {
-        const selectedMedia = category.mediaByBand[band][0] ?? null;
+        const fallbackMedia = boardCategories
+          .flatMap((candidateCategory) => candidateCategory.mediaByBand[band])
+          .find(Boolean) ?? null;
+        const selectedMedia =
+          category.mediaByBand[band][0] ??
+          fallbackMedia ??
+          null;
 
         return {
           id: toPreviewId(`tile-${categoryIndex + 1}`, tileIndex),
