@@ -60,13 +60,6 @@ type LegacyBoardClipRow = {
     title: string | null;
     is_active: boolean;
   } | null;
-  movie_categories: Array<{
-    categories: {
-      id: string;
-      name: string;
-      slug: string;
-    } | null;
-  }> | null;
 };
 
 type EligibleBoardCategory = {
@@ -412,13 +405,6 @@ async function listLegacyEligibleBoardCategories(): Promise<
           id,
           title,
           is_active
-        ),
-        movie_categories:movie_id (
-          categories:category_id (
-            id,
-            name,
-            slug
-          )
         )
       `,
     )
@@ -430,6 +416,67 @@ async function listLegacyEligibleBoardCategories(): Promise<
   }
 
   const rows = (data ?? []) as unknown as LegacyBoardClipRow[];
+  const movieIds = Array.from(
+    new Set(rows.map((row) => row.movie_id).filter(Boolean)),
+  );
+  const { data: categoryLinks, error: categoryLinksError } =
+    movieIds.length === 0
+      ? { data: [], error: null }
+      : await supabaseAdmin
+          .from("movie_categories")
+          .select(
+            `
+              movie_id,
+              categories:category_id (
+                id,
+                name,
+                slug
+              )
+            `,
+          )
+          .in("movie_id", movieIds);
+
+  if (categoryLinksError) {
+    throw new Error(categoryLinksError.message);
+  }
+
+  const categoryByMovieId = new Map<
+    string,
+    {
+      id: string;
+      name: string;
+      slug: string;
+    }
+  >();
+
+  for (const link of (categoryLinks ?? []) as Array<{
+    movie_id?: string | null;
+    categories?: {
+      id?: string | null;
+      name?: string | null;
+      slug?: string | null;
+    } | null;
+  }>) {
+    const movieId = link.movie_id ?? null;
+    const category = link.categories ?? null;
+
+    if (
+      !movieId ||
+      !category?.id ||
+      !category.name ||
+      !category.slug ||
+      categoryByMovieId.has(movieId)
+    ) {
+      continue;
+    }
+
+    categoryByMovieId.set(movieId, {
+      id: category.id,
+      name: category.name,
+      slug: category.slug,
+    });
+  }
+
   const categoryMap = new Map<string, EligibleBoardCategory>();
 
   for (const row of rows) {
@@ -440,9 +487,7 @@ async function listLegacyEligibleBoardCategories(): Promise<
       continue;
     }
 
-    const category = row.movie_categories?.find(
-      (link) => link.categories,
-    )?.categories;
+    const category = categoryByMovieId.get(movie.id);
 
     if (!category) {
       continue;
