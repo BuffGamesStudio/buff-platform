@@ -524,6 +524,96 @@ async function listLegacyEligibleBoardCategories(): Promise<
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
+async function listLegacyFallbackMediaByBand(): Promise<
+  Record<MovieBuffBoardTileBand, EligibleBoardMedia[]>
+> {
+  const { data, error } = await supabaseAdmin
+    .from("clips")
+    .select(
+      `
+        id,
+        movie_id,
+        difficulty,
+        media_url,
+        clip_type,
+        is_active,
+        movies:movie_id (
+          id,
+          title,
+          is_active
+        )
+      `,
+    )
+    .eq("is_active", true)
+    .eq("clip_type", "video");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const mediaByBand = emptyMediaByBand();
+
+  for (const row of (data ?? []) as unknown as LegacyBoardClipRow[]) {
+    const movie = row.movies;
+    const mediaUrl = row.media_url?.trim() ?? "";
+
+    if (!movie?.id || !movie.is_active || mediaUrl.length === 0) {
+      continue;
+    }
+
+    for (const band of mapLegacyDifficultyToBoardBands(row.difficulty)) {
+      mediaByBand[band].push({
+        clipId: row.id,
+        contentMediaId: null,
+        contentId: movie.id,
+        contentTitle: movie.title?.trim() || "Movie Buff clip",
+        boardBand: band,
+        mediaUrl,
+        qualityScore: 100,
+      });
+    }
+  }
+
+  return mediaByBand;
+}
+
+function buildLegacyGlobalFallbackDraft(
+  mediaByBand: Record<MovieBuffBoardTileBand, EligibleBoardMedia[]>,
+): MovieBuffBoardDraft {
+  const category: MovieBuffBoardDraftCategory = {
+    id: toPreviewId("category", 0),
+    categoryId: "legacy-global-mix",
+    label: "Movie Mix",
+    slug: "movie-mix",
+    eraBucket: null,
+    primaryGenre: null,
+    tiles: movieBuffBoardTileBands.map((band, tileIndex) => {
+      const selectedMedia = mediaByBand[band][0] ?? null;
+
+      return {
+        id: toPreviewId("tile-1", tileIndex),
+        band,
+        tierLabel: getTierLabel(band),
+        label: movieBuffBoardBandPresentation[band].label,
+        pointValue: movieBuffBoardBandPresentation[band].points,
+        status: "available",
+        clipId: selectedMedia?.clipId ?? undefined,
+        contentMediaId:
+          selectedMedia?.contentMediaId ?? undefined,
+        contentTitle: selectedMedia?.contentTitle ?? null,
+      };
+    }),
+  };
+
+  return {
+    headline: "So You Think You're a Movie Buff?",
+    supportLine: "Watch. Guess. Win.",
+    categoryCount: 1,
+    tileCount: category.tiles.length,
+    categories: [category],
+  };
+}
+
 async function listRoomPlayers(
   roomId: string,
 ): Promise<RoomPlayerRow[]> {
@@ -676,6 +766,19 @@ export async function createMovieBuffBoardDraft(): Promise<MovieBuffBoardDraft> 
     eligibleCategories.length > 0
       ? eligibleCategories
       : await listLegacyEligibleBoardCategories().catch(() => []);
+
+  const legacyGlobalMediaByBand =
+    boardCategories.length === 0
+      ? await listLegacyFallbackMediaByBand().catch(() => emptyMediaByBand())
+      : emptyMediaByBand();
+  const hasLegacyGlobalCoverage =
+    movieBuffBoardTileBands.every(
+      (band) => (legacyGlobalMediaByBand[band] ?? []).length > 0,
+    );
+
+  if (boardCategories.length === 0 && hasLegacyGlobalCoverage) {
+    return buildLegacyGlobalFallbackDraft(legacyGlobalMediaByBand);
+  }
 
   if (boardCategories.length === 0) {
     return buildFallbackDraftFromLobby(
