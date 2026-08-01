@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import {
   ArrowLeft,
   Bot,
@@ -21,6 +22,9 @@ import {
   type MovieBuffCategoryOption,
 } from "@/lib/db/movieBuff";
 import {
+  subscribeToAuthChanges,
+} from "@/lib/auth/auth";
+import {
   getMovieBuffDifficultyLabel,
   movieBuffDifficultyOptions,
   type MovieBuffDifficultyValue,
@@ -31,6 +35,14 @@ type MovieBuffLobbyClientProps = {
   initialCategories: MovieBuffCategoryOption[];
   initialCategoryError?: string | null;
 };
+
+function hasVerifiedEmail(user: User | null): boolean {
+  if (!user) {
+    return false;
+  }
+
+  return Boolean(user.email_confirmed_at);
+}
 
 export default function MovieBuffLobbyClient({
   initialCategories,
@@ -52,6 +64,7 @@ export default function MovieBuffLobbyClient({
   const [actionError, setActionError] = useState("");
   const [currentOpenRoom, setCurrentOpenRoom] =
     useState<OpenMovieBuffRoom | null>(null);
+  const [emailVerified, setEmailVerified] = useState(false);
 
   const privateCode = "BUFF24";
 
@@ -76,26 +89,26 @@ export default function MovieBuffLobbyClient({
 
   useEffect(() => {
     let isMounted = true;
+    let authResolved = false;
 
-    async function loadCurrentOpenRoom() {
-      try {
-        const { getCurrentUser } = await import(
-          "@/lib/auth/auth"
+    async function resolveAuthenticatedUser(user: User | null) {
+      if (!isMounted || authResolved) {
+        return;
+      }
+
+      authResolved = true;
+
+      if (!user || user.is_anonymous === true) {
+        router.replace(
+          `/sign-in?next=${encodeURIComponent(
+            "/games/movie-buff/lobby",
+          )}`,
         );
-        const user = await getCurrentUser();
+        return;
+      }
 
-        if (!user || user.is_anonymous === true) {
-          if (isMounted) {
-            router.replace(
-              `/sign-in?next=${encodeURIComponent(
-                "/games/movie-buff/lobby",
-              )}`,
-            );
-          }
-
-          return;
-        }
-
+      try {
+        setEmailVerified(hasVerifiedEmail(user));
         const { findOpenMovieBuffRoom } =
           await import("@/lib/game/gameState");
         const openRoom =
@@ -115,10 +128,52 @@ export default function MovieBuffLobbyClient({
       }
     }
 
-    void loadCurrentOpenRoom();
+    const unsubscribe = subscribeToAuthChanges(
+      (_event, session) => {
+        void resolveAuthenticatedUser(
+          session?.user ?? null,
+        );
+      },
+    );
+
+    void import("@/lib/auth/auth")
+      .then(({ getCurrentUser }) =>
+        getCurrentUser(),
+      )
+      .then((user) => {
+        if (user) {
+          void resolveAuthenticatedUser(user);
+        }
+      })
+      .catch(() => {});
+
+    const fallbackTimer = window.setTimeout(() => {
+      if (authResolved) {
+        return;
+      }
+
+      void import("@/lib/auth/auth")
+        .then(({ getCurrentUser }) =>
+          getCurrentUser(),
+        )
+        .then((user) => {
+          void resolveAuthenticatedUser(user);
+        })
+        .catch(() => {
+          if (!isMounted || authResolved) {
+            return;
+          }
+
+          authResolved = true;
+          setCurrentOpenRoom(null);
+          setAuthChecking(false);
+        });
+    }, 1500);
 
     return () => {
       isMounted = false;
+      window.clearTimeout(fallbackTimer);
+      unsubscribe();
     };
   }, [router]);
 
@@ -181,24 +236,84 @@ export default function MovieBuffLobbyClient({
       setIsLoading(true);
       setActionError("");
 
-      const { createRoom } = await import(
-        "@/lib/db/movieBuff"
-      );
       const user = await requirePlayer();
 
       if (!user) {
         return;
       }
 
-      const room = await createRoom({
-        hostId: user.id,
-        roomType,
-        categoryId: selectedCategory?.id ?? null,
-        difficulty,
-        totalRounds: roundCount,
-        maxPlayers:
-          DEFAULT_MOVIE_BUFF_ROOM_MAX_PLAYERS,
-      });
+      if (roomType === "private" && !hasVerifiedEmail(user)) {
+        throw new Error(
+          "Verify your email before creating private Movie Nights.",
+        );
+      }
+
+      let room: { id: string; room_code: string };
+
+      if (roomType === "private") {
+        const { getCurrentSession } = await import(
+          "@/lib/auth/auth"
+        );
+        const session = await getCurrentSession();
+
+        if (!session?.access_token) {
+          throw new Error(
+            "A valid Buff Games session is required.",
+          );
+        }
+
+        const response = await fetch(
+          "/api/movie-buff/private-room",
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              categoryId: selectedCategory?.id ?? null,
+              difficulty,
+              totalRounds: roundCount,
+              maxPlayers:
+                DEFAULT_MOVIE_BUFF_ROOM_MAX_PLAYERS,
+            }),
+          },
+        );
+
+        const payload = (await response
+          .json()
+          .catch(() => null)) as
+          | {
+              room?: {
+                id: string;
+                room_code: string;
+              };
+              error?: string;
+            }
+          | null;
+
+        if (!response.ok || !payload?.room) {
+          throw new Error(
+            payload?.error ??
+              "Private Movie Night could not be created.",
+          );
+        }
+
+        room = payload.room;
+      } else {
+        const { createRoom } = await import(
+          "@/lib/db/movieBuff"
+        );
+        room = await createRoom({
+          hostId: user.id,
+          roomType,
+          categoryId: selectedCategory?.id ?? null,
+          difficulty,
+          totalRounds: roundCount,
+          maxPlayers:
+            DEFAULT_MOVIE_BUFF_ROOM_MAX_PLAYERS,
+        });
+      }
 
       navigateToRoom(room.id, room.room_code);
     } catch (error) {
@@ -459,6 +574,15 @@ export default function MovieBuffLobbyClient({
           </div>
         ) : null}
 
+        {!emailVerified ? (
+          <div className="mb-8 rounded-2xl border border-amber-700 bg-amber-500/10 px-5 py-4 text-sm font-semibold text-amber-200">
+            Verify your email to unlock restricted launch features: creating
+            private Movie Nights, prize or reward claims, VIP purchases or
+            redemption, Contestant Row eligibility, and account recovery
+            actions.
+          </div>
+        ) : null}
+
         <div className="mb-10 grid gap-8 lg:grid-cols-2">
           <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-8">
             <div className="mb-7 flex items-center gap-4">
@@ -503,7 +627,7 @@ export default function MovieBuffLobbyClient({
               <button
                 type="button"
                 onClick={handleCreateRoom}
-                disabled={roomActionsBlocked}
+                disabled={roomActionsBlocked || !emailVerified}
                 className="rounded-xl border border-blue-500 px-6 py-4 text-lg font-black text-blue-400 transition hover:bg-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {isLoading ? "Working..." : "Create Room"}
@@ -648,7 +772,7 @@ export default function MovieBuffLobbyClient({
             <button
               type="button"
               onClick={handleQuickStart}
-              disabled={roomActionsBlocked}
+              disabled={roomActionsBlocked || !emailVerified}
               className="flex w-full items-center justify-center gap-3 rounded-xl bg-red-600 px-10 py-5 text-xl font-black transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70 lg:w-auto"
             >
               <Gamepad2 size={24} />
