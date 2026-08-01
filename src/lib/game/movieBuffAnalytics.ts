@@ -34,28 +34,63 @@ export interface RecordMovieBuffEventInput {
 export async function recordMovieBuffEvent(
   input: RecordMovieBuffEventInput
 ): Promise<string> {
-  const { data, error } = await supabase.rpc(
-    "record_movie_buff_event",
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (sessionError) {
+    throw new Error(sessionError.message);
+  }
+
+  const accessToken =
+    session?.access_token?.trim() ?? "";
+
+  if (!accessToken) {
+    throw new Error(
+      "A Movie Buff session is required to record analytics."
+    );
+  }
+
+  const response = await fetch(
+    "/api/movie-buff/events",
     {
-      p_event_type: input.eventType,
-      p_room_id: input.roomId ?? null,
-      p_match_id: input.matchId ?? null,
-      p_round_id: input.roundId ?? null,
-      p_player_id: input.playerId ?? null,
-      p_content_id: input.contentId ?? null,
-      p_content_media_id:
-        input.contentMediaId ?? null,
-      p_legacy_clip_id:
-        input.legacyClipId ?? null,
-      p_payload: input.payload ?? {},
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        eventType: input.eventType,
+        roomId: input.roomId ?? null,
+        matchId: input.matchId ?? null,
+        roundId: input.roundId ?? null,
+        playerId: input.playerId ?? null,
+        contentId: input.contentId ?? null,
+        contentMediaId:
+          input.contentMediaId ?? null,
+        legacyClipId:
+          input.legacyClipId ?? null,
+        payload: input.payload ?? {},
+      }),
     }
   );
 
-  if (error) {
-    throw new Error(error.message);
+  const payload = (await response
+    .json()
+    .catch(() => ({}))) as {
+    id?: string;
+    error?: string;
+  };
+
+  if (!response.ok) {
+    throw new Error(
+      payload.error ??
+        "Movie Buff analytics could not be recorded."
+    );
   }
 
-  return String(data ?? "");
+  return String(payload.id ?? "");
 }
 
 export function queueMovieBuffEvent(
