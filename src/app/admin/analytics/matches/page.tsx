@@ -1,4 +1,7 @@
+import { headers } from "next/headers";
+
 import AdminHeader from "@/components/admin/AdminHeader";
+import { isLocalAdminBypassHeaders } from "@/lib/server/adminAuth";
 import { getMovieBuffMatchAnalytics } from "@/lib/server/movieBuffAnalyticsAdmin";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +14,33 @@ function formatDateTime(value: string) {
 }
 
 export default async function AdminMatchAnalyticsPage() {
+  const requestHeaders = await headers();
+
+  if (!isLocalAdminBypassHeaders(requestHeaders)) {
+    return (
+      <>
+        <AdminHeader
+          title="Match Analytics"
+          description="Inspect recent room activity, event volume, and live gameplay flow."
+          actionHref="/admin/movies"
+          actionLabel="Open Movie Library"
+        />
+
+        <div className="p-5 sm:p-8">
+          <section className="rounded-3xl border border-white/10 bg-zinc-950 p-6 text-zinc-300">
+            <h2 className="text-xl font-black text-white">
+              Admin sign-in required
+            </h2>
+            <p className="mt-3 text-sm leading-7 text-zinc-400">
+              Match event streams are not rendered server-side for non-local
+              sessions.
+            </p>
+          </section>
+        </div>
+      </>
+    );
+  }
+
   const analytics =
     await getMovieBuffMatchAnalytics(250);
 

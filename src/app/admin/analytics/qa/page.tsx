@@ -1,4 +1,7 @@
+import { headers } from "next/headers";
+
 import AdminHeader from "@/components/admin/AdminHeader";
+import { isLocalAdminBypassHeaders } from "@/lib/server/adminAuth";
 import { listMovieBuffClipAdminRows } from "@/lib/server/movieBuffAnalyticsAdmin";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +18,33 @@ function formatDateTime(value: string | null) {
 }
 
 export default async function AdminQaContentHealthPage() {
+  const requestHeaders = await headers();
+
+  if (!isLocalAdminBypassHeaders(requestHeaders)) {
+    return (
+      <>
+        <AdminHeader
+          title="QA / Content Health"
+          description="Surface weak, broken, or giveaway-heavy clips before they hurt public match quality."
+          actionHref="/admin/movies"
+          actionLabel="Open Movie Library"
+        />
+
+        <div className="p-5 sm:p-8">
+          <section className="rounded-3xl border border-white/10 bg-zinc-950 p-6 text-zinc-300">
+            <h2 className="text-xl font-black text-white">
+              Admin sign-in required
+            </h2>
+            <p className="mt-3 text-sm leading-7 text-zinc-400">
+              QA watchlist data is not rendered server-side for non-local
+              sessions.
+            </p>
+          </section>
+        </div>
+      </>
+    );
+  }
+
   const clipRows = await listMovieBuffClipAdminRows(200);
   const rows = [...clipRows]
     .filter(
