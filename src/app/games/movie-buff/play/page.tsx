@@ -2092,30 +2092,72 @@ function MediaStartOverlay({
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center overflow-hidden bg-black/85 p-6 backdrop-blur-sm">
       {!mediaReady || mediaStarting || hintPending ? (
-        <MovieBuffLoadingTicker
-          variant="clip"
-          statusLabel={
-            mediaStarting
-              ? "Starting playback"
-              : hintPending
-                ? "Revealing hint"
-                : "Movie ticket loading"
-          }
-          title={
-            mediaStarting
-              ? "Starting your clip"
-              : hintPending
-                ? "Revealing hint"
-                : "Loading clip"
-          }
-          subtitle={
-            mediaStarting
-              ? "Getting the movie moment on screen."
-              : hintPending
-                ? "Trading a little time for a clue."
-                : "Getting the next movie moment ready."
-          }
-        />
+        <div className="relative z-10 flex w-full max-w-2xl flex-col items-center">
+          <MovieBuffLoadingTicker
+            variant="clip"
+            statusLabel={
+              mediaStarting
+                ? "Starting playback"
+                : hintPending
+                  ? "Revealing hint"
+                  : "Movie ticket loading"
+            }
+            title={
+              mediaStarting
+                ? "Starting your clip"
+                : hintPending
+                  ? "Revealing hint"
+                  : "Loading clip"
+            }
+            subtitle={
+              mediaStarting
+                ? "Getting the movie moment on screen."
+                : hintPending
+                  ? "Trading a little time for a clue."
+                  : "Getting the next movie moment ready."
+            }
+          />
+
+          {!mediaStarting && !hintPending ? (
+            <div className="mt-6 text-center">
+              {startWindowSecondsLeft !==
+                null && (
+                <p className="text-sm font-bold text-zinc-300">
+                  Round auto-ends in{" "}
+                  {startWindowSecondsLeft}s if
+                  you do not start or answer.
+                </p>
+              )}
+
+              {canUseHint && (
+                <button
+                  type="button"
+                  onClick={onUseHint}
+                  className="mt-4 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-5 py-2 text-sm font-black text-yellow-300 transition hover:border-yellow-400 hover:bg-yellow-500/15"
+                >
+                  Use Hint (-{displayedHintPenaltySeconds}s)
+                </button>
+              )}
+
+              {hintUsed && hintText && (
+                <div className="mt-4 max-w-xl rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-left">
+                  <p className="text-xs font-black uppercase tracking-[0.25em] text-yellow-300">
+                    Hint Used
+                  </p>
+
+                  <p className="mt-2 text-sm font-bold text-yellow-50">
+                    {hintText}
+                  </p>
+
+                  <p className="mt-2 text-xs font-bold text-yellow-200/80">
+                    {displayedHintPenaltySeconds} seconds were deducted from this
+                    round. The timer still waits for playback to start.
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
       ) : (
         <div className="relative z-10 text-center transition-all duration-300">
           <button
