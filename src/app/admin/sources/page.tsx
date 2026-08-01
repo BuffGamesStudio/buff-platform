@@ -1,4 +1,7 @@
+import { headers } from "next/headers";
+
 import AdminHeader from "@/components/admin/AdminHeader";
+import { isLocalAdminBypassHeaders } from "@/lib/server/adminAuth";
 import { listContentSources } from "@/lib/server/contentSources";
 
 function formatDateTime(value: string | null) {
@@ -34,13 +37,37 @@ function getPolicyTone(policyState: string) {
 }
 
 export default async function AdminSourcesPage() {
+  const requestHeaders = await headers();
+
+  if (!isLocalAdminBypassHeaders(requestHeaders)) {
+    return (
+      <>
+        <AdminHeader
+          title="Source Registry"
+          description="Control which movie-source lanes are trusted for discovery, watch access, and gameplay clip ingestion."
+          actionHref="/admin/movies"
+          actionLabel="Open Movie Library"
+        />
+
+        <div className="p-5 sm:p-8">
+          <section className="rounded-3xl border border-white/10 bg-zinc-950 p-6 text-zinc-300">
+            <h2 className="text-xl font-black text-white">
+              Admin sign-in required
+            </h2>
+            <p className="mt-3 text-sm leading-7 text-zinc-400">
+              Source-registry records are not rendered server-side for
+              non-local sessions.
+            </p>
+          </section>
+        </div>
+      </>
+    );
+  }
+
   const sources = await listContentSources();
   const activeSources = sources.filter((source) => source.isActive);
   const approvedSources = sources.filter(
     (source) => source.clipIngestSuitability === "approved",
-  );
-  const conditionalSources = sources.filter(
-    (source) => source.clipIngestSuitability === "conditional",
   );
   const autoIngestSources = sources.filter(
     (source) => source.autoIngestAllowed,

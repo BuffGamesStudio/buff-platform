@@ -153,6 +153,13 @@ for (const route of routes) {
             : expectation.contentCheck
               ? expectation.contentCheck(body)
               : true;
+        const leakedAdminPayload =
+          expectation.type === "admin" &&
+          accessGateDetected &&
+          contentLoaded;
+        const unauthenticatedAdminRoute =
+          expectation.type === "admin" &&
+          accessGateDetected;
 
         const entry = {
           route,
@@ -164,13 +171,17 @@ for (const route of routes) {
             hasApplicationError(body),
           accessGateDetected,
           contentLoaded,
+          leakedAdminPayload,
+          unauthenticatedAdminRoute,
         };
 
         results.push(entry);
 
         if (
           response.status !== 200 ||
-          entry.hasApplicationError
+          entry.hasApplicationError ||
+          leakedAdminPayload ||
+          unauthenticatedAdminRoute
         ) {
           throw new Error(
             `Health check failed for ${route} on attempt ${attempt}, retry ${retry}.`,

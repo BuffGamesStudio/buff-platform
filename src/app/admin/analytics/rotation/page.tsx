@@ -1,8 +1,11 @@
+import { headers } from "next/headers";
+
 import AdminHeader from "@/components/admin/AdminHeader";
 import {
   updateMovieBuffClipControlsAction,
   warmMovieBuffGlobalPoolAction,
 } from "@/app/admin/analytics/actions";
+import { isLocalAdminBypassHeaders } from "@/lib/server/adminAuth";
 import { listMovieBuffClipAdminRows } from "@/lib/server/movieBuffAnalyticsAdmin";
 import { getMovieBuffGlobalPoolStatus } from "@/lib/server/movieClipper";
 
@@ -17,6 +20,33 @@ const statuses = [
 ];
 
 export default async function AdminRotationControlPage() {
+  const requestHeaders = await headers();
+
+  if (!isLocalAdminBypassHeaders(requestHeaders)) {
+    return (
+      <>
+        <AdminHeader
+          title="Rotation Control"
+          description="Adjust admin boost, clip status, and QA flags without bypassing quality and cooldown protection."
+          actionHref="/admin/movies"
+          actionLabel="Open Movie Library"
+        />
+
+        <div className="p-5 sm:p-8">
+          <section className="rounded-3xl border border-white/10 bg-zinc-950 p-6 text-zinc-300">
+            <h2 className="text-xl font-black text-white">
+              Admin sign-in required
+            </h2>
+            <p className="mt-3 text-sm leading-7 text-zinc-400">
+              Rotation analytics and controls are not rendered server-side for
+              non-local sessions.
+            </p>
+          </section>
+        </div>
+      </>
+    );
+  }
+
   const [clipRows, poolStatus] = await Promise.all([
     listMovieBuffClipAdminRows(160),
     getMovieBuffGlobalPoolStatus(),
