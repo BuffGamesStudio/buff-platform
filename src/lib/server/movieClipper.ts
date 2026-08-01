@@ -6,6 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 
 import { supabaseAdmin } from "@/lib/server/supabaseAdmin";
@@ -560,34 +562,30 @@ async function ensureLocalSourcePath(sourceUrl: string) {
   const tempPath = `${cachePath}.partial`;
 
   try {
-    const curlResult = spawnSync(
-      "curl",
-      [
-        "--location",
-        "--fail",
-        "--silent",
-        "--show-error",
-        "--retry",
-        "3",
-        "--retry-delay",
-        "2",
-        "--output",
-        tempPath,
-        resolvedSourceUrl,
-      ],
-      {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
+    const response = await fetch(resolvedSourceUrl, {
+      cache: "no-store",
+      redirect: "follow",
+    });
 
-    if (curlResult.status !== 0) {
+    if (!response.ok) {
       throw new Error(
-        curlResult.stderr ||
-          curlResult.stdout ||
-          `Could not download remote source ${resolvedSourceUrl}.`,
+        `Could not download remote source ${resolvedSourceUrl}. Received ${response.status}.`,
       );
     }
+
+    if (!response.body) {
+      throw new Error(
+        `Could not download remote source ${resolvedSourceUrl}. Response body was empty.`,
+      );
+    }
+
+    const writeStream = fs.createWriteStream(tempPath);
+    await pipeline(
+      Readable.fromWeb(
+        response.body as import("node:stream/web").ReadableStream,
+      ),
+      writeStream,
+    );
 
     fs.renameSync(tempPath, cachePath);
   } catch (error) {
