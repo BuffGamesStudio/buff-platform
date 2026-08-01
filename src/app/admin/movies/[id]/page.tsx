@@ -1014,9 +1014,9 @@ export default function MovieDetailPage() {
                     }
                     className="h-12 w-full rounded-xl border border-white/10 bg-black/40 px-4 text-white outline-none focus:border-violet-400"
                   >
-                    <option value="easy">Easy</option>
-                    <option value="medium">Medium</option>
-                    <option value="hard">Hard</option>
+                    <option value="easy">Fan</option>
+                    <option value="medium">Fanatic</option>
+                    <option value="hard">Buff</option>
                     <option value="expert">Expert</option>
                   </select>
                 </label>
@@ -1549,9 +1549,9 @@ export default function MovieDetailPage() {
                           }
                           className="h-12 w-full rounded-xl border border-white/10 bg-black/40 px-4 text-white outline-none focus:border-violet-400"
                         >
-                          <option value="easy">Easy</option>
-                          <option value="medium">Medium</option>
-                          <option value="hard">Hard</option>
+                          <option value="easy">Fan</option>
+                          <option value="medium">Fanatic</option>
+                          <option value="hard">Buff</option>
                           <option value="expert">Expert</option>
                         </select>
                       </label>
