@@ -16,7 +16,9 @@ Classification convention: field-level rows are classified by the `Classificatio
 | producer-only | Safe only for authorized production staff. |
 | system-only | Internal service/adapter field; not shown to players or broadcast. |
 
-Never allowed in broadcast-safe contracts: [VERIFIED:USER]+[INFERENCE] hidden answers before reveal, auth data, emails, private VIP inventory, fraud signals, service keys, refresh tokens, raw access tokens, full unnecessary internal IDs, unsanitized chat, unsanitized display names, or raw analytics payloads.
+Never allowed in broadcast-safe contracts: [VERIFIED:USER]+[INFERENCE] hidden answers before game-authoritative public reveal, player-private answer results, auth data, emails, private VIP inventory or per-player entitlement tier, fraud signals, service keys, refresh tokens, raw access tokens, full unnecessary internal IDs, unsanitized chat, unsanitized display names, raw analytics payloads, producer-only debug data, or system-only adapter state.
+
+Publication target rule: [INFERENCE] every outbound payload must be stripped to the maximum classification allowed for that target before it leaves the server/adapter boundary. OBS browser-source overlays receive only `broadcast` fields plus non-sensitive presentation routing required to render the overlay; producer consoles may receive `producer-only` fields after producer authorization; player clients may receive only their own `player-private` messages.
 
 ## 2. Shared primitives
 
@@ -66,6 +68,8 @@ Validation rules: [INFERENCE]
 - `expiresAt` must be present for Phil/OBS-facing events.
 - `idempotencyKey` required for all commands and cue-triggering events.
 - Payload must pass field classification scan before publication.
+- `classification` must be enforced per target; schema-valid mixed payloads are not publishable until non-target fields are stripped.
+- Answer title fields require `publicRevealState=public_revealed` or `results_revealed` from game authority, not merely a per-player submit result.
 
 ## 4. Episode-state snapshot
 
@@ -102,10 +106,11 @@ Validation rules: [INFERENCE]
 | `newScore` | integer | broadcast | Safe if scoreboard public. |
 | `streakCount` | integer | broadcast | Safe. |
 | `roundNumber` | integer | broadcast | Safe. |
-| `movieTitle` | string | broadcast | Only after answer reveal or correctness event where game has revealed it. |
-| `answerRevealState` | enum | system-only | Must be `revealed` before title enters broadcast. |
+| `movieTitle` | string | broadcast | Optional. Must be omitted until game authority marks the round/title as publicly revealed for all affected viewers/players. A per-player `correctTitle` returned after submit is not enough. |
+| `publicRevealState` | enum | system-only | `private_submit`, `public_revealed`, `results_revealed`. Must be `public_revealed` or `results_revealed` before `movieTitle` enters broadcast. |
 | `submittedAnswer` | string | player-private | Never in broadcast. |
-| `correctAnswerHidden` | string | system-only | Forbidden before reveal; generally unnecessary after reveal. |
+| `correctTitlePrivate` | string | player-private | Existing per-player submit feedback may expose this to the submitting player only; forbidden from broadcast. |
+| `correctAnswerHidden` | string | system-only | Forbidden before public reveal; generally unnecessary after reveal. |
 | `rawAnswerId` | string | system-only | Internal only. |
 
 ### `movie_buff.round_preparing.v1`
@@ -130,7 +135,7 @@ Validation rules: [INFERENCE]
 | `schema` | literal | system-only | Simulation-only until real entitlements exist. |
 | `playerRef` | string | player-private | Private target. |
 | `eligible` | boolean | player-private | Private. |
-| `publicEligibilityTier` | enum | broadcast | Optional aggregate/display tier only; not inventory. |
+| `privateEligibilityTier` | enum | player-private | Optional per-player tier; never broadcast or keyed to public identity. |
 | `privateControls` | array | player-private | Control names only for eligible player. |
 | `privateInventory` | object | player-private | Never broadcast. |
 | `reasonCode` | string | producer-only | Producer diagnostics. |
@@ -152,7 +157,7 @@ Validation rules: [INFERENCE]
 | `cancelToken` | string | system-only | Adapter cancellation. |
 | `producerApprovalRequired` | boolean | producer-only | Assisted Mode default true for risky lines. |
 
-Phil cue facts must not include raw chat, submitted answer text, emails, auth IDs, hidden future answers, private VIP inventory, or fraud signals.
+Phil cue facts must not include raw chat, submitted answer text, per-player `correctTitle`, emails, auth IDs, hidden future answers, private VIP inventory/tier/eligibility, or fraud signals.
 
 ## 7. Validated Phil output
 
@@ -228,7 +233,7 @@ Phil cue facts must not include raw chat, submitted answer text, emails, auth ID
 | `captionCues` | array | broadcast | Timed text. |
 | `visualAssetKey` | string | broadcast | Safe asset key. |
 | `ttlMs` | integer | system-only | Stale update guard. |
-| `debugHealth` | object | producer-only | Not visible in public overlay unless configured. |
+| `debugHealth` | object | producer-only | Producer console only. Never sent to OBS browser-source overlays or public recordings. |
 
 ## 11. Producer command
 
@@ -310,10 +315,12 @@ Phil cue facts must not include raw chat, submitted answer text, emails, auth ID
     "streakCount": 3,
     "roundNumber": 4,
     "movieTitle": "The General",
-    "answerRevealState": "revealed"
+    "publicRevealState": "results_revealed"
   }
 }
 ```
+
+This example is safe only because it represents a post-results/public-reveal event. A live per-player submit event must omit `movieTitle` and use `publicRevealState: "private_submit"`.
 
 ## 15. Red Team contract checks
 
@@ -323,3 +330,6 @@ Phil cue facts must not include raw chat, submitted answer text, emails, auth ID
 - [RESOLVED] Hidden answer fields are explicitly forbidden from broadcast-safe contracts.
 - [RESOLVED] Producer commands and OBS commands require idempotency keys.
 - [RESOLVED] Health/audit records separate sanitized summaries from raw internal errors.
+- [RESOLVED] Per-player `correctTitle` submit feedback is not treated as public reveal.
+- [RESOLVED] Per-player VIP eligibility/tier fields are player-private; broadcast receives aggregate counts only through snapshots.
+- [RESOLVED] OBS browser-source overlays do not receive producer-only debug fields or system-only adapter payloads.

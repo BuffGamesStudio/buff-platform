@@ -37,14 +37,15 @@ These thresholds are prototype targets, not verified facts.
 
 | Scenario | Setup | Expected result | Automated proof | Manual proof | Pass/fail |
 | --- | --- | --- | --- | --- | --- |
-| Correct answer | Simulated `ANSWER_CORRECT`. | Phil factual line, captions, lower-third; no hidden fields. | Contract + template tests. | OBS lower-third check. | Pass only with no leaks. |
+| Correct answer after public reveal | Simulated `ANSWER_CORRECT` with `publicRevealState=public_revealed` or `results_revealed`. | Phil factual line, captions, lower-third; movie title allowed only after public reveal; no hidden fields. | Contract + template tests. | OBS lower-third check. | Pass only with no leaks. |
+| Private submit feedback | Simulated `ANSWER_CORRECT` with `publicRevealState=private_submit`. | Score/ack may be player-private only; no movie title, `correctTitlePrivate`, or answer facts reach Phil/OBS/overlay. | Public-reveal gate test. | Payload capture review. | Pass if no broadcast answer/title. |
 | Wrong answer | Simulated `ANSWER_WRONG`. | No answer reveal unless game state has revealed it; safe fallback line. | Contract test. | Producer review. | Pass if no hidden answer. |
 | Fast response | `ANSWER_CORRECT` with response speed. | Phil may mention speed only if supplied as verified public fact. | Template test. | Lower-third copy review. | Pass if factual. |
 | Lead change | Scoreboard event with new leader. | Lead-change lower-third and optional Phil line. | Sequence test. | OBS check. | Pass if not stale. |
 | Streak | Correct answer with streak count. | Streak line uses numeric verified streak only. | Template test. | Producer review. | Pass if tone safe. |
-| VIP | `ROUND_PREPARING` with eligible and ineligible simulated players. | Eligible gets private controls; broadcast sees aggregate/ambient only. | Private-field leakage test. | Side-by-side browser check. | Pass if inventory private. |
-| Director's Pass | Simulated special eligibility. | Treated as player-private entitlement until public state is explicitly safe. | Contract test. | Producer console check. | Pass if no private inventory. |
-| Golden Ticket | Simulated special eligibility. | Same as VIP; no inventory leak. | Contract test. | Producer console check. | Pass if no private inventory. |
+| VIP | `ROUND_PREPARING` with eligible and ineligible simulated players. | Eligible gets private controls; broadcast sees aggregate/ambient only. | Private-field leakage test. | Side-by-side browser and payload-capture check. | Pass if inventory/tier/eligibility private. |
+| Director's Pass | Simulated special eligibility. | Treated as player-private entitlement until public aggregate state is explicitly safe. | Contract test. | Producer console check. | Pass if no private inventory/tier leak. |
+| Golden Ticket | Simulated special eligibility. | Same as VIP; no inventory/tier leak. | Contract test. | Producer console check. | Pass if no private inventory/tier leak. |
 | Final Cut | Simulated endgame/power-up. | Only public-safe status shown. | Contract test. | Overlay check. | Pass if no hidden answer. |
 | Champion | Final results event. | Champion line after final results only. | State-version test. | OBS check. | Pass if not premature. |
 | Duplicates | Replay same event/command ID. | Exactly one visual/audio/OBS effect. | Idempotency test. | OBS duplicate drill. | Pass if no duplicate effect. |
@@ -57,6 +58,7 @@ These thresholds are prototype targets, not verified facts.
 | Caption mismatch | Captions do not equal validated line. | Reject caption package or mark degraded. | Caption diff test. | Visual check. | Pass if exact text. |
 | OBS disconnect | Stop OBS websocket mid-run. | Health down; commands queue/drop safely; manual fallback; gameplay unaffected. | Mock disconnect test. | Real OBS drill. | Pass if recovery <= target. |
 | Overlay reconnect | Refresh browser source. | Overlay reloads latest snapshot within target. | Browser reconnect test. | OBS browser source refresh. | Pass if current state. |
+| Overlay payload stripping | Capture OBS browser-source network/state payloads. | Payload contains broadcast fields only; no producer debug, system adapter state, player-private fields, or secrets. | Serializer/classification test. | Browser-source devtools/log capture review. | Pass if broadcast-only. |
 | Producer interruption | Cancel before and during Phil line. | Voice stops, overlay hides, audit record written. | Cancel tests. | Button drill. | Pass if thresholds met. |
 | Emergency stop | Producer triggers stop all. | Voice muted/stopped, overlay hidden, OBS commands halted, health emergency. | Emergency test. | Full drill. | Pass if complete. |
 | Prompt injection | Display name/chat contains hostile instructions. | Sanitizer neutralizes; Phil ignores. | Injection fixture. | Producer review. | Pass if safe text. |
@@ -71,18 +73,19 @@ These thresholds are prototype targets, not verified facts.
 2. Start mock voice, mock OBS, overlay page, and producer console.
 3. Emit one `ANSWER_CORRECT`.
 4. Verify event envelope and field classifications.
-5. Verify Phil line is deterministic and factual.
-6. Verify captions exactly match line.
-7. Verify OBS lower-third command ACK.
-8. Cancel before line, before voice, mid-voice, and after lower-third in separate runs.
-9. Inspect audit log and leakage report.
+5. Run once with `publicRevealState=private_submit` and verify no movie title/answer facts reach Phil, captions, OBS, overlay, or sanitized audit details.
+6. Run again with `publicRevealState=results_revealed` and verify Phil line is deterministic and factual.
+7. Verify captions exactly match line.
+8. Verify OBS lower-third command ACK.
+9. Cancel before line, before voice, mid-voice, and after lower-third in separate runs.
+10. Inspect audit log, OBS browser-source payload capture, and leakage report.
 
 ### Script B: VIP pre-show chain
 
 1. Emit `ROUND_PREPARING`.
 2. Generate one eligible and one ineligible simulated player state.
-3. Verify eligible private controls are visible only to eligible player.
-4. Verify ineligible player sees ambient cinematic only.
+3. Verify eligible private controls and per-player tier/eligibility are visible only to eligible player.
+4. Verify ineligible player and broadcast/OBS see aggregate or ambient state only.
 5. Lock selection.
 6. Trigger Buffster velvet-rope cue.
 7. Start clip from game authority event.
@@ -101,8 +104,8 @@ These thresholds are prototype targets, not verified facts.
 ## 5. Security rehearsal checklist
 
 - [INFERENCE] Confirm no hidden answers in broadcast-safe payloads.
-- [INFERENCE] Confirm no submitted answers in Phil/overlay unless intentionally player-private.
-- [INFERENCE] Confirm no emails, auth tokens, refresh tokens, service keys, or private VIP inventory in overlay, OBS commands, captions, Phil facts, or audit sanitized details.
+- [INFERENCE] Confirm no per-player `correctTitle`, submitted answers, or movie titles in Phil/overlay unless game authority has emitted public reveal/results state.
+- [INFERENCE] Confirm no emails, auth tokens, refresh tokens, service keys, private VIP inventory/tier/eligibility, producer-only debug data, or system-only adapter payloads in overlay, OBS commands, captions, Phil facts, or audit sanitized details.
 - [INFERENCE] Confirm display handles are sanitized.
 - [INFERENCE] Confirm producer commands require producer role.
 - [INFERENCE] Confirm non-producer cannot call cancellation or emergency APIs.
@@ -120,6 +123,7 @@ These thresholds are prototype targets, not verified facts.
 - [UNKNOWN] Record YouTube test stream privacy mode and delay, if used.
 - [UNKNOWN] Record rights status of every clip used in rehearsal.
 - [UNKNOWN] Record producer names/roles.
+- [UNKNOWN] Record manual fallback operator and recovery path if the local Windows machine, OBS, or companion adapter fails.
 
 ## 7. Cost and operations tracking
 
@@ -147,6 +151,9 @@ No prices are asserted here.
 | VIP scenarios could leak private eligibility details. | Matrix requires side-by-side eligible/ineligible checks and private inventory leak tests. |
 | Copyright/live-stream failure was not a test scenario. | Operational checklist now records rights status and YouTube privacy/delay when used. |
 | Emergency stop needed measurable acceptance criteria. | Added cancel/overlay/OBS recovery thresholds and emergency script. |
+| Public reveal and player-private submit feedback could be conflated. | Added `private_submit` and public-reveal scenarios before any title-bearing Phil/OBS output can pass. |
+| OBS browser-source overlay could receive mixed producer/system fields. | Added payload-stripping rehearsal and browser-source capture review. |
+| Local Windows runtime is a single point of failure. | Operational checklist now records fallback owner and recovery path. |
 
 ## 9. Go/no-go for first public Assisted Mode episode
 
@@ -160,3 +167,4 @@ Do not proceed unless:
 - Rights status is cleared for all public clips.
 - Producer roles and manual override hierarchy are documented.
 - Gameplay remains unaffected by production adapter failures.
+- Local Windows/OBS/companion fallback owner and recovery procedure are documented.

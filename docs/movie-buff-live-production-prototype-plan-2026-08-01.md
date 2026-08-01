@@ -11,8 +11,8 @@ Build only enough live-production machinery to prove that Movie Buff can react t
 
 Primary chains:
 
-- [VERIFIED:USER] Chain A: `SIMULATED ANSWER_CORRECT` -> versioned event contract -> validation and sanitization -> broadcast-safe event -> Phil cue compiler -> prepared factual Phil line -> validation -> mock or streaming voice adapter -> captions -> OBS scene and lower-third command -> producer cancellation.
-- [VERIFIED:USER] Chain B: `ROUND_PREPARING` -> VIP eligibility simulation -> synchronized VIP pre-show -> private controls for eligible players -> ambient cinematic for ineligible players -> selection lock -> Buffster velvet-rope cue -> clip start.
+- [VERIFIED:USER] Chain A: `SIMULATED ANSWER_CORRECT` with game-authoritative public reveal state -> versioned event contract -> validation and sanitization -> broadcast-safe event -> Phil cue compiler -> prepared factual Phil line -> validation -> mock or streaming voice adapter -> captions -> OBS scene and lower-third command -> producer cancellation.
+- [VERIFIED:USER] Chain B: `ROUND_PREPARING` -> VIP eligibility simulation -> synchronized VIP pre-show -> private controls for eligible players -> aggregate-only broadcast state for ineligible/public viewers -> ambient cinematic for ineligible players -> selection lock -> Buffster velvet-rope cue -> clip start.
 
 ## 2. Non-goals
 
@@ -29,12 +29,12 @@ Recommended implementation boundary after this audit: [INFERENCE]
 | --- | --- | --- |
 | Game authority | Existing Next.js/Supabase gameplay and RPCs. | Wait for live-production consumers. |
 | Live-production contracts | Versioned event, snapshot, cue, command, health, and audit schemas. | Include hidden answers, emails, service keys, fraud signals, or private inventory. |
-| Simulator | Emits deterministic `ANSWER_CORRECT` and `ROUND_PREPARING` test events. | Depend on real rooms until contracts pass. |
-| Projection/validator | Converts raw/simulated events to broadcast-safe contracts. | Pass raw analytics payloads to Phil/OBS. |
+| Simulator | Emits deterministic `ANSWER_CORRECT` and `ROUND_PREPARING` test events with explicit public/private reveal state. | Depend on real rooms until contracts pass. |
+| Projection/validator | Converts raw/simulated events to broadcast-safe contracts and strips fields by publication target. | Pass raw analytics payloads, player-private answer results, or producer debug data to Phil/OBS. |
 | Phil cue compiler | Template-only factual lines using minimum facts. | Call an LLM with free-form player/chat text. |
 | Voice/caption adapter | Mock audio first; optional streaming TTS after proof. | Block gameplay or overlap uncancelled audio. |
 | OBS adapter | Local Windows process controlling OBS via obs-websocket. | Run as a Vercel Function or expose OBS secrets to browser. |
-| Overlay | OBS browser-source page showing broadcast-safe lower-third/captions/health. | Store secrets in URL or localStorage. |
+| Overlay | OBS browser-source page showing broadcast-safe lower-third/captions/health after target-specific field stripping. | Store secrets in URL/localStorage or receive producer-only/system-only/private fields. |
 | Producer console | Approve/cancel/mute/hide/emergency-stop production output. | Override gameplay truth. |
 
 ## 4. Stage plan
@@ -45,7 +45,8 @@ Recommended implementation boundary after this audit: [INFERENCE]
 - Dependencies: event contracts doc; no production DB changes.
 - Module/file boundary: isolated live-production contract package or namespace; simulator tests only.
 - Acceptance criteria:
-  - `ANSWER_CORRECT` simulation produces one production event envelope.
+  - `ANSWER_CORRECT` simulation produces one production event envelope with explicit `publicRevealState`.
+  - A `private_submit` answer event cannot include `movieTitle` in any broadcast/OBS/Phil payload.
   - `ROUND_PREPARING` simulation produces one episode-state snapshot and one VIP eligibility simulation.
   - All payload fields are classified.
   - Invalid payloads are rejected.
@@ -55,7 +56,7 @@ Recommended implementation boundary after this audit: [INFERENCE]
   - Duplicate idempotency-key test.
 - Manual tests:
   - Inspect serialized event JSON.
-  - Confirm no emails, auth tokens, service keys, hidden answers, raw answer text, private VIP inventory, or unnecessary internal IDs.
+  - Confirm no emails, auth tokens, service keys, hidden answers, per-player `correctTitle`, raw answer text, private VIP inventory/tier, producer debug fields, or unnecessary internal IDs.
 - Security checks:
   - Broadcast-safe identity only.
   - Display-name sanitization fixture.
@@ -71,7 +72,7 @@ Recommended implementation boundary after this audit: [INFERENCE]
 - Module/file boundary: Phil template compiler and validation only.
 - Acceptance criteria:
   - Signature opening can be produced only as locked canonical text.
-  - Correct-answer line uses player display handle, public score delta, streak, and movie title only when answer has already been revealed.
+  - Correct-answer line uses player display handle, public score delta, streak, and movie title only when game authority has marked the title publicly revealed; per-player submit feedback is not public reveal.
   - No host line can include unverified facts.
 - Automated tests:
   - Prompt-injection display name fixture.
@@ -176,7 +177,7 @@ Recommended implementation boundary after this audit: [INFERENCE]
 - Acceptance criteria:
   - `BUFFSTER_VELVET_ROPE` cue triggers after selection lock.
   - Ineligible players see ambient cinematic only.
-  - Eligible controls remain private.
+  - Eligible controls and per-player eligibility/tier remain private.
 - Automated tests:
   - VIP private-field leakage test.
   - Ineligible state cannot access controls.
@@ -216,9 +217,9 @@ Recommended implementation boundary after this audit: [INFERENCE]
 
 ## 5. Chain A exact prototype flow
 
-1. [INFERENCE] Simulator emits `movie_buff.answer_correct.v1` with safe facts only.
+1. [INFERENCE] Simulator emits `movie_buff.answer_correct.v1` with safe facts only and `publicRevealState` set explicitly.
 2. Validator wraps it in `production.event.envelope.v1`.
-3. Sanitizer produces `broadcast.safe.answer_correct.v1`.
+3. Sanitizer produces `broadcast.safe.answer_correct.v1` only after stripping fields disallowed for the OBS/Phil/public target.
 4. Phil compiler selects deterministic template, for example: `That's a clean hit from {displayHandle}. {scoreDelta} on the board.`
 5. Phil output validator checks length, banned fields, factual references, and line expiry.
 6. Voice adapter receives validated line and cancellation token.
@@ -229,8 +230,8 @@ Recommended implementation boundary after this audit: [INFERENCE]
 ## 6. Chain B exact prototype flow
 
 1. [INFERENCE] Simulator emits `movie_buff.round_preparing.v1`.
-2. Snapshot includes round status, public countdown, clip preflight status, and safe eligibility counts.
-3. VIP eligibility simulator produces private per-player capability messages.
+2. Snapshot includes round status, public countdown, clip preflight status, and aggregate-only safe eligibility counts.
+3. VIP eligibility simulator produces private per-player capability messages; per-player tier/eligibility never enters broadcast state.
 4. Eligible players receive private controls; ineligible players receive ambient cinematic state.
 5. Selection lock emits a broadcast-safe `selection_locked` event.
 6. Buffster receives `BUFFSTER_VELVET_ROPE` cue only after selection lock.

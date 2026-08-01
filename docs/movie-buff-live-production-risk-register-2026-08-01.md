@@ -31,18 +31,19 @@ Classification convention: explicit facts and assumptions are tagged inline or i
 
 ### Potential failure
 
-[INFERENCE] A correct-answer event triggers a stale or overlapping Phil line after the game has moved on; producer cancel does not stop speech or lower-third; OBS does not acknowledge or duplicates commands; broadcast sees incorrect/stale commentary while gameplay continues.
+[INFERENCE] A correct-answer event triggers a stale or overlapping Phil line after the game has moved on, or treats player-private submit feedback as public reveal; producer cancel does not stop speech or lower-third; OBS does not acknowledge or duplicates commands; broadcast sees incorrect/stale commentary while gameplay continues.
 
 ### Smallest realistic proof
 
 Run a local Windows rehearsal harness with mock and one real streaming voice adapter:
 
 1. Emit 50 simulated `ANSWER_CORRECT` events at realistic and burst intervals.
-2. For each event, compile a deterministic Phil line and caption.
+2. For each event, compile a deterministic Phil line and caption only when `publicRevealState` allows broadcast; verify private-submit events omit title/future-answer facts.
 3. Send lower-third command through mock OBS, then real obs-websocket to a rehearsal scene.
 4. Cancel at five cut points: before Phil compile, after compile, before voice first byte, mid-speech, after lower-third display.
 5. Disconnect OBS mid-run and reconnect from snapshot.
-6. Record timestamps for event received, validation complete, Phil line ready, first audio byte, caption visible, OBS ACK, cancel requested, cancel effective.
+6. Capture outbound OBS/overlay/Phil payloads and verify target-specific field stripping.
+7. Record timestamps for event received, validation complete, Phil line ready, first audio byte, caption visible, OBS ACK, cancel requested, cancel effective.
 
 ### Required pass/fail evidence
 
@@ -55,7 +56,9 @@ Pass only if all are true:
 - Producer cancel-to-overlay-hide <= 500 ms.
 - Duplicate `obs.command.v1.commandId` produces exactly one OBS effect.
 - OBS disconnect causes health `degraded/down`, no gameplay interruption, and snapshot recovery after reconnect.
-- Rehearsal logs contain zero hidden answers, emails, auth tokens, private VIP inventory, fraud signals, or raw service secrets.
+- Private-submit answer events produce zero broadcast `movieTitle`/`correctTitlePrivate` fields until game-authoritative public reveal/results.
+- Per-player VIP eligibility/tier/control payloads appear only in the intended player-private channel; broadcast shows aggregate counts only.
+- Rehearsal logs contain zero hidden answers, emails, auth tokens, private VIP inventory/tier, fraud signals, producer-only debug payloads in OBS browser sources, or raw service secrets.
 
 Do not recommend broad live-production implementation until this proof is defined and executed.
 
@@ -63,9 +66,9 @@ Do not recommend broad live-production implementation until this proof is define
 
 | ID | Risk | Likelihood | Impact | Evidence | Mitigation | Owner | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| R1 | Hidden answer leaks into Phil/overlay before reveal. | Medium | Critical | Existing game has correct-title/results fields; raw analytics payloads are not broadcast contracts. [VERIFIED:LOCAL] | Broadcast-safe projection, schema reject list, tests injecting hidden answer. | Architecture | Open |
+| R1 | Hidden answer leaks into Phil/overlay before game-authoritative public reveal. | Medium | Critical | Existing game has per-player `correctTitle` submit feedback and results title fields; raw analytics payloads are not broadcast contracts. [VERIFIED:LOCAL] | Broadcast-safe projection, explicit `publicRevealState`, schema reject list, tests injecting hidden answer and private submit feedback. | Architecture | Open |
 | R2 | Raw player auth IDs or emails leak. | Medium | High | Supabase auth/admin code has real user IDs; contracts can avoid them. [VERIFIED:LOCAL] | Episode-local `shortPlayerRef`; field-classification tests. | Security | Open |
-| R3 | VIP private inventory leaks to ineligible players or broadcast. | Medium | High | VIP is not implemented as a live contract; user request requires private controls. [VERIFIED:USER]+[UNKNOWN] | Player-private entitlement messages only; aggregate counts for broadcast. | Security | Open |
+| R3 | VIP private inventory or per-player eligibility/tier leaks to ineligible players or broadcast. | Medium | High | VIP is not implemented as a live contract; user request requires private controls. [VERIFIED:USER]+[UNKNOWN] | Player-private entitlement messages only; aggregate counts for broadcast. | Security | Open |
 | R4 | Prompt injection through display names/chat. | High | High | Display names are user-controlled profile data. [INFERENCE] | Sanitized identity; template-only Phil MVP; no raw chat in Phil. | Phil | Open |
 | R5 | Host hallucination or unsupported commentary. | Medium | High | Generative host not required for MVP. [INFERENCE] | Prepared factual templates; validation; producer approval in Assisted Mode. | Phil | Open |
 | R6 | Stale Phil line after state advances. | Medium | Medium | WebSocket/Realtime can reconnect and lag. [EXTERNAL]+[INFERENCE] | `expiresAt`, `stateVersion`, cancel token, snapshot check before play. | Runtime | Open |
@@ -98,6 +101,9 @@ Do not recommend broad live-production implementation until this proof is define
 | R33 | Supabase policy cache leaves revoked producer active until JWT update/expiry. | Medium | High | Realtime authorization docs say policy cache updates on connect/JWT update. [EXTERNAL] | Short JWT, explicit disconnect/revoke workflow, server-side command auth. | Security | Open |
 | R34 | Browser/WebSocket unbounded buffer during event bursts. | Medium | Medium | MDN notes stable WebSocket lacks backpressure. [EXTERNAL] | Bounded queues, drop stale visual events, snapshot catch-up. | Runtime | Open |
 | R35 | Clip-rights metadata in repo is insufficient for public episode. | Medium | Critical | YouTube says public-domain verification is uploader responsibility. [EXTERNAL] | Separate rights audit before public stream. | Legal/Content | Open |
+| R36 | Player-private submit feedback is mistaken for broadcast-safe answer reveal. | Medium | Critical | `submitMovieBuffAnswer()` returns `correctTitle` to the submitting client before docs prove a public reveal gate. [VERIFIED:LOCAL]+[INFERENCE] | Require `publicRevealState`; omit `movieTitle`/`correctTitlePrivate` from Phil/OBS until public reveal/results. | Architecture/Security | Open |
+| R37 | Producer-only health/debug details leak through OBS browser-source overlay. | Medium | High | Overlay runs in a browser context; mixed contracts include producer/system fields unless stripped by target. [INFERENCE] | Target-specific payload stripping; overlay receives broadcast fields only; capture browser-source payloads in rehearsal. | Security/Overlay | Open |
+| R38 | Local production machine or companion adapter is a single point of failure. | Medium | High | OBS/audio/voice runtime is intentionally local for Assisted Mode and Windows setup is unverified here. [UNKNOWN]+[INFERENCE] | Accept only for prototype/private rehearsal; manual OBS/voice fallback required before public run; document machine spec and startup recovery. | Ops/Broadcast | Open |
 
 ## 3. Failure-containment model
 
@@ -116,3 +122,6 @@ Do not recommend broad live-production implementation until this proof is define
 | Producer authorization cannot safely reuse current admin role without refinement. | Yes | Added R22 and separate role requirement. |
 | Snapshot/replay was missing as a first-class recovery risk. | Yes | Added R9 and required snapshot in contracts. |
 | Cost section could imply vendor pricing. | Yes | Limited to categories; no prices. |
+| Per-player answer feedback could be treated as public reveal. | Yes | Added explicit public reveal state and R36; private-submit answer events cannot publish titles. |
+| VIP per-player tier/eligibility could be broadcast from a mixed contract. | Yes | Reclassified per-player tier as player-private and added aggregate-only broadcast rule. |
+| OBS overlay could receive producer/debug fields if mixed payloads are published wholesale. | Yes | Added target-specific field stripping and R37. |
