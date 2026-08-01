@@ -279,6 +279,19 @@ function resolveExistingLocalPublicAsset(
   };
 }
 
+function isLocalPublicAssetUrl(
+  publicUrl: string | null | undefined,
+) {
+  const normalizedPublicUrl =
+    publicUrl?.trim() ?? "";
+
+  return (
+    normalizedPublicUrl.length > 0 &&
+    !isHttpUrl(normalizedPublicUrl) &&
+    normalizedPublicUrl.startsWith("/")
+  );
+}
+
 function slugifyPathSegment(value: string) {
   return value
     .toLowerCase()
@@ -1245,6 +1258,29 @@ async function generateClipAsset(
       sourceDurationSeconds: 0,
       strategyNotes: [
         "Served an existing verified local media asset instead of generating on demand.",
+      ],
+    } satisfies GeneratedClipSummary;
+  }
+
+  if (
+    scope !== "pool" &&
+    isLocalPublicAssetUrl(
+      source.fallbackMediaUrl,
+    )
+  ) {
+    return {
+      assetPath: null,
+      assetUrl:
+        source.fallbackMediaUrl?.trim() ?? "",
+      clipType: source.clipType,
+      durationSeconds:
+        FINAL_CLIP_DURATION_SECONDS,
+      hasAudio: source.clipType === "audio",
+      resolvedSourceUrl: "",
+      segmentStarts: [],
+      sourceDurationSeconds: 0,
+      strategyNotes: [
+        "Served an existing public media asset URL directly instead of generating a round file inside the function runtime.",
       ],
     } satisfies GeneratedClipSummary;
   }
