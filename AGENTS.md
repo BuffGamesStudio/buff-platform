@@ -6,31 +6,38 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## Cursor Cloud specific instructions
 
-This is **Buff Games / Movie Buff**: a Next.js 16 (App Router) multiplayer movie-trivia app backed by a local Supabase stack. Two services must run for development:
+This is a Next.js 16 (App Router, webpack dev) + Supabase app called Movie Buff ("buff-platform"). The single app is the web frontend + API routes; its only backend dependency is a local Supabase stack (Postgres + Auth + PostgREST + Realtime + Storage) run via the Supabase CLI, which needs Docker.
 
-- **Local Supabase stack** (Postgres/Auth/Realtime/Storage) — runs in Docker. Ports (non-default): API `55321`, DB `55322`, Studio `55323`.
-- **Next.js dev server** — run on port **3001** (all `movie-buff:*` smoke scripts default to `http://127.0.0.1:3001`): `npm run dev -- --hostname 127.0.0.1 --port 3001`.
+### Services and how to run them
 
-Standard scripts live in `package.json` (`dev`, `lint`, `build`, and many `movie-buff:*` helpers); local/prod runbooks are under `docs/`. Only non-obvious caveats are listed below.
+The VM snapshot already has Docker, the Supabase CLI, and node modules installed. On a fresh session the dependency refresh (`npm install`) runs automatically, but the Docker daemon and Supabase stack are NOT auto-started. Start them once per session:
 
-### Starting the services (Docker has no systemd here)
-- The Docker daemon is not managed by systemd. Start it once per session in the background if `docker info` fails: `sudo dockerd &` (config in `/etc/docker/daemon.json` already uses `fuse-overlayfs` + `containerd-snapshotter:false`, required for Docker-in-Docker on this VM). The socket may need `sudo chmod 666 /var/run/docker.sock` for non-root use.
-- Bring up Supabase from the repo root: `supabase start` (this auto-applies all `supabase/migrations/*` on a fresh DB). Get keys with `supabase status`.
+- Start Docker daemon (background): `sudo dockerd > /tmp/dockerd.log 2>&1 &` then `sudo chmod 666 /var/run/docker.sock`. Docker here uses `fuse-overlayfs` + iptables-legacy (already configured in `/etc/docker/daemon.json`).
+- Start Supabase: `supabase start` (from repo root). It applies all `supabase/migrations/*` automatically. First run pulls images; later runs are fast. Get URLs/keys anytime with `supabase status`.
+- Local Supabase fixed ports: API `http://127.0.0.1:55321`, DB `postgresql://postgres:postgres@127.0.0.1:55322/postgres`, Studio `http://127.0.0.1:55323`. The DB container is `supabase_db_buff-platform` (query with `docker exec -i supabase_db_buff-platform psql -U postgres -d postgres`).
+- Run the dev server on port 3001 (NOT 3000): `npm run dev -- --port 3001`. The app hardcodes `http://127.0.0.1:3001` as the local app URL and Supabase `site_url`, and smoke scripts default to it.
 
-### Environment file (`.env.local`, gitignored)
-Required vars (read in `src/lib/supabase.ts` and `src/lib/server/*`): `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:55321`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (publishable key from `supabase status`), `SUPABASE_SERVICE_ROLE_KEY` (service_role JWT from `supabase status`). Also set `NEXT_PUBLIC_APP_URL=http://127.0.0.1:3001` and `ALLOW_LOCAL_ADMIN_BYPASS=true` (lets `/admin` work on localhost without a real admin user). If `.env.local` is missing on a fresh VM, recreate it from `supabase status`.
+### Required env (`.env.local`, gitignored, recreate per environment)
 
-### Seeding playable content (critical, non-obvious)
-The timestamped migrations seed only **trivia** clips with `media_url = NULL`, so out of the box `playableClipCount = 0` and the lobby's "Find Match"/"Create Room" flow is effectively blocked (round count is `min(10, playableClipCount)`). The playable public-domain video library (montage `.mp4`s are committed under `public/media/movie-buff/public-domain/`) is loaded from the data-only seed `scripts/generated/movie-buff-launch-bootstrap.sql`. Apply it **non-transactionally** so pre-existing rows are skipped instead of aborting the whole file:
-```bash
-DBC=$(docker ps --format '{{.Names}}' | grep supabase_db_)
-sed '/^begin;$/d; /^commit;$/d' scripts/generated/movie-buff-launch-bootstrap.sql | docker exec -i "$DBC" psql -q -U postgres -d postgres
+The app throws on startup without these. Values come from `supabase start`/`supabase status` (local keys are the shared defaults and safe to hardcode locally):
+`NEXT_PUBLIC_APP_URL=http://127.0.0.1:3001`, `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:55321`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<publishable key>`, `SUPABASE_SERVICE_ROLE_KEY=<secret/service_role key>`, `ALLOW_LOCAL_ADMIN_BYPASS=true` (lets `localhost`/`127.0.0.1` reach `/admin` without an admin account), and optionally `MOVIE_BUFF_BASE_URL=http://127.0.0.1:3001`.
+
+### Seeding playable game content (important, non-obvious)
+
+`supabase start` migrations only create the schema plus placeholder text-trivia rows (`clips` are all `clip_type = 'trivia'` with `media_url = NULL`) — there are ZERO playable video clips, so the lobby reports `playableClipCount = 0`, shows "0 rounds", and matches hang. The real public-domain montage library ships as committed `.mp4` files under `public/media/movie-buff/public-domain/` plus a committed data seed at `scripts/generated/movie-buff-launch-bootstrap.sql` (the normal `movie-buff:import` bundle is NOT committed). That file's `categories`/`content_types` inserts collide with migration-seeded natural keys, but gameplay only needs the `movies` + `clips` blocks (the round builder `pick_movie_buff_clip` selects from legacy `public.clips` and treats `content_media` as optional). To seed playable clips into the local DB (inserts the `movies` block on lines 19-73 and the `clips` block on lines 187-241; `on conflict (id) do nothing`, idempotent):
 ```
-Expected/benign errors: the seed's `categories`/`content_types` collide by name with migration-seeded rows (and a few dependent FK inserts are skipped) — the `movies` + `video` `clips` rows still load. Afterwards `GET /api/movie-buff/categories` should report `"playableClipCount": 49` for "All Movies".
+{ echo "begin;"; sed -n '19,73p' scripts/generated/movie-buff-launch-bootstrap.sql; sed -n '187,241p' scripts/generated/movie-buff-launch-bootstrap.sql; echo "commit;"; } \
+  | docker exec -i supabase_db_buff-platform psql -U postgres -d postgres -v ON_ERROR_STOP=1
+```
+This inserts 49 public-domain movies + 49 video clips pointing at the committed montages (giving ~48-49 playable clips). The line ranges are tied to the current generated file — if it is regenerated, re-check that 19-73 is the `insert into public.movies` block and 187-241 is `insert into public.clips`. Afterwards `GET /api/movie-buff/categories` should report a non-zero `playableClipCount` for "All Movies".
 
 ### Gameplay/auth caveats
-- **Sign-up does NOT auto-login.** The flow is: `/sign-up` → then `/sign-in` with the same credentials (this establishes the session and redirects). Email confirmation is disabled locally, so accounts are auto-verified.
-- **Public matchmaking auto-starts only with ≥2 ready players.** For a solo end-to-end test, create a **private room** (verified-email gate is satisfied locally) and click Ready → Start Match.
 
-### Lint gotcha
-`npm run lint` (bare `eslint .`) also lints `supabase/.temp/` — a minified edge-runtime artifact generated by `supabase start` — producing ~150 spurious `prefer-const` errors. The tracked source lints clean. Run lint before `supabase start`, or scope it (e.g. `npx eslint src scripts`), and ignore `supabase/.temp` noise.
+- **Sign-up does NOT auto-login.** The flow is: `/sign-up` → then `/sign-in` with the same credentials (this establishes the session and redirects). Email confirmation is disabled locally, so accounts are auto-verified.
+- **Public matchmaking ("Find Match") auto-starts only with ≥2 ready players.** For a solo end-to-end test, create a **Private Room** (the verified-email gate is satisfied locally) → Ready → Start Match → Start Round → play screen shows a 30s montage + guess box → submit → round results.
+
+### Lint / build / test
+
+- Lint: `npm run lint` (== `eslint`). Most of the reported problems (roughly 186 of ~195) come from `supabase/.temp/` — a minified edge-runtime artifact that only exists after `supabase start` — not from tracked source. Excluding it (`npx eslint . --ignore-pattern "supabase/.temp/**"`, or scoping to `npx eslint src scripts`) leaves only ~9 pre-existing problems (a couple errors + a few unused-var warnings) in `src`/`scripts`, which are the repo's existing state, not an environment problem.
+- Build: `npm run build` passes.
+- The many `npm run movie-buff:*` smoke scripts are Playwright-based with hardcoded Windows paths (`PLAYWRIGHT_ENTRY`, `MOVIE_BUFF_CHROME_EXECUTABLE`) from the original author's machine; they need those env vars overridden to a Linux Chromium to run here. `npm run movie-buff:verify-analytics` runs SQL through `docker exec` against the running Supabase DB.
