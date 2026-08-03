@@ -32,19 +32,24 @@ export default async function MovieBuffBoardPreviewPage({
     typeof errorValue === "string" && errorValue.trim().length > 0
       ? decodeURIComponent(errorValue)
       : null;
-  let boardLoadError: string | null = null;
-  const preview = await (async () => {
+  const { preview, boardLoadError } = await (async () => {
     try {
-      return roomId
+      const loadedPreview = roomId
         ? (await ensureMovieBuffBoardForRoom(roomId)).preview
         : await getMovieBuffBoardPreview();
-    } catch (error) {
-      boardLoadError =
-        error instanceof Error
-          ? error.message
-          : "The board could not be prepared right now.";
 
-      return getMovieBuffBoardPreview();
+      return {
+        preview: loadedPreview,
+        boardLoadError: null as string | null,
+      };
+    } catch (error) {
+      return {
+        preview: await getMovieBuffBoardPreview(),
+        boardLoadError:
+          error instanceof Error
+            ? error.message
+            : "The board could not be prepared right now.",
+      };
     }
   })();
 
@@ -167,7 +172,7 @@ export default async function MovieBuffBoardPreviewPage({
                 Scoreboard
               </p>
               <div className="mt-5 space-y-3">
-                {preview.players.map((player, index) => (
+                {preview.players.map((player: NonNullable<typeof preview.players>[number], index) => (
                   <div
                     key={player.id}
                     className={`rounded-2xl border px-4 py-4 ${
@@ -244,7 +249,7 @@ export default async function MovieBuffBoardPreviewPage({
 
             <div className="overflow-hidden rounded-[2rem] border border-zinc-800 bg-gradient-to-b from-[#111111] to-black p-4 shadow-[0_0_70px_rgba(120,0,0,0.14)] xl:p-5">
               <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-6">
-                {preview.categories.map((category) => (
+                {preview.categories.map((category: NonNullable<typeof preview.categories>[number]) => (
                   <section
                     key={category.id}
                     className="overflow-hidden rounded-[1.7rem] border border-zinc-800 bg-[linear-gradient(180deg,rgba(23,23,23,0.98)_0%,rgba(7,7,7,1)_100%)]"
@@ -259,7 +264,7 @@ export default async function MovieBuffBoardPreviewPage({
                     </div>
 
                     <div className="grid gap-3 p-4">
-                      {category.tiles.map((tile) => {
+                      {category.tiles.map((tile: NonNullable<typeof category.tiles>[number]) => {
                         const isAvailable = tile.status === "available";
                         const isLocked = tile.status === "locked";
                         const isUsed = tile.status === "used";
