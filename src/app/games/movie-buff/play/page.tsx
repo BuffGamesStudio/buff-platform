@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -543,11 +543,13 @@ export default function MovieBuffPlayPage() {
       media.pause();
     }
 
-    setMediaReady(false);
-    setMediaStarted(false);
-    setMediaFailed(false);
-    setMediaStarting(false);
-    setHintPending(false);
+    queueMicrotask(() => {
+      setMediaReady(false);
+      setMediaStarted(false);
+      setMediaFailed(false);
+      setMediaStarting(false);
+      setHintPending(false);
+    });
   }, [roundData?.roundId]);
 
   const syncRoundState = useCallback(
