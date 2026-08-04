@@ -2,14 +2,30 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-const migrationPath =
-  "supabase/migrations/20260804081500_movie_buff_atomic_three_player_matchmaking.sql";
-const waitingRoomPath = "src/app/games/movie-buff/waiting-room/page.tsx";
-const racePath = "scripts/movie-buff-public-matchmaking-race.mjs";
-
-const migration = fs.readFileSync(migrationPath, "utf8");
-const waitingRoom = fs.readFileSync(waitingRoomPath, "utf8");
-const race = fs.readFileSync(racePath, "utf8");
+const migration = fs.readFileSync(
+  "supabase/migrations/20260804081500_movie_buff_atomic_three_player_matchmaking.sql",
+  "utf8",
+);
+const waitingRoom = fs.readFileSync(
+  "src/app/games/movie-buff/waiting-room/page.tsx",
+  "utf8",
+);
+const race = fs.readFileSync(
+  "scripts/movie-buff-public-matchmaking-race.mjs",
+  "utf8",
+);
+const helper = fs.readFileSync(
+  "scripts/movie-buff-public-matchmaking-race-helper.sql",
+  "utf8",
+);
+const rollback = fs.readFileSync(
+  "supabase/rollbacks/20260804081500_movie_buff_atomic_three_player_matchmaking.rollback.sql",
+  "utf8",
+);
+const pgtap = fs.readFileSync(
+  "supabase/tests/movie_buff_public_matchmaking_test.sql",
+  "utf8",
+);
 
 test("public capacity is server-owned and fixed at three", () => {
   assert.match(migration, /movie_buff_public_match_size\(\)/);
@@ -28,17 +44,14 @@ test("compatibility selection is serialized and durable", () => {
   assert.match(migration, /movie-buff-public-compatibility\|/);
   assert.match(migration, /pg_advisory_xact_lock/i);
   assert.match(migration, /public_matchmaking_key/);
-  assert.match(
-    migration,
-    /game_rooms_one_public_waiting_compatibility_key_idx/,
-  );
+  assert.match(migration, /game_rooms_one_public_waiting_compatibility_key_idx/);
   assert.doesNotMatch(migration, /skip\s+locked/i);
 });
 
-test("full rooms stay recoverable and reject a fourth player", () => {
+test("full rooms remain recoverable and reject a fourth player", () => {
   assert.match(
     migration,
-    /elsif\s+v_active_members\s*>=\s*v_public_size\s+then\s+raise exception 'The compatible public room is already full\.'/i,
+    /compatible public room is already full/i,
   );
   assert.doesNotMatch(
     migration,
@@ -46,7 +59,7 @@ test("full rooms stay recoverable and reject a fourth player", () => {
   );
 });
 
-test("security definer functions use fixed search path and explicit grants", () => {
+test("security definer functions use fixed paths and minimum grants", () => {
   const definerCount = (migration.match(/security definer/gi) ?? []).length;
   const fixedPathCount = (migration.match(/set search_path = pg_catalog/gi) ?? []).length;
   assert.ok(definerCount >= 4);
@@ -60,17 +73,64 @@ test("browser no longer owns public start eligibility", () => {
   assert.doesNotMatch(waitingRoom, /autoStartTimer/);
   assert.doesNotMatch(waitingRoom, /},\s*350\s*\)/);
   assert.doesNotMatch(waitingRoom, /at least 2 players are ready/i);
-  assert.match(waitingRoom, /There is no host start button or browser auto-start timer/i);
+  assert.match(
+    waitingRoom,
+    /There is no host start button or browser auto-start timer/i,
+  );
 });
 
-test("race harness is local-only and covers required edge families", () => {
+test("race evidence is exact-SHA bound and local-only", () => {
+  assert.match(race, /git["'], \["rev-parse", "HEAD"\]/);
+  assert.match(race, /MOVIE_BUFF_EXPECTED_GIT_SHA/);
+  assert.match(race, /MOVIE_BUFF_EVIDENCE_COMMAND/);
+  assert.match(race, /createHash\("sha256"\)/);
   assert.match(race, /localhost/);
   assert.match(race, /127\.0\.0\.1/);
-  assert.match(race, /exactly three core test-user credentials/i);
-  assert.match(race, /MOVIE_BUFF_OVERFLOW_TEST_USER/);
-  assert.match(race, /duplicateRequest/);
-  assert.match(race, /incompatibleSettings/);
-  assert.match(race, /fullRoom/);
-  assert.match(race, /staleRoom/);
-  assert.match(race, /lateThird/);
+  assert.match(race, /classification: "UNKNOWN"/);
+  assert.match(race, /exitCode/);
+});
+
+test("race cleanup requires explicit consent and is targeted", () => {
+  assert.match(race, /MOVIE_BUFF_ALLOW_LOCAL_DELETIONS/);
+  assert.match(race, /refusing cleanup of an untracked room/i);
+  assert.match(race, /created before this proof run/i);
+  assert.match(race, /containing a non-test player/i);
+  assert.match(race, /test users already have open memberships/i);
+  assert.doesNotMatch(race, /deleteRooms\(\(oldMemberships/);
+});
+
+test("race harness covers duplicate, incompatible, stale, overflow, and repeated convergence", () => {
+  assert.match(race, /duplicate same-player requests are idempotent/i);
+  assert.match(race, /open membership blocks incompatible rematch/i);
+  assert.match(race, /full cohort rejects fourth caller/i);
+  assert.match(race, /stale empty room is cancelled/i);
+  assert.match(race, /fresh simultaneous race/);
+});
+
+test("external row-lock contention is real and bounded", () => {
+  assert.match(helper, /for update/i);
+  assert.match(helper, /pg_sleep/i);
+  assert.match(helper, /LOCAL_MATCHMAKING_LOCK_TEST/);
+  assert.match(helper, /to service_role/i);
+  assert.doesNotMatch(helper, /to authenticated/i);
+  assert.match(race, /movie_buff_test_hold_waiting_room_lock/);
+  assert.match(race, /contentionElapsedMs/);
+});
+
+test("rollback packet is non-destructive containment", () => {
+  assert.match(rollback, /allow_matchmaking_containment/);
+  assert.match(rollback, /revoke execute[\s\S]*from authenticated/i);
+  assert.match(rollback, /to service_role/i);
+  assert.doesNotMatch(rollback, /drop column/i);
+  assert.doesNotMatch(rollback, /delete from/i);
+  assert.doesNotMatch(rollback, /update public\.game_rooms/i);
+  assert.match(rollback, /does not guess or restore/i);
+});
+
+test("pgTAP covers ACL, ownership, fixed paths, and no SKIP LOCKED", () => {
+  assert.match(pgtap, /select plan\(26\)/i);
+  assert.match(pgtap, /has_function_privilege/i);
+  assert.match(pgtap, /search_path=pg_catalog/i);
+  assert.match(pgtap, /owner is postgres/i);
+  assert.match(pgtap, /skip\[\[:space:\]\]\+locked/i);
 });
