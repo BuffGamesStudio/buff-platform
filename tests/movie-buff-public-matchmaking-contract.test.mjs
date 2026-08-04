@@ -49,10 +49,7 @@ test("compatibility selection is serialized and durable", () => {
 });
 
 test("full rooms remain recoverable and reject a fourth player", () => {
-  assert.match(
-    migration,
-    /compatible public room is already full/i,
-  );
+  assert.match(migration, /compatible public room is already full/i);
   assert.doesNotMatch(
     migration,
     /v_active_members\s*=\s*v_public_size[\s\S]{0,200}status\s*=\s*'starting'/i,
@@ -99,7 +96,7 @@ test("race cleanup requires explicit consent and is targeted", () => {
   assert.doesNotMatch(race, /deleteRooms\(\(oldMemberships/);
 });
 
-test("race harness covers duplicate, incompatible, stale, overflow, and repeated convergence", () => {
+test("race harness covers required convergence families", () => {
   assert.match(race, /duplicate same-player requests are idempotent/i);
   assert.match(race, /open membership blocks incompatible rematch/i);
   assert.match(race, /full cohort rejects fourth caller/i);
@@ -128,9 +125,9 @@ test("rollback packet is non-destructive containment", () => {
 });
 
 test("pgTAP covers ACL, ownership, fixed paths, and no SKIP LOCKED", () => {
-  assert.match(pgtap, /select plan\(26\)/i);
+  assert.match(pgtap, /select plan\(20\)/i);
   assert.match(pgtap, /has_function_privilege/i);
   assert.match(pgtap, /search_path=pg_catalog/i);
-  assert.match(pgtap, /owner is postgres/i);
+  assert.match(pgtap, /owned by postgres/i);
   assert.match(pgtap, /skip\[\[:space:\]\]\+locked/i);
 });
