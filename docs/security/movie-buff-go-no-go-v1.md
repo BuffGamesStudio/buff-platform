@@ -10,125 +10,149 @@ Integration SHA: `bf316a15a2120e32d8a32e479df2ae439081f9a1`
 
 # **NO-GO**
 
-UNKNOWN is not PASS. No local, browser, database, race, build, or production result is claimed unless an actual exact-SHA artifact exists.
+UNKNOWN is not PASS. No local, database, browser, race, accessibility, rollback, staging, or production result is claimed without exact-SHA evidence.
 
-## Decision basis
+## Exact lane state reviewed
 
-### Hosted security — confirmed FAIL
+- MOV-15 PR #9: `ce1f49bef7bf4f911e1949ef5fd626c0f92132dd`
+- MOV-16 PR #6: `3683c1ec2b70b8fabc85d70b77242e794b505c7e`
+- MOV-17 PR #10: `9b8a46aad207cd7ecc7aa99d99cf3580fd4ac73f`
+- MOV-18 PR #8: `900e9877d11b1ecd18ed6b4d847437af48b9b49b`
+- MOV-19 PR #7: final current head is recorded in GitHub/Linear after this document commit
+
+## Confirmed hosted security failures
 
 Read-only inspection of Supabase project `yfatwreicmiocdxzyznd` confirmed:
 
-- all six target tables have RLS disabled and no policies;
+- all six target public tables have RLS disabled and no policies;
 - anon and authenticated have effective SELECT/INSERT/UPDATE/DELETE on all six;
-- broad anon execution remains on critical Movie Buff SECURITY DEFINER functions;
+- broad anonymous execution remains on critical Movie Buff SECURITY DEFINER functions;
 - most critical functions use mutable `search_path=public`;
-- the hosted migration ledger contains only `20260803233057` and `20260803235116`, so none of the current lane migrations is hosted.
+- only migrations `20260803233057` and `20260803235116` are hosted; none of the current lane migrations is hosted.
 
-The hardened `join_movie_buff_room(text)` function is a narrow PASS: owner `postgres`, SECURITY DEFINER, `search_path=pg_catalog`, anon denied, authenticated/service role allowed. It does not cure the broader exposure.
+The hardened `join_movie_buff_room(text)` is a narrow hosted PASS: owner `postgres`, SECURITY DEFINER, `search_path=pg_catalog`, anon denied, authenticated/service role retained. It does not cure the wider exposure.
 
-### MOV-15 — PR #9, HEAD `3cea9b9f5e5436a834adf459834e7196890d2ac1`
+## Lane decisions
 
-Static source now contains the intended strict-three capacity, normalized compatibility key, per-player and compatibility serialization, partial uniqueness guard, and removal of the known two-player browser timer. These are source-invariant passes only.
+### MOV-15 — validation pending
 
-Release blockers remain:
+Static source contains strict-three size, canonical key, per-player and compatibility locking, partial uniqueness, ordinary `FOR UPDATE`, and removal of the known two-player browser timer.
 
-- zero GitHub Actions runs;
-- no executed repeated race or full negative matrix;
-- no hosted application;
+Release blockers:
+
+- no executable migration/race/negative-case output;
+- no GitHub Actions run;
+- harness can emit PASS without exact SHA/command/exit/artifact hashes;
+- local deletion lacks separate consent and failure cleanup;
+- no external row-lock contention regression;
+- same-settings fourth-player/cohort policy needs an explicit product record;
 - no rollback SQL;
-- PR body is stale and says the waiting-room defect remains although HEAD source removes it;
-- the added contract test was not included in the prior exact file claim;
-- `start_movie_buff_match(uuid)` overlaps MOV-17 phase ownership and must be reconciled before integration.
+- start RPC overlaps MOV-17 phase ownership.
 
-Classification: **UNKNOWN for behavior; not accepted.**
+Classification: **WAITING_FOR_LOCAL_EVIDENCE / not accepted.**
 
-### MOV-16 — PR #6, HEAD `3683c1ec2b70b8fabc85d70b77242e794b505c7e`
+### MOV-16 — changes requested
 
 Confirmed blockers:
 
-- first concurrent window-open and first concurrent lock can race through check-then-insert paths;
-- only a required-player count is persisted, not immutable required human identities/system classification;
-- Round Intro can navigate from VIP readiness rather than canonical MOV-17 phase;
-- contradictory activation replay is not fully bound to the supplied activation key;
-- required ownership/privacy/deadline/reconnect/exactly-once personas are not executed;
-- post-write rollback drops entitlement and audit state.
+- concurrent first window-open and first lock races;
+- required-human count without immutable participant identities/system/Buster classification;
+- browser navigation from VIP readiness rather than canonical phase;
+- incomplete contradictory activation replay binding;
+- no executed ownership/privacy/deadline/reconnect/exactly-once personas;
+- destructive post-write rollback.
 
 Classification: **CHANGES_REQUESTED / not accepted.**
 
-### MOV-17 — no implementation or PR
+### MOV-17 — contract only
 
-Integration still has manual progression, non-atomic board mutation, fail-open real-room fallback, per-player playback timestamps, and no proven selector abandonment, reconnect grace, Buster, no-human closure, or three-client agreement.
+PR #10 defines a coherent phase/participant/leave contract, but runtime implementation is absent:
 
-Classification: **FAIL on current integration; implementation/evidence absent.**
+- referenced view/advance routes do not exist;
+- no migration/RPC/state tables;
+- no atomic tile/clip transition or shared playback timestamp;
+- no participant/leave ledger, reconnect worker, Buster execution, or shared-page rewiring;
+- no rollback, pgTAP, or three-client harness;
+- no GitHub Actions run.
 
-### MOV-18 — PR #8, HEAD `d9139c7a7f6628efdc032326db4b099999b2e8c3`
+Current integration still has manual progression, service-role multi-statement board mutation, fail-open real-room fallback, and per-player playback timestamps.
 
-The visual authority boundary is correctly read-only at source level, but:
+Classification: **AGENT_WORKING; current integration FAIL; runtime UNKNOWN.**
 
-- the “Rive” surface has no Rive runtime and attaches `onError` to a `<div>`, so `.riv` failure cannot trigger the claimed fallback;
-- the Game Menu dialog lacks initial focus, focus containment, Escape handling, and focus restoration;
-- no package, production asset, shared-page integration, Actions run, browser proof, screenshot, hydration proof, or accessibility result exists.
+### MOV-18 — build passes, runtime blocked
 
-Classification: **CHANGES_REQUESTED / scaffold only.**
+Vercel deployment `dpl_3gWEhvPNo8wnpjo2VHESqGYFtp62` independently reached READY for exact SHA `900e9877…`. Build logs show successful compile, TypeScript, static page generation, route manifest inclusion, and deployment. This is a narrow preview-build PASS.
 
-### MOV-19 — PR #7
+Blocking findings remain:
 
-MOV-19 found and corrected its own evidence-integrity defects:
+- HEAD availability cannot prove a valid/parseable `.riv` file or successful runtime initialization;
+- actual Rive package/adapter/production assets are absent;
+- modal lacks complete focus and keyboard behavior;
+- reduced-motion hydration behavior is unproven;
+- protected preview could not be rendered through the connected fetch;
+- responsive, accessibility, malformed-asset, reconnect, and browser behavior remain UNKNOWN.
 
-- static regex checks now carry `proofScope` and `claimType`;
-- repository-static evidence cannot PASS runtime/hosted claims;
-- three-client matchmaking uses fresh targeted local rooms and leaves full phase synchronization UNKNOWN;
-- pgTAP now targets the six-table and critical RPC security floor;
-- validation and rollback documents now identify exact lane heads and hosted observations.
+Classification: **CHANGES_REQUESTED / build-only evidence.**
 
-These are source changes only. PR #7 has no Actions run and remains validation-pending.
+### MOV-19 — validator corrected, execution pending
 
-## Classification summary
+MOV-19 corrected its own evidence defects:
 
-### Narrow PASS
+- proof scope and claim type forbid static runtime/hosted PASS;
+- matchmaking races are fresh and local-target guarded;
+- full phase synchronization remains explicitly UNKNOWN;
+- pgTAP covers the six-table/RPC security floor and declares the correct 111-test plan;
+- matrix and rollback evidence identify current lane heads and hosted observations.
 
-- integration and all lane branches exist;
-- static strict-three source invariants at MOV-15 HEAD;
-- static read-only visual authority invariant at MOV-18 HEAD;
+No MOV-19 Actions/local validator output exists. Classification: **WAITING_FOR_LOCAL_EVIDENCE.**
+
+## Narrow PASS
+
+- integration and all five lane branches exist;
+- MOV-15 strict-three source invariants;
+- MOV-17 canonical contract clarity;
+- MOV-18 read-only visual-authority invariant;
+- MOV-18 exact-SHA Vercel compile/TypeScript/build/route presence;
 - hosted hardened `join_movie_buff_room(text)` metadata;
-- hosted service-role table CRUD continuity;
-- Figma write capability was verified by a reversible create/remove probe;
-- MOV-19 evidence schema now forbids static behavioral PASS.
+- hosted service-role CRUD continuity;
+- actual Figma write capability verified by reversible probe;
+- MOV-19 evidence schema and pgTAP plan integrity.
 
-### FAIL
+## FAIL
 
 - hosted six-table RLS/grant posture;
-- hosted anonymous critical RPC execution and mutable definer search paths;
-- current integration phase/board/playback authority;
-- MOV-16 concurrency/participant/phase/rollback findings;
-- MOV-18 actual asset-failure wiring and dialog accessibility;
+- hosted anonymous critical RPC execution and mutable search paths;
+- current integration board/phase/playback authority;
+- MOV-16 concurrency/participant/phase/rollback defects;
+- MOV-17 functional implementation absence;
+- MOV-18 actual asset-init failure channel and modal accessibility;
 - tested post-write rollback readiness.
 
-### UNKNOWN
+## UNKNOWN
 
-- all lane lint, TypeScript, Node, pgTAP, route, build, and diff-check outputs;
-- MOV-15 runtime race and negative matrix;
-- MOV-16 persona and concurrency behavior;
-- MOV-17 implementation and three-client synchronization;
-- MOV-18 runtime/browser/asset/accessibility behavior;
-- exact preview/staging/production deployed SHA;
-- hosted post-remediation ACL/RLS/RPC state;
-- rollback rehearsal after state writes.
+- all local lane lint, Node, pgTAP, race, browser, and diff-check results;
+- MOV-15 runtime convergence and lock contention;
+- MOV-16 persona/concurrency behavior;
+- MOV-17 three-client synchronized journey, reconnect, Buster, and no-human closure;
+- MOV-18 rendered runtime, malformed asset, reduced motion, hydration, accessibility, and responsive behavior;
+- one reconciled integrated SHA containing PR #3, PR #5, and all functional lanes;
+- staging/production deployed SHA and post-remediation database state;
+- rollback after real state writes.
 
 ## GO exit contract
 
-A GO recommendation requires all of the following on one exact integrated SHA:
+GO requires, on one exact integrated SHA:
 
-1. independently reviewed lane diffs with no unresolved ownership collision;
+1. independently reviewed diffs with ownership collisions resolved;
 2. successful lint, TypeScript, focused tests, pgTAP, production build, and diff check;
 3. repeated fresh three-player matchmaking races and complete negative cases;
 4. executed VIP ownership/privacy/deadline/duplicate/reconnect/exactly-once personas;
-5. three clients agreeing through Round Intro, board, atomic tile selection, transitions, shared playback timestamp, answer/results, selector rotation, and reconnect;
-6. reduced-motion, missing-asset, hydration, accessibility, and responsive visual proof;
-7. staging database proof for migration ledger, object hashes, owners, search paths, direct/effective grants, RLS, policies, and service-role continuity;
+5. three clients agreeing through intro, VIP, board, atomic selection, transition, shared playback, answer/results, rotation, leave/reconnect, Buster, and no-human closure;
+6. actual Rive failure, reduced-motion, hydration, accessibility, and responsive proof;
+7. staging ledger/object hashes/owners/search paths/grants/RLS/policies/service-role proof;
 8. tested rollback/containment with explicit authority and data-loss classification;
 9. production identity and exact deployed SHA before any production-ready claim.
 
 ## Safety statement
 
-No merge, deployment, production alias change, destructive reset, paid resource, secret disclosure, force-push, hosted/production Supabase mutation, or hosted resource deletion was performed by this review.
+No merge, deployment initiated by MOV-19, production alias change, destructive reset, paid resource, secret disclosure, force-push, hosted/production Supabase mutation, or hosted resource deletion was performed.
