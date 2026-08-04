@@ -12,7 +12,8 @@ on:
       - src/lib/movie-buff/**
       - src/app/games/movie-buff/visual-runtime-preview/**
       - tests/movie-buff-visual-runtime.test.mjs
-      - docs/product/movie-buff-visual-runtime-evidence.md
+      - docs/product/movie-buff-visual-runtime-*.md
+      - docs/product/movie-buff-rive-blender-runtime-contract-v1.md
   workflow_dispatch:
 
 permissions:
