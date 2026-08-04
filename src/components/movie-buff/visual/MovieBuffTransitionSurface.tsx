@@ -26,11 +26,9 @@ const transitionCopy: Record<
 
 export function MovieBuffTransitionSurface({
   kind,
-  runtimeContent,
   children,
 }: {
   kind: MovieBuffTransitionKind;
-  runtimeContent?: ReactNode;
   children?: ReactNode;
 }) {
   const asset = movieBuffVisualAssets[kind];
@@ -40,7 +38,7 @@ export function MovieBuffTransitionSurface({
     <MovieBuffRiveSurface
       assetSource={asset.source}
       label={asset.fallbackLabel}
-      runtimeContent={runtimeContent}
+      canvasClassName="absolute inset-0 h-full min-h-64 w-full"
     >
       <div className="relative min-h-64 overflow-hidden rounded-3xl border border-red-500/25 bg-[radial-gradient(circle_at_center,_rgba(185,28,28,0.24),_transparent_58%),linear-gradient(135deg,#160303,#030303_70%)] p-8 text-center text-white">
         <div className="mx-auto max-w-2xl">
