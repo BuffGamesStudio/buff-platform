@@ -1,0 +1,65 @@
+name: MOV-19 Windows digital twin
+
+on:
+  push:
+    branches:
+      - copilot/MOV-19-security-validation
+    paths:
+      - ".github/workflows/movie-buff-mov19-windows-digital-twin.yml"
+      - "scripts/movie-buff-mov19-windows-digital-twin.ps1"
+      - "scripts/movie-buff-security-evidence.mjs"
+      - "tests/movie-buff-independent-security-validation.test.mjs"
+      - "tests/movie-buff-release-evidence-integrity.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-digital-twin:
+    name: Windows PowerShell command-shell digital twin
+    runs-on: windows-2025
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: ${{ github.sha }}
+      EVIDENCE_ROOT: ${{ runner.temp }}\mov19-windows-evidence
+
+    steps:
+      - name: Check out exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify Windows runner identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'SHA mismatch' }
+          if (git status --porcelain) { throw 'Checkout is not clean' }
+          $PSVersionTable | Out-String
+          node --version
+          npm --version
+
+      - name: Execute checked-in PowerShell wrapper
+        shell: pwsh
+        run: |
+          ./scripts/movie-buff-mov19-windows-digital-twin.ps1 `
+            -ExpectedSha $env:EXPECTED_SHA `
+            -EvidenceRoot $env:EVIDENCE_ROOT
+
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov19-windows-digital-twin-${{ env.EXPECTED_SHA }}
+          path: ${{ env.EVIDENCE_ROOT }}
+          if-no-files-found: error
+          retention-days: 7
