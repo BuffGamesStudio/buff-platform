@@ -2,84 +2,102 @@
 
 Linear owner: MOV-17
 
-## Goal
+Authoritative source: `docs/product/movie-buff-authoritative-phase-vip-participant-leave-v1.md`.
 
-One authoritative match timeline is observed by every room member:
+This file is the implementation summary. If it conflicts with the authoritative source, the authoritative source wins.
 
-`round_intro → vip_selection → board → board_transition → clip_ready → clip_playback → answer → results → board|match_complete`
+## Canonical graph
 
-No browser, host, selector, animation callback, or local timer may advance the shared phase.
+`round_intro → vip_lock → board_select → transition → playback → answer → results → board_select|round_intro|finished`
+
+Terminal containment states are `abandoned` and `blocked`.
+
+No browser, host, selector, animation callback, local timer, browser history action, or visual completion event may advance the shared phase.
 
 ## Authority model
 
-The database stores one phase row per active match. Every phase transition:
+The database stores one phase row per match. Every transition:
 
 - locks the phase row;
-- verifies the expected phase and monotonically increasing version;
-- verifies the room/match/round relationship;
-- verifies completion/deadline predicates;
-- records server timestamps;
-- writes one transition event;
-- is idempotent for the same expected version and transition key;
-- rejects contradictory or stale requests.
+- verifies expected phase version;
+- verifies room, match, round, participant, selector, tile, and clip bindings;
+- verifies completion or deadline predicates;
+- writes canonical server timestamps and one transition event;
+- is idempotent for the same version and key;
+- rejects stale or contradictory requests;
+- fails closed to `blocked` when an invariant cannot be satisfied.
 
-Clients may request a read-only tick, but the server decides whether time and completion predicates permit transition.
+Clients call one caller-safe match view and may race to request an advance. The server decides whether advancement is legal.
 
-## Public/private start boundary
+## Timing
 
-MOV-15 owns public admission and strict-three readiness. MOV-17 begins only after an authoritative match exists. It must not weaken the three-player public start predicate.
+Launch timing is versioned server configuration:
 
-Private start behavior remains host-authorized until a separate product rule changes it.
+- 4-second `round_intro`
+- 15-second `vip_lock`
+- 20-second selector deadline
+- 3-second `transition`
+- clip-derived `playback`
+- 15-second `answer`
+- 8-second `results`
+- 45-second reconnect grace
+- 2-second abandoned-selector Buster delay
+
+Components may interpolate countdowns from server `now()`, but local countdown completion cannot advance the match.
+
+## Start boundary
+
+MOV-15 owns public admission, strict-three readiness, and waiting-room leave. MOV-17 begins only after an authoritative match and match-participant snapshot exist. MOV-17 must not weaken the public three-human start predicate.
+
+## Participant boundary
+
+Lobby `room_players` membership is not enough to classify an active-match human.
+
+The match participant/seat snapshot records stable seat order, original human, controller kind (`human` or `buster`), state (`active`, `reconnect_grace`, `abandoned`, `completed`), reconnect deadline, abandonment reason, and replacement relationship.
+
+The system is a trusted non-seat actor. Buster is a controller, not a fake profile. Buster/system never count toward required-human VIP or answer completion.
 
 ## VIP boundary
 
-MOV-16 owns private inventory, locks, deadlines, and activation. MOV-17 opens the VIP window and sets activation phases through service-only calls. VIP `advanceReady` is a predicate consumed by the phase machine; it is not permission for a client route change.
+MOV-16 owns inventory, eligibility, private locks, caller-private views, and consumption. MOV-17 owns the 15-second phase deadline, required-human snapshot, atomic window opening, deadline auto-passes, abandonment release, closure, and activation-phase handshake.
 
-Missing VIP model/window fails closed. No placeholder inventory is invented.
+A VIP lock may contain an eligible VIP or explicit no-VIP pass. Deadline expiry writes idempotent no-VIP pass records. Buster never owns or locks a VIP.
 
-## Board boundary
+Missing VIP model/window fails closed. A client cannot open, extend, close, or navigate from the VIP window by itself.
+
+## Board and playback boundary
 
 PR #3 is the visual baseline. PR #5 is the authorization baseline.
 
-Board creation, tile selection, selector verification, clip resolution, and event insertion must be atomic and idempotent. Real-room failures return errors; they never return demo board data or HTTP-200 fallback state.
+Board creation, selector verification, tile lock, clip resolution, and transition must be atomic and idempotent. Real-room failures never return demo board data.
 
-## Playback boundary
+The active round has one shared playback start, playback end, answer deadline, and results deadline. Reconnect derives the current offset from server time.
 
-The active round has one shared `playback_started_at` and one shared answer deadline. Per-player media-ready state may be collected, but no caller writes a private playback start timestamp.
+## Leave and Buster boundary
 
-Reconnect derives current position from server time and the shared timestamp.
+Waiting-room leave is penalty-free and MOV-15-owned.
 
-## Results and selector rotation
+Active leave is MOV-17-owned and uses a server quote followed by idempotent confirmation. Confirmation atomically applies the versioned penalty once, writes abandonment, blocks rejoin, releases required-human sets, and schedules Buster at a safe boundary.
 
-Results open only after the authoritative answer deadline or explicit all-complete predicate. The next selector is derived once and persisted. A completed round returns to board for the next round or enters `match_complete`.
+Disconnect enters 45-second reconnect grace. Reconnect before expiry restores the same seat and state without penalty. Trusted expiry finalization is idempotent and cannot double-charge.
 
-## Phase view
+Buster takeover never changes an assigned clip or shared timer. An abandoned selector receives deterministic Buster selection after the 2-second delay. No remaining human closes the match as `abandoned` without competitive rewards.
 
-Authenticated active members may read a caller-safe phase view containing:
+## Canonical routes
 
-- room, match, and round IDs;
-- phase and version;
-- phase start/deadline timestamps;
-- selector ID;
-- selected tile and clip identifiers when disclosure is allowed;
-- shared playback timestamp;
-- reconnect position metadata;
-- transition readiness without private VIP choices or hidden answers.
+- intro/VIP → `/games/movie-buff/round-intro`
+- board → `/games/movie-buff/board-preview`
+- transition/playback/answer → `/games/movie-buff/play`
+- results → `/games/movie-buff/round-results`
+- finished → `/games/movie-buff/final-results`
+- abandoned/blocked → `/games/movie-buff/match-status`
 
-## Security
+Clients replace routes only when the persisted canonical target changes and ignore older phase versions.
 
-All SECURITY DEFINER functions use `search_path = pg_catalog`, fully qualified objects, owner `postgres`, no PUBLIC/anon execute, and minimum authenticated/service-role grants. Browser entry points derive identity from verified bearer authentication and preserve active membership checks.
+Manual controls such as `Start Round`, `Continue to Clip Round`, `Current live flow`, `Next Round`, and `Waiting for host to click` are prohibited.
 
-## Idempotency
+## Security and evidence
 
-Every mutation carries an idempotency/transition key. Identical replay returns the persisted transition. A different requested outcome for the same key or stale expected version fails.
+All definer functions use owner `postgres`, `search_path = pg_catalog`, fully qualified objects, no PUBLIC/anon execute, and minimum grants. Browser routes verify bearer identity and active match authority before service-role mutation.
 
-## Client behavior
-
-Shared pages render the phase view and navigate only when the persisted phase changes. They may show local countdown interpolation from server timestamps, but local countdown completion cannot advance state.
-
-Manual controls such as `Start Round`, `Continue to Clip Round`, `Current live flow`, host `Next Round`, and `Waiting for host to click` are removed from shared flow.
-
-## Evidence classification
-
-Implementation presence is not runtime proof. Acceptance requires exact-SHA database concurrency tests, route personas, three-client phase/timestamp agreement, reconnect, duplicate/stale transition tests, lint, TypeScript, build, and rollback evidence. Until executed, those results are UNKNOWN.
+Implementation presence is not runtime proof. Exact-SHA concurrency, route persona, three-client, reconnect, stale-version, duplicate-leave, Buster, lint, TypeScript, build, rollback, staging, and hosted evidence remain UNKNOWN until actually executed.
