@@ -23,6 +23,10 @@ const baseInput = {
   motionPreference: "full",
 };
 
+async function source(relativePath) {
+  return readFile(new URL(relativePath, import.meta.url), "utf8");
+}
+
 test("visual runtime can never advance gameplay", () => {
   assert.equal(mayMovieBuffVisualRuntimeAdvanceGameplay(), false);
 });
@@ -92,6 +96,25 @@ test("an expired transition is not replayed", () => {
   assert.equal(state.shouldReplayTransition, false);
 });
 
+test("approved Rive packages are exact and synchronized", async () => {
+  const manifest = JSON.parse(await source("../package.json"));
+  const lock = JSON.parse(await source("../package-lock.json"));
+
+  assert.equal(manifest.dependencies?.["@rive-app/react-webgl2"], "4.30.0");
+  assert.equal(
+    lock.packages?.[""]?.dependencies?.["@rive-app/react-webgl2"],
+    "4.30.0",
+  );
+  assert.equal(
+    lock.packages?.["node_modules/@rive-app/react-webgl2"]?.version,
+    "4.30.0",
+  );
+  assert.equal(
+    lock.packages?.["node_modules/@rive-app/webgl2"]?.version,
+    "2.39.1",
+  );
+});
+
 test("all declared Rive assets use public absolute paths", () => {
   for (const asset of Object.values(movieBuffVisualAssets)) {
     assert.equal(asset.kind, "rive");
@@ -99,31 +122,46 @@ test("all declared Rive assets use public absolute paths", () => {
   }
 });
 
-test("Rive surface checks assets and honors reduced motion", async () => {
-  const source = await readFile(
-    new URL(
-      "../src/components/movie-buff/visual/MovieBuffRiveSurface.tsx",
-      import.meta.url,
-    ),
-    "utf8",
+test("Rive canvas is isolated, passive, and WebGL2 bounded", async () => {
+  const canvas = await source(
+    "../src/components/movie-buff/visual/MovieBuffRiveCanvas.tsx",
   );
-  assert.match(source, /prefers-reduced-motion: reduce/);
-  assert.match(source, /method: "HEAD"/);
-  assert.match(source, /MovieBuffStaticFallback/);
-  assert.doesNotMatch(source, /router\.(push|replace)/);
-  assert.doesNotMatch(source, /method: "POST"/);
+
+  assert.match(canvas, /@rive-app\/react-webgl2/);
+  assert.match(canvas, /Fit\.Contain/);
+  assert.match(canvas, /Alignment\.Center/);
+  assert.match(canvas, /useOffscreenRenderer/);
+  assert.match(canvas, /shouldDisableRiveListeners/);
+  assert.match(canvas, /onLoadError=\{onRuntimeError\}/);
+  assert.doesNotMatch(canvas, /useStateMachineInput/);
+  assert.doesNotMatch(canvas, /onStateChange/);
+  assert.doesNotMatch(canvas, /router\.(push|replace)/);
+  assert.doesNotMatch(canvas, /window\.location/);
+  assert.doesNotMatch(canvas, /supabase/i);
+  assert.doesNotMatch(canvas, /\/api\/movie-buff/);
+});
+
+test("Rive surface checks assets, honors reduced motion, and fails closed", async () => {
+  const riveSurface = await source(
+    "../src/components/movie-buff/visual/MovieBuffRiveSurface.tsx",
+  );
+  assert.match(riveSurface, /prefers-reduced-motion: reduce/);
+  assert.match(riveSurface, /method: "HEAD"/);
+  assert.match(riveSurface, /MovieBuffStaticFallback/);
+  assert.match(riveSurface, /MovieBuffRiveCanvas/);
+  assert.match(riveSurface, /onRuntimeError=\{\(\) => setAssetStatus\("failed"\)\}/);
+  assert.doesNotMatch(riveSurface, /router\.(push|replace)/);
+  assert.doesNotMatch(riveSurface, /method: "POST"/);
+  assert.doesNotMatch(riveSurface, /supabase/i);
 });
 
 test("isolated preview route cannot call gameplay or hosted APIs", async () => {
-  const source = await readFile(
-    new URL(
-      "../src/app/games/movie-buff/visual-runtime-preview/page.tsx",
-      import.meta.url,
-    ),
-    "utf8",
+  const preview = await source(
+    "../src/app/games/movie-buff/visual-runtime-preview/page.tsx",
   );
-  assert.doesNotMatch(source, /supabase/i);
-  assert.doesNotMatch(source, /\/api\/movie-buff/);
-  assert.doesNotMatch(source, /leaveCurrentRoom/);
-  assert.match(source, /Preview only/);
+  assert.doesNotMatch(preview, /supabase/i);
+  assert.doesNotMatch(preview, /\/api\/movie-buff/);
+  assert.doesNotMatch(preview, /leaveCurrentRoom/);
+  assert.match(preview, /Preview only/);
+  assert.match(preview, /cannot advance the shared phase/);
 });
