@@ -132,7 +132,7 @@ test("Rive canvas is isolated, passive, and WebGL2 bounded", async () => {
   assert.match(canvas, /Alignment\.Center/);
   assert.match(canvas, /useOffscreenRenderer/);
   assert.match(canvas, /shouldDisableRiveListeners/);
-  assert.match(canvas, /onLoadError=\{onRuntimeError\}/);
+  assert.match(canvas, /onLoadError:\s*onRuntimeError/);
   assert.doesNotMatch(canvas, /useStateMachineInput/);
   assert.doesNotMatch(canvas, /onStateChange/);
   assert.doesNotMatch(canvas, /router\.(push|replace)/);
