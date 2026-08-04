@@ -10,6 +10,10 @@ const hardening = fs.readFileSync(
   "supabase/migrations/20260804083100_movie_buff_server_phase_machine_hardening.sql",
   "utf8",
 );
+const alignment = fs.readFileSync(
+  "supabase/migrations/20260804083400_movie_buff_phase_contract_alignment.sql",
+  "utf8",
+);
 const viewRoute = fs.readFileSync(
   "src/app/api/movie-buff/match/view/route.ts",
   "utf8",
@@ -28,6 +32,10 @@ const authorization = fs.readFileSync(
 );
 const client = fs.readFileSync(
   "src/lib/game/movieBuffAuthoritativePhaseClient.ts",
+  "utf8",
+);
+const matchStatusPage = fs.readFileSync(
+  "src/app/games/movie-buff/match-status/page.tsx",
   "utf8",
 );
 
@@ -58,17 +66,18 @@ test("canonical phases and server timestamps are durable", () => {
   }
 });
 
-test("stable seats preserve original human identity through Buster replacement", () => {
+test("stable seats preserve human identity while system remains a non-seat actor", () => {
   assert.match(migration, /movie_buff_match_participant_seats/);
   assert.match(migration, /original_player_id/);
   assert.match(migration, /controller_type/);
-  assert.match(migration, /'human', 'buster', 'system'/);
+  assert.match(alignment, /controller_type in \('human', 'buster'\)/);
+  assert.doesNotMatch(client, /controllerType: "human" \| "buster" \| "system"/);
   assert.match(migration, /reconnect_deadline_at/);
   assert.match(migration, /reconnect_grace_expired/);
   assert.doesNotMatch(migration, /insert into public\.match_players[\s\S]*buster/i);
 });
 
-test("MOV-16 handshake uses exact required-human identities", () => {
+test("MOV-16 handshake uses exact identities and service-only finalization", () => {
   assert.match(
     migration,
     /open_movie_buff_vip_round_window\(uuid,uuid,uuid,timestamptz,uuid\[\]\)/,
@@ -80,6 +89,26 @@ test("MOV-16 handshake uses exact required-human identities", () => {
     migration,
     /open_movie_buff_vip_round_window\(uuid,uuid,uuid,timestamptz\)'/,
   );
+  assert.match(
+    alignment,
+    /finalize_movie_buff_vip_round_window\(uuid,uuid,timestamptz\)/,
+  );
+  assert.match(alignment, /movie_buff_phase_requires_vip_finalize/);
+  assert.match(alignment, /advanceReady/);
+  assert.match(alignment, /VIP finalize contract is unavailable/);
+});
+
+test("terminal phases have one canonical containment route", () => {
+  assert.match(
+    alignment,
+    /when 'abandoned' then '\/games\/movie-buff\/match-status'/,
+  );
+  assert.match(
+    alignment,
+    /when 'blocked' then '\/games\/movie-buff\/match-status'/,
+  );
+  assert.match(matchStatusPage, /Authoritative match status/);
+  assert.match(matchStatusPage, /cannot resume or advance gameplay/);
 });
 
 test("selector timeout is deterministic and never relaxes rights or repeats", () => {
@@ -134,7 +163,7 @@ test("caller routes verify bearer membership and use caller-scoped RPCs", () => 
 
 test("browser client follows only server-reported canonical phases", () => {
   assert.match(client, /MovieBuffCanonicalPhase/);
-  assert.match(client, /phaseRoute/);
+  assert.match(client, /phaseRoute: string/);
   assert.match(client, /phaseVersion/);
   assert.match(client, /serverNow/);
   assert.match(client, /expectedVersion/);
@@ -152,4 +181,6 @@ test("internal phase tables and helpers are not browser-readable", () => {
   }
   assert.match(migration, /set search_path = pg_catalog/g);
   assert.match(migration, /owner to postgres/g);
+  assert.match(alignment, /revoke all on function public\.movie_buff_phase_route/);
+  assert.match(alignment, /owner to postgres/);
 });
