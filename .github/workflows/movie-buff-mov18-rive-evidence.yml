@@ -1,0 +1,121 @@
+name: MOV-18 Rive dependency evidence
+
+on:
+  push:
+    branches:
+      - copilot/MOV-18-visual-motion-runtime
+    paths:
+      - .github/workflows/movie-buff-mov18-rive-evidence.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mov-18-rive-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate-rive-lock-evidence:
+    name: Generate package and runtime evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out exact MOV-18 SHA
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify isolated branch and clean checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "copilot/MOV-18-visual-motion-runtime"
+          test -z "$(git status --porcelain)"
+          node --version
+          npm --version
+          git rev-parse HEAD
+
+      - name: Generate synchronized exact Rive package and lock files
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --save-exact @rive-app/react-webgl2@4.30.0
+
+      - name: Validate dependency boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only)
+          printf 'Changed files:\n%s\n' "${changed[*]}"
+          test "${#changed[@]}" -eq 2
+          printf '%s\n' "${changed[@]}" | grep -Fx package.json
+          printf '%s\n' "${changed[@]}" | grep -Fx package-lock.json
+          node <<'NODE'
+          const fs = require('node:fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          if (pkg.dependencies?.['@rive-app/react-webgl2'] !== '4.30.0') {
+            throw new Error('package.json does not contain the approved exact Rive version');
+          }
+          if (lock.packages?.['']?.dependencies?.['@rive-app/react-webgl2'] !== '4.30.0') {
+            throw new Error('package-lock root does not contain the approved exact Rive version');
+          }
+          if (lock.packages?.['node_modules/@rive-app/react-webgl2']?.version !== '4.30.0') {
+            throw new Error('Rive React lock node is missing or unexpected');
+          }
+          if (lock.packages?.['node_modules/@rive-app/webgl2']?.version !== '2.39.1') {
+            throw new Error('Rive WebGL2 lock node is missing or unexpected');
+          }
+          NODE
+          git diff --check
+
+      - name: Install exact lock without package scripts
+        shell: bash
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run MOV-18 contract test
+        shell: bash
+        run: node --test tests/movie-buff-visual-runtime.test.mjs
+
+      - name: Run TypeScript
+        shell: bash
+        run: npx --no-install tsc --noEmit
+
+      - name: Run production build
+        shell: bash
+        run: npm run build
+
+      - name: Write exact-SHA evidence record
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mov18-rive-evidence
+          cp package.json package-lock.json mov18-rive-evidence/
+          sha256sum package.json package-lock.json > mov18-rive-evidence/sha256.txt
+          git diff -- package.json package-lock.json > mov18-rive-evidence/package-lock.patch
+          {
+            echo "source_sha=${GITHUB_SHA}"
+            echo "source_ref=${GITHUB_REF_NAME}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "node_version=$(node --version)"
+            echo "npm_version=$(npm --version)"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "workflow_run_id=${GITHUB_RUN_ID}"
+            echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
+          } > mov18-rive-evidence/evidence.txt
+
+      - name: Upload generated package pair and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov18-rive-generated-files-${{ github.sha }}
+          path: mov18-rive-evidence
+          if-no-files-found: error
+          retention-days: 7
