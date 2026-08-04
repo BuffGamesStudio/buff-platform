@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:movie-buff-board-routes": "node --experimental-strip-types --test tests/movie-buff-board-route-personas.test.ts",
     "movie-buff:smoke-public": "node ./scripts/movie-buff-public-flow-smoke.mjs",
     "movie-buff:smoke-private": "node ./scripts/movie-buff-private-flow-smoke.mjs",
     "movie-buff:smoke-auth": "node ./scripts/movie-buff-auth-flow-smoke.mjs",
