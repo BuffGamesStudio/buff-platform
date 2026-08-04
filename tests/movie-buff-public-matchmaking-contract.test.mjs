@@ -1,0 +1,56 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import test from "node:test";
+
+const migrationPath =
+  "supabase/migrations/20260804081500_movie_buff_atomic_three_player_matchmaking.sql";
+const waitingRoomPath = "src/app/games/movie-buff/waiting-room/page.tsx";
+const racePath = "scripts/movie-buff-public-matchmaking-race.mjs";
+
+const migration = fs.readFileSync(migrationPath, "utf8");
+const waitingRoom = fs.readFileSync(waitingRoomPath, "utf8");
+const race = fs.readFileSync(racePath, "utf8");
+
+test("public capacity is server-owned and fixed at three", () => {
+  assert.match(migration, /movie_buff_public_match_size\(\)/);
+  assert.match(migration, /select\s+3\s*;/i);
+  assert.match(migration, /exactly 3 active players/i);
+});
+
+test("matchmaking derives identity from auth uid", () => {
+  assert.match(migration, /v_user_id\s+uuid\s*:=\s*auth\.uid\(\)/i);
+  assert.doesNotMatch(migration, /p_player_id/i);
+});
+
+test("compatibility selection is serialized and durable", () => {
+  assert.match(migration, /movie-buff-public-compatibility\|/);
+  assert.match(migration, /pg_advisory_xact_lock/i);
+  assert.match(
+    migration,
+    /game_rooms_one_public_waiting_compatibility_key_idx/,
+  );
+  assert.doesNotMatch(migration, /skip\s+locked/i);
+});
+
+test("security definer functions use fixed search path and explicit grants", () => {
+  const definerCount = (migration.match(/security definer/gi) ?? []).length;
+  const fixedPathCount = (migration.match(/set search_path = pg_catalog/gi) ?? []).length;
+  assert.ok(definerCount >= 4);
+  assert.equal(fixedPathCount, definerCount);
+  assert.match(migration, /revoke all on function[\s\S]*from public, anon/i);
+  assert.match(migration, /to authenticated, service_role/i);
+});
+
+test("browser no longer owns public start eligibility", () => {
+  assert.doesNotMatch(waitingRoom, /players\.length\s*>=\s*2/);
+  assert.doesNotMatch(waitingRoom, /autoStartTimer/);
+  assert.doesNotMatch(waitingRoom, /},\s*350\s*\)/);
+  assert.doesNotMatch(waitingRoom, /at least 2 players are ready/i);
+});
+
+test("race harness refuses hosted Supabase and uses three identities", () => {
+  assert.match(race, /localhost/);
+  assert.match(race, /127\.0\.0\.1/);
+  assert.match(race, /exactly three test-user credentials/i);
+  assert.match(race, /new Set\(users\.map/);
+});
