@@ -6,9 +6,11 @@ import { Clapperboard, Menu, ShieldCheck, Sparkles } from "lucide-react";
 import {
   MovieBuffBusterReplacement,
   MovieBuffGameMenu,
+  MovieBuffRiveSurface,
   MovieBuffTransitionSurface,
   MovieBuffUsedTileStamp,
 } from "@/components/movie-buff/visual";
+import { movieBuffVisualAssets } from "@/lib/movie-buff/visualAssetMap";
 
 const previewTiles = [
   { value: 100, label: "Opening Scene", used: false },
@@ -75,12 +77,18 @@ export default function MovieBuffVisualRuntimePreviewPage() {
         </section>
 
         <section className="mt-8 grid gap-8 xl:grid-cols-[1.3fr_0.7fr]">
-          <MovieBuffTransitionSurface kind="curtain">
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/50 px-4 py-2 text-sm font-bold text-zinc-200">
-              <Sparkles aria-hidden="true" size={16} />
-              Missing production .riv files fail to this accessible surface
-            </span>
-          </MovieBuffTransitionSurface>
+          <MovieBuffRiveSurface
+            assetSource={movieBuffVisualAssets.curtain.source}
+            label={movieBuffVisualAssets.curtain.fallbackLabel}
+            canvasClassName="absolute inset-0 h-full min-h-[32rem] w-full"
+          >
+            <MovieBuffTransitionSurface kind="curtain">
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/50 px-4 py-2 text-sm font-bold text-zinc-200">
+                <Sparkles aria-hidden="true" size={16} />
+                Missing production .riv files fail to this accessible surface
+              </span>
+            </MovieBuffTransitionSurface>
+          </MovieBuffRiveSurface>
 
           <MovieBuffBusterReplacement
             replacedPlayerName="Departed player"
@@ -96,7 +104,7 @@ export default function MovieBuffVisualRuntimePreviewPage() {
           <p className="mt-3 max-w-4xl leading-7 text-zinc-300">
             Every control on this route changes local preview presentation only. No room,
             match, tile, phase, playback, VIP, score, penalty, or hosted state is read or
-            mutated.
+            mutated. Rive load success or failure also cannot advance the shared phase.
           </p>
         </section>
       </div>
