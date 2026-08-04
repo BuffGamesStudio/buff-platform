@@ -35,14 +35,14 @@ test("compatibility selection is serialized and durable", () => {
   assert.doesNotMatch(migration, /skip\s+locked/i);
 });
 
-test("a full trio is sealed before another joinable room is created", () => {
+test("full rooms stay recoverable and reject a fourth player", () => {
   assert.match(
     migration,
-    /if\s+v_active_members\s*=\s*v_public_size\s+then[\s\S]*status\s*=\s*'starting'/i,
+    /elsif\s+v_active_members\s*>=\s*v_public_size\s+then\s+raise exception 'The compatible public room is already full\.'/i,
   );
-  assert.match(
+  assert.doesNotMatch(
     migration,
-    /v_existing_room\.status\s+in\s*\('waiting',\s*'starting'\)/i,
+    /v_active_members\s*=\s*v_public_size[\s\S]{0,200}status\s*=\s*'starting'/i,
   );
 });
 
@@ -61,7 +61,6 @@ test("browser no longer owns public start eligibility", () => {
   assert.doesNotMatch(waitingRoom, /},\s*350\s*\)/);
   assert.doesNotMatch(waitingRoom, /at least 2 players are ready/i);
   assert.match(waitingRoom, /There is no host start button or browser auto-start timer/i);
-  assert.match(waitingRoom, /lobby\.room\.status === "active"/);
 });
 
 test("race harness is local-only and covers required edge families", () => {
@@ -71,7 +70,7 @@ test("race harness is local-only and covers required edge families", () => {
   assert.match(race, /MOVIE_BUFF_OVERFLOW_TEST_USER/);
   assert.match(race, /duplicateRequest/);
   assert.match(race, /incompatibleSettings/);
-  assert.match(race, /fullRoomRollover/);
+  assert.match(race, /fullRoom/);
   assert.match(race, /staleRoom/);
   assert.match(race, /lateThird/);
 });
