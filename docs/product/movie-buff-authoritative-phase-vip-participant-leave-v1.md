@@ -44,7 +44,7 @@ Missing or contradictory clip timing, rights, media, authorization, or state bin
 
 - Match/round creation enters `round_intro`.
 - `round_intro` advances at its deadline to `vip_lock` and opens the MOV-16 VIP window in the same transaction.
-- `vip_lock` advances when all required humans lock an eligible VIP or explicit no-VIP pass, or at deadline after the server writes idempotent no-VIP passes for missing required humans.
+- `vip_lock` advances when all required humans lock an eligible VIP or explicit no-VIP pass, or at deadline after MOV-16 atomically writes idempotent no-VIP passes for missing required humans.
 - `board_select` advances only after one authorized atomic tile-to-clip assignment. Selector timeout performs one deterministic canonical-order selection. An abandoned selector uses Buster after the takeover delay.
 - `transition` advances at shared `playback_starts_at`.
 - `playback` advances at the authoritative clip end.
@@ -61,7 +61,7 @@ The caller-safe match view returns canonical phase, version, timestamps, and rou
 - `transition`, `playback`, `answer` → `/games/movie-buff/play`
 - `results` → `/games/movie-buff/round-results`
 - `finished` → `/games/movie-buff/final-results`
-- `abandoned`, `blocked` → server-reason containment surface
+- `abandoned`, `blocked` → `/games/movie-buff/match-status`
 
 Clients derive time from server `now()`, ignore older phase versions, and replace routes only when the canonical target changes. Refresh, browser back, and reconnect must return to the canonical route. Network failure keeps the current surface with reconnect/error UI. Normal-path `Start Round`, `Continue to Clip Round`, `Current live flow`, and `Next Round` controls are prohibited. Animation callbacks never advance state.
 
@@ -81,7 +81,7 @@ Participation states:
 - `abandoned`
 - `completed`
 
-The `system` is a trusted non-seat actor for deadlines, transitions, auto-passes, timeout selection, disconnect finalization, and Buster decisions.
+The `system` is a trusted non-seat actor for deadlines, transitions, auto-passes, timeout selection, disconnect finalization, and Buster decisions. It must never appear as a participant-seat controller value.
 
 An active human is a real authenticated match seat whose controller is human, whose state is active or unexpired reconnect grace, whose match/room binding is current, and which has no abandonment event. `room_players.left_at is null` alone is not sufficient.
 
@@ -93,11 +93,22 @@ Selector rotation runs over active seats, including Buster-controlled replacemen
 
 ## MOV-16 and MOV-17 VIP integration
 
-MOV-16 owns VIP definitions, inventory, eligibility, private locks, private caller views, and consumption.
+MOV-16 owns VIP definitions, inventory, eligibility, private locks, private caller views, consumption, window closure, and deadline no-VIP record creation.
 
 MOV-17 owns round/phase timing, participant classification, required-human snapshots, phase advance, and activation-phase handoff.
 
+The stable service-only boundary is:
+
+- `open_movie_buff_vip_round_window(uuid, uuid, uuid, timestamptz, uuid[])`: MOV-17 supplies the exact non-empty required-human identity snapshot. The count-only overload is forbidden and must fail closed.
+- `finalize_movie_buff_vip_round_window(uuid, uuid, timestamptz)`: MOV-16 locks the window, verifies the authoritative deadline, writes missing explicit no-VIP pass records idempotently when due, closes when all unreleased required humans have records, and returns `advanceReady`.
+- `release_movie_buff_vip_required_player(uuid, uuid, uuid, text)`: MOV-17 releases one authoritatively abandoned human with an auditable reason.
+- `set_movie_buff_vip_activation_phase(uuid, uuid, text)`: MOV-17 publishes canonical phase entry for MOV-16 activation enforcement.
+
+These service-only functions are owned by `postgres`, use `search_path = pg_catalog`, are schema-qualified, revoke `PUBLIC`, `anon`, and `authenticated`, and grant only `service_role`. MOV-17 must not mutate MOV-16 private tables directly, derive readiness from their row counts, or fabricate no-VIP locks.
+
 The `round_intro` → `vip_lock` transaction must verify expected phase version, bind the round, derive the required-human set from match participants, open the MOV-16 window with the exact deadline, persist the auditable required-human snapshot, enter `vip_lock`, and increment phase version.
+
+The `vip_lock` → `board_select` transition must call the MOV-16 finalize boundary in the same transaction. Missing finalize support, contradictory result, or `advanceReady = false` blocks the transition.
 
 A valid lock is an eligible owned VIP or explicit `vip_id = null` pass. Both count. Identical replays return the original record; contradictory choices fail.
 
@@ -139,8 +150,8 @@ Moderation removal and system fault are separate reasons and do not automaticall
 
 ## Lane ownership
 
-- MOV-16 amends required-human logic and behavioral tests while retaining private VIP authority.
-- MOV-17 implements participant/seat state, phase/navigation, VIP handshake, active leave, grace, and Buster safe-boundary behavior.
+- MOV-16 implements the service-only finalize boundary, amends required-human logic, and adds behavioral tests while retaining private VIP authority.
+- MOV-17 implements participant/seat state, phase/navigation, VIP handshake enforcement, active leave, grace, and Buster safe-boundary behavior.
 - MOV-18 renders canonical phase, quote, reconnect, and Buster states only; motion cannot mutate gameplay.
 - MOV-19 independently tests classification, privacy, stale versions, races, grace, duplicate penalties, selector abandonment, and no-human termination.
 
