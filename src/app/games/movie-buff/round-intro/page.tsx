@@ -2,19 +2,38 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Clock3, Film, Gamepad2, LockKeyhole, LogOut, ShieldAlert, X } from "lucide-react";
+import {
+  Check,
+  Clock3,
+  Film,
+  Gamepad2,
+  LockKeyhole,
+  ShieldAlert,
+  X,
+} from "lucide-react";
 
-import { leaveCurrentRoom } from "@/lib/db/movieBuff";
 import { findCurrentRoomId, getCurrentUserId } from "@/lib/game/gameState";
 import {
   getMovieBuffVipRoundView,
   lockMovieBuffRoundVip,
+  type MovieBuffVipInventoryItem,
   type MovieBuffVipRoundView,
 } from "@/lib/game/movieBuffVipService";
 import { getCurrentMovieBuffRound } from "@/lib/game/roundService";
 
-function createActionKey(prefix: string) {
-  return `${prefix}-${crypto.randomUUID()}`;
+function actionKey() {
+  return `vip-lock-${crypto.randomUUID()}`;
+}
+
+function activationLabel(item: MovieBuffVipInventoryItem) {
+  const labels = {
+    round_intro: "Round Intro",
+    board_select: "board selection",
+    playback: "synchronized playback",
+    answer: "the answer window",
+    results: "synchronized results",
+  } as const;
+  return `Armed for ${labels[item.activationWindow]}`;
 }
 
 export default function RoundIntroPage() {
@@ -30,58 +49,57 @@ export default function RoundIntroPage() {
   const [lockingVipId, setLockingVipId] = useState<string | null | undefined>();
   const [error, setError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [leaving, setLeaving] = useState(false);
 
-  const navigate = useCallback(
-    (destination: string, replace = false) => {
-      if (replace) {
-        router.replace(destination);
-      } else {
-        router.push(destination);
-      }
+  const refresh = useCallback(
+    async (nextRoomId = roomId, nextRoundId = roundId) => {
+      if (!nextRoomId || !nextRoundId) return;
+      const nextView = await getMovieBuffVipRoundView(nextRoomId, nextRoundId);
+      setView(nextView);
+      setClockOffsetMs(new Date(nextView.serverNow).getTime() - Date.now());
     },
-    [router],
+    [roomId, roundId],
   );
-
-  const refresh = useCallback(async (resolvedRoomId = roomId, resolvedRoundId = roundId) => {
-    if (!resolvedRoomId || !resolvedRoundId) return;
-    const nextView = await getMovieBuffVipRoundView(resolvedRoomId, resolvedRoundId);
-    setView(nextView);
-    setClockOffsetMs(new Date(nextView.serverNow).getTime() - Date.now());
-  }, [roomId, roundId]);
 
   useEffect(() => {
     let active = true;
 
     async function initialize() {
       try {
-        const params = new URLSearchParams(window.location.search);
+        const parameters = new URLSearchParams(window.location.search);
         const playerId = await getCurrentUserId();
-        const resolvedRoomId =
-          params.get("roomId") ?? (await findCurrentRoomId(playerId)) ?? "";
+        const nextRoomId =
+          parameters.get("roomId") ?? (await findCurrentRoomId(playerId)) ?? "";
 
-        if (!resolvedRoomId) {
-          navigate("/games/movie-buff/lobby", true);
+        if (!nextRoomId) {
+          router.replace("/games/movie-buff/lobby");
           return;
         }
 
-        const round = await getCurrentMovieBuffRound(resolvedRoomId);
+        const round = await getCurrentMovieBuffRound(nextRoomId);
         if (!active) return;
 
-        setRoomId(resolvedRoomId);
+        setRoomId(nextRoomId);
         setRoundId(round.roundId);
         setRoundNumber(round.roundNumber);
         setTotalRounds(round.totalRounds);
-        await refresh(resolvedRoomId, round.roundId);
+        await refresh(nextRoomId, round.roundId);
       } catch (loadError) {
-        if (loadError instanceof Error && loadError.message === "SIGN_IN_REQUIRED") {
-          navigate(
-            `/sign-in?next=${encodeURIComponent(`/games/movie-buff/round-intro${window.location.search}`)}`,
-            true,
+        if (
+          loadError instanceof Error &&
+          loadError.message === "SIGN_IN_REQUIRED"
+        ) {
+          router.replace(
+            `/sign-in?next=${encodeURIComponent(
+              `/games/movie-buff/round-intro${window.location.search}`,
+            )}`,
           );
           return;
         }
-        setError(loadError instanceof Error ? loadError.message : "Unable to load Round Intro.");
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Unable to load Round Intro.",
+        );
       } finally {
         if (active) setLoading(false);
       }
@@ -91,11 +109,14 @@ export default function RoundIntroPage() {
     return () => {
       active = false;
     };
-  }, [navigate, refresh]);
+  }, [refresh, router]);
 
   useEffect(() => {
     if (!roomId || !roundId) return;
-    const poll = window.setInterval(() => void refresh().catch(() => undefined), 1000);
+    const poll = window.setInterval(
+      () => void refresh().catch(() => undefined),
+      1000,
+    );
     const clock = window.setInterval(() => setNowMs(Date.now()), 250);
     return () => {
       window.clearInterval(poll);
@@ -103,22 +124,14 @@ export default function RoundIntroPage() {
     };
   }, [refresh, roomId, roundId]);
 
-  useEffect(() => {
-    if (!view?.advanceReady || !roomId) return;
-    const timeout = window.setTimeout(() => {
-      navigate(
-        `/games/movie-buff/board-preview?roomId=${encodeURIComponent(roomId)}&round=${encodeURIComponent(String(roundNumber))}`,
-        true,
-      );
-    }, 700);
-    return () => window.clearTimeout(timeout);
-  }, [navigate, roomId, roundNumber, view?.advanceReady]);
-
   const remainingSeconds = useMemo(() => {
     if (!view?.deadlineAt) return 0;
     return Math.max(
       0,
-      Math.ceil((new Date(view.deadlineAt).getTime() - (nowMs + clockOffsetMs)) / 1000),
+      Math.ceil(
+        (new Date(view.deadlineAt).getTime() - (nowMs + clockOffsetMs)) /
+          1000,
+      ),
     );
   }, [clockOffsetMs, nowMs, view?.deadlineAt]);
 
@@ -127,29 +140,14 @@ export default function RoundIntroPage() {
     setLockingVipId(vipId);
     setError("");
     try {
-      await lockMovieBuffRoundVip(
-        roomId,
-        roundId,
-        vipId,
-        createActionKey("vip-lock"),
-      );
+      await lockMovieBuffRoundVip(roomId, roundId, vipId, actionKey());
       await refresh();
     } catch (lockError) {
-      setError(lockError instanceof Error ? lockError.message : "Unable to lock VIP.");
+      setError(
+        lockError instanceof Error ? lockError.message : "Unable to lock VIP.",
+      );
     } finally {
       setLockingVipId(undefined);
-    }
-  }
-
-  async function leaveMatch() {
-    if (!roomId || leaving) return;
-    setLeaving(true);
-    try {
-      await leaveCurrentRoom(roomId);
-      navigate("/games/movie-buff/lobby", true);
-    } catch (leaveError) {
-      setError(leaveError instanceof Error ? leaveError.message : "Unable to leave match.");
-      setLeaving(false);
     }
   }
 
@@ -167,9 +165,15 @@ export default function RoundIntroPage() {
       <section className="relative z-10 mx-auto max-w-6xl">
         <header className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.35em] text-red-400">Movie Buff Presents</p>
-            <h1 className="mt-2 text-5xl font-black uppercase md:text-7xl">Round {roundNumber}</h1>
-            <p className="mt-2 text-zinc-500">{roundNumber} of {totalRounds}</p>
+            <p className="text-xs font-black uppercase tracking-[0.35em] text-red-400">
+              Movie Buff Presents
+            </p>
+            <h1 className="mt-2 text-5xl font-black uppercase md:text-7xl">
+              Round {roundNumber}
+            </h1>
+            <p className="mt-2 text-zinc-500">
+              {roundNumber} of {totalRounds}
+            </p>
           </div>
           <button
             type="button"
@@ -184,10 +188,15 @@ export default function RoundIntroPage() {
           <section className="rounded-3xl border border-red-500/25 bg-zinc-950/90 p-6 md:p-8">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm font-black uppercase tracking-[0.28em] text-red-400">Private VIP Selection</p>
-                <h2 className="mt-3 text-3xl font-black">Choose from your owned VIPs</h2>
+                <p className="text-sm font-black uppercase tracking-[0.28em] text-red-400">
+                  Private VIP Selection
+                </p>
+                <h2 className="mt-3 text-3xl font-black">
+                  Choose from your owned VIPs
+                </h2>
                 <p className="mt-3 max-w-2xl text-zinc-400">
-                  Your unused choice stays private. The server owns the lock and deadline.
+                  Your unused choice stays private. The server owns the lock,
+                  eligibility, participant snapshot, and deadline.
                 </p>
               </div>
               <Film className="text-red-500" size={38} />
@@ -204,9 +213,13 @@ export default function RoundIntroPage() {
                 <div className="flex gap-3">
                   <ShieldAlert className="shrink-0 text-amber-300" />
                   <div>
-                    <p className="font-black text-amber-100">VIP selection is not available</p>
+                    <p className="font-black text-amber-100">
+                      VIP selection is not available
+                    </p>
                     <p className="mt-2 text-sm leading-6 text-amber-100/70">
-                      The server has not opened an authoritative VIP window or inventory model for this round. No placeholder VIPs were granted.
+                      The phase service has not opened a VIP window with an
+                      explicit required-human snapshot. No placeholder inventory
+                      was granted.
                     </p>
                   </div>
                 </div>
@@ -218,9 +231,12 @@ export default function RoundIntroPage() {
                 <div className="flex items-center gap-3">
                   <LockKeyhole className="text-emerald-300" />
                   <div>
-                    <p className="font-black text-emerald-100">Selection locked</p>
+                    <p className="font-black text-emerald-100">
+                      Selection locked
+                    </p>
                     <p className="mt-1 text-emerald-100/70">
-                      {view.lock.vipName ?? "No VIP this round"}. This same lock will be restored after reconnect.
+                      {view.lock.vipName ?? "No VIP this round"}. Reconnecting
+                      restores this same lock without another inventory charge.
                     </p>
                   </div>
                 </div>
@@ -238,10 +254,17 @@ export default function RoundIntroPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-xl font-black">{item.name}</p>
-                        <p className="mt-2 text-sm leading-6 text-zinc-400">{item.description}</p>
+                        <p className="mt-2 text-sm leading-6 text-zinc-400">
+                          {item.description}
+                        </p>
                       </div>
-                      <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs font-black">×{item.quantityRemaining}</span>
+                      <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs font-black">
+                        ×{item.quantityRemaining}
+                      </span>
                     </div>
+                    <p className="mt-3 text-xs font-bold text-amber-200/80">
+                      {activationLabel(item)} · {item.effectScope} effect
+                    </p>
                     <p className="mt-4 text-xs font-black uppercase tracking-[0.2em] text-red-300">
                       {item.available
                         ? lockingVipId === item.vipId
@@ -259,7 +282,9 @@ export default function RoundIntroPage() {
                   className="rounded-2xl border border-zinc-800 bg-black p-5 text-left transition hover:border-zinc-500 disabled:opacity-55"
                 >
                   <p className="text-xl font-black">No VIP</p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-400">Lock in without using inventory this round.</p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-400">
+                    Lock in without using inventory this round.
+                  </p>
                   <p className="mt-4 text-xs font-black uppercase tracking-[0.2em] text-zinc-300">
                     {lockingVipId === null ? "Locking..." : "Lock no VIP"}
                   </p>
@@ -271,26 +296,34 @@ export default function RoundIntroPage() {
           <aside className="space-y-5">
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 text-center">
               <Clock3 className="mx-auto text-red-400" size={34} />
-              <p className="mt-4 text-xs font-black uppercase tracking-[0.25em] text-zinc-500">Server Countdown</p>
-              <p className="mt-2 text-6xl font-black tabular-nums">{remainingSeconds}</p>
+              <p className="mt-4 text-xs font-black uppercase tracking-[0.25em] text-zinc-500">
+                Server Countdown
+              </p>
+              <p className="mt-2 text-6xl font-black tabular-nums">
+                {remainingSeconds}
+              </p>
               <p className="mt-3 text-sm text-zinc-400">
                 Refreshing this page cannot extend the deadline.
               </p>
             </div>
 
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
-              <p className="text-xs font-black uppercase tracking-[0.25em] text-zinc-500">Lock Status</p>
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-zinc-500">
+                Lock Status
+              </p>
               <p className="mt-3 text-2xl font-black">
                 {view?.lockedCount ?? 0} / {view?.requiredPlayerCount ?? 0}
               </p>
               <p className="mt-3 text-sm leading-6 text-zinc-400">
                 {view?.advanceReady
-                  ? "Advancing automatically to the shared board..."
+                  ? "VIP selection is complete. Waiting for the authoritative shared phase to advance."
                   : view?.status === "closed"
-                    ? "Deadline closed. Waiting for synchronized transition."
-                    : "The match advances when everyone locks or the deadline expires."}
+                    ? "Deadline closed. Waiting for the authoritative shared phase."
+                    : "The window becomes ready when every required human locks or the deadline expires."}
               </p>
-              {view?.advanceReady ? <Check className="mt-4 text-emerald-400" /> : null}
+              {view?.advanceReady ? (
+                <Check className="mt-4 text-emerald-400" />
+              ) : null}
             </div>
           </aside>
         </div>
@@ -301,25 +334,25 @@ export default function RoundIntroPage() {
           <div className="w-full max-w-md rounded-3xl border border-zinc-700 bg-zinc-950 p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-black">Game Menu</h2>
-              <button type="button" onClick={() => setMenuOpen(false)} aria-label="Close game menu">
+              <button
+                type="button"
+                onClick={() => setMenuOpen(false)}
+                aria-label="Close game menu"
+              >
                 <X />
               </button>
             </div>
             <button
               type="button"
-              onClick={() => navigate("/games/movie-buff/how-to-play")}
+              onClick={() => router.push("/games/movie-buff/how-to-play")}
               className="mt-6 w-full rounded-xl border border-zinc-700 px-5 py-4 font-black"
             >
               How to Play
             </button>
-            <button
-              type="button"
-              disabled={leaving}
-              onClick={() => void leaveMatch()}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-5 py-4 font-black text-red-200 disabled:opacity-50"
-            >
-              <LogOut size={18} /> {leaving ? "Leaving..." : "Leave Match"}
-            </button>
+            <p className="mt-4 rounded-xl border border-zinc-700 p-4 text-sm leading-6 text-zinc-400">
+              Shared match actions are supplied by the authoritative phase
+              service. This private VIP screen cannot advance or alter the match.
+            </p>
           </div>
         </div>
       ) : null}
