@@ -122,51 +122,77 @@ select ok(
   exists (
     select 1
     from pg_catalog.pg_proc as procedure_row
-    join pg_catalog.pg_namespace as namespace
-      on namespace.oid = procedure_row.pronamespace
     join pg_catalog.pg_roles as owner_role
       on owner_role.oid = procedure_row.proowner
-    where namespace.nspname = 'public'
-      and procedure_row.proname = 'finalize_movie_buff_vip_round_window'
-      and pg_catalog.pg_get_function_identity_arguments(procedure_row.oid) = 'uuid, uuid, timestamp with time zone'
+    where procedure_row.oid = to_regprocedure(
+      'public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)'
+    )
       and owner_role.rolname = 'postgres'
   ),
   'MOV-16 finalize service boundary is owned by postgres'
 );
 
 select ok(
-  not pg_catalog.has_function_privilege(
-    'public',
-    'public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)',
-    'EXECUTE'
-  ),
+  case
+    when to_regprocedure(
+      'public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)'
+    ) is null then false
+    else not pg_catalog.has_function_privilege(
+      'public',
+      to_regprocedure(
+        'public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)'
+      ),
+      'EXECUTE'
+    )
+  end,
   'PUBLIC cannot execute MOV-16 finalize boundary'
 );
 
 select ok(
-  not pg_catalog.has_function_privilege(
-    'anon',
-    'public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)',
-    'EXECUTE'
-  ),
+  case
+    when to_regprocedure(
+      'public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)'
+    ) is null then false
+    else not pg_catalog.has_function_privilege(
+      'anon',
+      to_regprocedure(
+        'public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)'
+      ),
+      'EXECUTE'
+    )
+  end,
   'anon cannot execute MOV-16 finalize boundary'
 );
 
 select ok(
-  not pg_catalog.has_function_privilege(
-    'authenticated',
-    'public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)',
-    'EXECUTE'
-  ),
+  case
+    when to_regprocedure(
+      'public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)'
+    ) is null then false
+    else not pg_catalog.has_function_privilege(
+      'authenticated',
+      to_regprocedure(
+        'public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)'
+      ),
+      'EXECUTE'
+    )
+  end,
   'authenticated cannot execute MOV-16 finalize boundary'
 );
 
 select ok(
-  pg_catalog.has_function_privilege(
-    'service_role',
-    'public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)',
-    'EXECUTE'
-  ),
+  case
+    when to_regprocedure(
+      'public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)'
+    ) is null then false
+    else pg_catalog.has_function_privilege(
+      'service_role',
+      to_regprocedure(
+        'public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)'
+      ),
+      'EXECUTE'
+    )
+  end,
   'service_role can execute MOV-16 finalize boundary'
 );
 
