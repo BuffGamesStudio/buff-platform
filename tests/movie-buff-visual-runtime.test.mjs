@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const {
   deriveMovieBuffVisualRuntimeState,
   mayMovieBuffVisualRuntimeAdvanceGameplay,
 } = await import("../src/lib/movie-buff/visualRuntime.ts");
+const { movieBuffVisualAssets } = await import(
+  "../src/lib/movie-buff/visualAssetMap.ts"
+);
 
 const baseInput = {
   phase: "board",
@@ -86,4 +90,40 @@ test("an expired transition is not replayed", () => {
     Date.parse("2026-08-04T12:00:11.000Z"),
   );
   assert.equal(state.shouldReplayTransition, false);
+});
+
+test("all declared Rive assets use public absolute paths", () => {
+  for (const asset of Object.values(movieBuffVisualAssets)) {
+    assert.equal(asset.kind, "rive");
+    assert.match(asset.source, /^\/movie-buff\/rive\/[a-z-]+\.riv$/);
+  }
+});
+
+test("Rive surface checks assets and honors reduced motion", async () => {
+  const source = await readFile(
+    new URL(
+      "../src/components/movie-buff/visual/MovieBuffRiveSurface.tsx",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(source, /prefers-reduced-motion: reduce/);
+  assert.match(source, /method: "HEAD"/);
+  assert.match(source, /MovieBuffStaticFallback/);
+  assert.doesNotMatch(source, /router\.(push|replace)/);
+  assert.doesNotMatch(source, /method: "POST"/);
+});
+
+test("isolated preview route cannot call gameplay or hosted APIs", async () => {
+  const source = await readFile(
+    new URL(
+      "../src/app/games/movie-buff/visual-runtime-preview/page.tsx",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /supabase/i);
+  assert.doesNotMatch(source, /\/api\/movie-buff/);
+  assert.doesNotMatch(source, /leaveCurrentRoom/);
+  assert.match(source, /Preview only/);
 });
