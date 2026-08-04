@@ -1,6 +1,6 @@
 import "server-only";
 
-import { ensureMovieBuffBoard } from "@/lib/server/movieBuffBoard";
+import { ensureMovieBuffBoardForRoom } from "@/lib/server/movieBuffBoard";
 import {
   isMovieBuffPhaseUuid,
   movieBuffPhaseErrorResponse,
@@ -25,10 +25,10 @@ export async function POST(request: Request) {
       body.roomId,
     );
 
-    // Existing board generation remains the board authority. This server-side
-    // ensure runs only after verified active membership and never trusts caller
-    // supplied board or clip data.
-    await ensureMovieBuffBoard(body.roomId);
+    // Board creation/loading is allowed only after verified active membership.
+    // The authenticated match-view response is the only normal browser source
+    // for both canonical phase state and the persisted rich board preview.
+    const board = await ensureMovieBuffBoardForRoom(body.roomId);
 
     const { data, error } = await caller.rpc(
       "get_movie_buff_match_phase_view",
@@ -39,7 +39,16 @@ export async function POST(request: Request) {
       throw new MovieBuffPhaseRouteError(error.message, 409);
     }
 
-    return Response.json({ view: data }, { status: 200 });
+    return Response.json(
+      {
+        view: data,
+        board: {
+          boardId: board.boardId,
+          preview: board.preview,
+        },
+      },
+      { status: 200 },
+    );
   } catch (error) {
     return movieBuffPhaseErrorResponse(error);
   }
