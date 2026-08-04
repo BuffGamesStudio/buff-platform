@@ -1,11 +1,6 @@
 name: MOV-18 Rive dependency evidence
 
 on:
-  push:
-    branches:
-      - copilot/MOV-18-visual-motion-runtime
-    paths:
-      - .github/workflows/movie-buff-mov18-rive-evidence.yml
   pull_request:
     branches:
       - integration/movie-buff
@@ -14,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: mov-18-rive-evidence-${{ github.event.pull_request.number || github.ref }}
@@ -40,12 +35,14 @@ jobs:
 
       - name: Verify isolated branch and clean checkout
         shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           test "${resolved_ref}" = "copilot/MOV-18-visual-motion-runtime"
           test -z "$(git status --porcelain)"
-          test "$(git rev-parse HEAD)" = "${GITHUB_EVENT_NAME}" || true
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
           node --version
           npm --version
           git rev-parse HEAD
@@ -96,12 +93,15 @@ jobs:
         shell: bash
         run: npx --no-install tsc --noEmit
 
-      - name: Run production build
+      - name: Run production build with localhost-only placeholders
         shell: bash
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-build-publishable-key
+          SUPABASE_SERVICE_ROLE_KEY: local-build-service-role-key
         run: npm run build
 
       - name: Write exact-SHA evidence record
-        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -116,16 +116,31 @@ jobs:
             echo "runner_os=${RUNNER_OS}"
             echo "node_version=$(node --version)"
             echo "npm_version=$(npm --version)"
+            echo "build_supabase_target=http://127.0.0.1:54321"
             echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "workflow_run_id=${GITHUB_RUN_ID}"
             echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
           } > mov18-rive-evidence/evidence.txt
 
       - name: Upload generated package pair and evidence
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mov18-rive-generated-files-${{ github.event.pull_request.head.sha || github.sha }}
           path: mov18-rive-evidence
           if-no-files-found: error
           retention-days: 7
+
+      - name: Commit synchronized dependency pair to MOV-18 branch
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          test "${HEAD_REF}" = "copilot/MOV-18-visual-motion-runtime"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git diff --cached --check
+          git commit -m "chore(movie-buff): add isolated Rive runtime dependency"
+          git push origin "HEAD:${HEAD_REF}"
