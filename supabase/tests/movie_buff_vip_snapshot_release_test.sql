@@ -55,23 +55,31 @@ select is(
 );
 
 select ok(
-  pg_catalog.pg_get_functiondef(
-    'public.release_movie_buff_vip_required_player(uuid,uuid,uuid,text)'::regprocedure
-  ) ~ 'status'', ''unavailable''',
+  pg_catalog.position(
+    'status'', ''unavailable''' in pg_catalog.pg_get_functiondef(
+      'public.release_movie_buff_vip_required_player(uuid,uuid,uuid,text)'::regprocedure
+    )
+  ) > 0,
   'missing VIP window returns an explicit unavailable no-op'
 );
 
 select ok(
-  pg_catalog.pg_get_functiondef(
-    'public.release_movie_buff_vip_required_player(uuid,uuid,uuid,text)'::regprocedure
-  ) ~* 'already released with a different reason',
+  pg_catalog.position(
+    'already released with a different reason' in pg_catalog.lower(
+      pg_catalog.pg_get_functiondef(
+        'public.release_movie_buff_vip_required_player(uuid,uuid,uuid,text)'::regprocedure
+      )
+    )
+  ) > 0,
   'contradictory release reasons fail closed'
 );
 
 select ok(
-  pg_catalog.pg_get_functiondef(
-    'public.release_movie_buff_vip_required_player(uuid,uuid,uuid,text)'::regprocedure
-  ) ~ 'required\.released_at is null',
+  pg_catalog.position(
+    'required.released_at is null' in pg_catalog.pg_get_functiondef(
+      'public.release_movie_buff_vip_required_player(uuid,uuid,uuid,text)'::regprocedure
+    )
+  ) > 0,
   'released identities are excluded from readiness counts'
 );
 
