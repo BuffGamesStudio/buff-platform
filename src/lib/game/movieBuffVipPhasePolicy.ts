@@ -1,15 +1,22 @@
-export type MovieBuffVipCanonicalPhase =
-  | "round_intro"
-  | "vip_lock"
-  | "board_select"
-  | "transition"
-  | "playback"
-  | "answer"
-  | "results"
-  | "finished"
-  | "abandoned"
-  | "blocked";
+export const MOVIE_BUFF_VIP_CANONICAL_PHASES = [
+  "round_intro",
+  "vip_lock",
+  "board_select",
+  "transition",
+  "playback",
+  "answer",
+  "results",
+  "finished",
+  "abandoned",
+  "blocked",
+] as const;
 
+export type MovieBuffVipCanonicalPhase =
+  (typeof MOVIE_BUFF_VIP_CANONICAL_PHASES)[number];
+
+const ALLOWED_MOVIE_BUFF_PHASES = new Set<string>(
+  MOVIE_BUFF_VIP_CANONICAL_PHASES,
+);
 const ALLOWED_MOVIE_BUFF_PHASE_ROUTES = new Set([
   "/games/movie-buff/round-intro",
   "/games/movie-buff/board-preview",
@@ -27,6 +34,12 @@ export type MovieBuffVipCanonicalPhaseView = {
   phaseVersion: number;
   phaseRoute: string | null;
 };
+
+export function isMovieBuffVipCanonicalPhase(
+  value: unknown,
+): value is MovieBuffVipCanonicalPhase {
+  return typeof value === "string" && ALLOWED_MOVIE_BUFF_PHASES.has(value);
+}
 
 export function getMovieBuffVipCanonicalNavigationTarget({
   currentPath,
