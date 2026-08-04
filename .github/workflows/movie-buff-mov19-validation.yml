@@ -25,6 +25,7 @@ jobs:
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       EXPECTED_BRANCH: copilot/MOV-19-security-validation
+      EVIDENCE_DIR: ${{ runner.temp }}/mov19-evidence
 
     steps:
       - name: Check out exact MOV-19 SHA
@@ -58,40 +59,40 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p mov19-evidence
+          mkdir -p "${EVIDENCE_DIR}"
           node --test \
             --test-name-pattern="target root|collector forbids|collector evaluates" \
             tests/movie-buff-independent-security-validation.test.mjs \
-            2>&1 | tee mov19-evidence/validator-self-tests.tap
+            2>&1 | tee "${EVIDENCE_DIR}/validator-self-tests.tap"
 
       - name: Collect repository-static release findings
         shell: bash
         run: |
           set -euo pipefail
           set +e
-          MOVIE_BUFF_EVIDENCE_OUTPUT="$PWD/mov19-evidence/repository-static-evidence.json" \
+          MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/repository-static-evidence.json" \
             node scripts/movie-buff-security-evidence.mjs \
-            > mov19-evidence/collector.stdout.txt \
-            2> mov19-evidence/collector.stderr.txt
+            > "${EVIDENCE_DIR}/collector.stdout.txt" \
+            2> "${EVIDENCE_DIR}/collector.stderr.txt"
           collector_exit=$?
           set -e
-          printf '%s\n' "${collector_exit}" > mov19-evidence/collector-exit.txt
-          test -s mov19-evidence/repository-static-evidence.json
+          printf '%s\n' "${collector_exit}" > "${EVIDENCE_DIR}/collector-exit.txt"
+          test -s "${EVIDENCE_DIR}/repository-static-evidence.json"
           test "${collector_exit}" -eq 0 -o "${collector_exit}" -eq 1
 
       - name: Validate evidence proof scopes
         shell: bash
         run: |
           set -euo pipefail
-          MOVIE_BUFF_EVIDENCE_JSON="$PWD/mov19-evidence/repository-static-evidence.json" \
+          MOVIE_BUFF_EVIDENCE_JSON="${EVIDENCE_DIR}/repository-static-evidence.json" \
             node --test tests/movie-buff-release-evidence-integrity.test.mjs \
-            2>&1 | tee mov19-evidence/evidence-integrity.tap
+            2>&1 | tee "${EVIDENCE_DIR}/evidence-integrity.tap"
 
       - name: Run TypeScript
         shell: bash
         run: |
           set -euo pipefail
-          npx --no-install tsc --noEmit 2>&1 | tee mov19-evidence/typescript.txt
+          npx --no-install tsc --noEmit 2>&1 | tee "${EVIDENCE_DIR}/typescript.txt"
 
       - name: Run production build with localhost-only placeholders
         shell: bash
@@ -101,7 +102,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: local-build-service-role-key
         run: |
           set -euo pipefail
-          npm run build 2>&1 | tee mov19-evidence/build.txt
+          npm run build 2>&1 | tee "${EVIDENCE_DIR}/build.txt"
 
       - name: Verify no generated repository changes
         shell: bash
@@ -111,9 +112,11 @@ jobs:
           test -z "$(git status --porcelain)"
 
       - name: Write exact-SHA artifact metadata
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
           {
             echo "lane=MOV-19"
             echo "source_sha=$(git rev-parse HEAD)"
@@ -126,13 +129,17 @@ jobs:
             echo "workflow_run_id=${GITHUB_RUN_ID}"
             echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
             echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          } > mov19-evidence/metadata.txt
-          sha256sum mov19-evidence/* > mov19-evidence/sha256.txt
+          } > "${EVIDENCE_DIR}/metadata.txt"
+          find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            > "${EVIDENCE_DIR}/sha256.txt"
 
       - name: Upload exact-SHA validation artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mov19-validation-evidence-${{ env.EXPECTED_SHA }}
-          path: mov19-evidence
+          path: ${{ env.EVIDENCE_DIR }}
           if-no-files-found: error
           retention-days: 7
