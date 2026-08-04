@@ -2,11 +2,13 @@
 
 This document separates committed implementation, executable evidence, and remaining UNKNOWN claims. It does not authorize merge, deployment, hosted mutation, or production action.
 
-## Exact reviewed implementation SHA
+## Frozen runtime implementation baseline
 
 - Branch: `copilot/MOV-18-visual-motion-runtime`
 - Draft PR: `#8`
-- SHA: `c55fa96e8ddf42afe4790dc3f6d42835a37c0416`
+- Runtime implementation SHA: `d6ae404b520c753655dc6f1957aac4268b794266`
+
+This evidence document is committed after the frozen runtime SHA. Later evidence-only metadata changes do not alter the reviewed runtime implementation.
 
 ## Present in repository
 
@@ -17,6 +19,7 @@ This document separates committed implementation, executable evidence, and remai
 - The live adapter exposes only a renderer-error callback to its fallback parent. It exposes no animation-complete, state-machine-input, navigation, phase, selector, score, room, VIP, playback, or hosted-state callback.
 - `MovieBuffRiveSurface` performs a read-only `HEAD` availability check before mounting the WebGL2 canvas and fails to accessible static content when the asset or renderer cannot load.
 - `MovieBuffRiveSurface` observes `prefers-reduced-motion` and renders static content without changing authoritative deadlines or phases.
+- Curtain, film-slate, and Buster replacement surfaces consume that passive Rive boundary. They do not invent production artboard or state-machine input names.
 - `/games/movie-buff/visual-runtime-preview` is an isolated presentation-only proof route. It does not import Supabase, call Movie Buff APIs, leave a room, or mutate gameplay.
 - The visual authority boundary explicitly leaves shared phase and navigation ownership to MOV-17.
 
@@ -33,20 +36,20 @@ Production `.riv` files and their real artboard/state-machine names remain absen
 
 ## Executable PASS evidence
 
-GitHub Actions run `30920910303` executed against exact SHA `c55fa96e8ddf42afe4790dc3f6d42835a37c0416` with Node `22.23.1` and npm `10.9.8`.
+GitHub Actions run `30921251194` executed against exact runtime SHA `d6ae404b520c753655dc6f1957aac4268b794266` with Node `22.23.1` and npm `10.9.8`.
 
 The run passed:
 
 - exact Rive manifest/lock validation;
 - `npm ci --ignore-scripts --no-audit --no-fund`;
-- 12 focused MOV-18 Node tests;
+- 13 focused MOV-18 Node tests;
 - TypeScript `tsc --noEmit`;
 - production `next build` using explicit localhost-only Supabase placeholders;
 - package and lock diff checks.
 
 The localhost build values were non-secret placeholders targeting `http://127.0.0.1:54321`. The workflow did not contact or mutate hosted Supabase.
 
-Vercel preview status for the same SHA succeeded. Build logs show successful compilation, TypeScript completion, all 14 static pages generated, `/games/movie-buff/visual-runtime-preview` in the route manifest, and deployment completion. This is build and route-presence evidence only.
+Vercel preview status for the same runtime SHA succeeded. This is build evidence only; it does not prove production deployment, production data, or rendered visual correctness.
 
 ## Correctly retained UNKNOWN evidence
 
