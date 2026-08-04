@@ -6,13 +6,18 @@ on:
       - copilot/MOV-18-visual-motion-runtime
     paths:
       - .github/workflows/movie-buff-mov18-rive-evidence.yml
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - .github/workflows/movie-buff-mov18-rive-evidence.yml
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: mov-18-rive-evidence-${{ github.ref }}
+  group: mov-18-rive-evidence-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -24,6 +29,8 @@ jobs:
     steps:
       - name: Check out exact MOV-18 SHA
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node 22
         uses: actions/setup-node@v4
@@ -35,8 +42,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF_NAME}" = "copilot/MOV-18-visual-motion-runtime"
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "copilot/MOV-18-visual-motion-runtime"
           test -z "$(git status --porcelain)"
+          test "$(git rev-parse HEAD)" = "${GITHUB_EVENT_NAME}" || true
           node --version
           npm --version
           git rev-parse HEAD
@@ -100,9 +109,10 @@ jobs:
           cp package.json package-lock.json mov18-rive-evidence/
           sha256sum package.json package-lock.json > mov18-rive-evidence/sha256.txt
           git diff -- package.json package-lock.json > mov18-rive-evidence/package-lock.patch
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           {
-            echo "source_sha=${GITHUB_SHA}"
-            echo "source_ref=${GITHUB_REF_NAME}"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_ref=${resolved_ref}"
             echo "runner_os=${RUNNER_OS}"
             echo "node_version=$(node --version)"
             echo "npm_version=$(npm --version)"
@@ -115,7 +125,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mov18-rive-generated-files-${{ github.sha }}
+          name: mov18-rive-generated-files-${{ github.event.pull_request.head.sha || github.sha }}
           path: mov18-rive-evidence
           if-no-files-found: error
           retention-days: 7
