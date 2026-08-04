@@ -188,18 +188,19 @@ export default function WaitingRoomPage() {
     const categoryId = room?.category_id ?? null;
     if (typeof categoryId !== "string" || categoryId.trim().length === 0) return;
     if (room?.category_name?.trim() || categoryNamesById[categoryId]) return;
+    const stableCategoryId = categoryId;
 
     let cancelled = false;
     async function resolveCategoryName() {
       try {
         const categories = await listPublicMovieBuffCategories();
         const matchingCategory = categories.find(
-          (category) => category.id === categoryId,
+          (category) => category.id === stableCategoryId,
         );
         if (!cancelled) {
           setCategoryNamesById((currentNames) => ({
             ...currentNames,
-            [categoryId]: matchingCategory?.name?.trim() || "",
+            [stableCategoryId]: matchingCategory?.name?.trim() || "",
           }));
         }
       } catch {}
