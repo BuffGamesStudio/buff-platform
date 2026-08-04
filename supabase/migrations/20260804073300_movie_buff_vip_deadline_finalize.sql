@@ -61,6 +61,17 @@ begin
    and required.released_at is null
   where locked.round_id = p_round_id;
 
+  select count(*)::integer
+  into v_pass_count
+  from public.movie_buff_vip_round_locks as locked
+  join public.movie_buff_vip_round_required_players as required
+    on required.round_id = locked.round_id
+   and required.player_id = locked.player_id
+   and required.released_at is null
+  where locked.round_id = p_round_id
+    and locked.vip_id is null
+    and locked.inventory_id is null;
+
   if v_now < v_window.deadline_at
      and v_locked_count < v_required_count then
     if v_window.status = 'closed' then
@@ -74,7 +85,7 @@ begin
       'deadlineAt', v_window.deadline_at,
       'requiredPlayerCount', v_required_count,
       'lockedCount', v_locked_count,
-      'passCount', 0,
+      'passCount', v_pass_count,
       'status', v_window.status,
       'advanceReady', false
     );
