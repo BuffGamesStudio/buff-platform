@@ -1,118 +1,134 @@
 # Movie Buff independent GO/NO-GO — v1
 
-Captured: 2026-08-04
-
-Reviewer lane: MOV-19
-
-Repository: `BuffGamesStudio/buff-platform`
-
-Integration target: `integration/movie-buff`
-
-Integration SHA reviewed: `bf316a15a2120e32d8a32e479df2ae439081f9a1`
+Captured: 2026-08-04  
+Reviewer lane: MOV-19  
+Repository: `BuffGamesStudio/buff-platform`  
+Integration target: `integration/movie-buff`  
+Integration SHA: `bf316a15a2120e32d8a32e479df2ae439081f9a1`
 
 ## Verdict
 
-**NO-GO**
+# **NO-GO**
 
-This verdict is fail-closed. UNKNOWN evidence is not treated as PASS.
+UNKNOWN is not PASS. No local, browser, database, race, build, or production result is claimed unless an actual exact-SHA artifact exists.
 
-## Confirmed failures
+## Decision basis
 
-### Public matchmaking
+### Hosted security — confirmed FAIL
 
-- Public readiness and match start currently permit two active ready players rather than the required strict three.
-- Public capacity remains caller-controlled over a broad range.
-- Compatibility values are not fully normalized into one durable canonical server key.
-- Compatible candidate selection uses `FOR UPDATE SKIP LOCKED`.
-- No durable uniqueness boundary prevents duplicate compatible waiting rooms.
-- No repeated executable three-client race evidence exists for an exact lane SHA.
+Read-only inspection of Supabase project `yfatwreicmiocdxzyznd` confirmed:
 
-Owner: MOV-15.
+- all six target tables have RLS disabled and no policies;
+- anon and authenticated have effective SELECT/INSERT/UPDATE/DELETE on all six;
+- broad anon execution remains on critical Movie Buff SECURITY DEFINER functions;
+- most critical functions use mutable `search_path=public`;
+- the hosted migration ledger contains only `20260803233057` and `20260803235116`, so none of the current lane migrations is hosted.
 
-### VIP authority PR #6
+The hardened `join_movie_buff_room(text)` function is a narrow PASS: owner `postgres`, SECURITY DEFINER, `search_path=pg_catalog`, anon denied, authenticated/service role allowed. It does not cure the broader exposure.
 
-PR #6 HEAD reviewed: `3683c1ec2b70b8fabc85d70b77242e794b505c7e`.
+### MOV-15 — PR #9, HEAD `3cea9b9f5e5436a834adf459834e7196890d2ac1`
 
-Changes are requested because:
+Static source now contains the intended strict-three capacity, normalized compatibility key, per-player and compatibility serialization, partial uniqueness guard, and removal of the known two-player browser timer. These are source-invariant passes only.
 
-- concurrent first-time identical window-open calls can race into a unique violation rather than return one authoritative window;
-- concurrent identical lock calls can race into a unique violation rather than return the same lock;
-- the required-player snapshot stores only a count, not authoritative human player identities;
-- departure, replacement, reconnect, and system/Buster classification are not fully represented by that count;
-- Round Intro routes to the board from VIP `advanceReady` instead of waiting for MOV-17's canonical phase;
-- committed pgTAP tests prove object/grant shape but not the required ownership, cross-room, wrong-round, deadline, duplicate, reconnect, privacy, or exactly-once behavior;
-- GitHub reports no Actions workflow runs for the reviewed SHA.
+Release blockers remain:
 
-Owner: MOV-16. Relay state: CHANGES_REQUESTED.
+- zero GitHub Actions runs;
+- no executed repeated race or full negative matrix;
+- no hosted application;
+- no rollback SQL;
+- PR body is stale and says the waiting-room defect remains although HEAD source removes it;
+- the added contract test was not included in the prior exact file claim;
+- `start_movie_buff_match(uuid)` overlaps MOV-17 phase ownership and must be reconciled before integration.
 
-### Shared phase machine
+Classification: **UNKNOWN for behavior; not accepted.**
 
-- Integration still contains manual shared-phase progression controls.
-- Board ensure/select/resolve are not integrated behind one transactional server phase boundary.
-- Real-room failures can fall back to demo or unavailable UI state rather than fail as divergence.
-- Concurrent selection and duplicate resolution are not protected by an authoritative version/phase token with checked affected-row counts.
-- Playback timestamps are per-player rather than one shared persisted timestamp.
-- Reconnect grace, Buster substitution, selector abandonment, and no-human closure are not proven.
+### MOV-16 — PR #6, HEAD `3683c1ec2b70b8fabc85d70b77242e794b505c7e`
 
-Owner: MOV-17.
+Confirmed blockers:
 
-### Visual runtime
+- first concurrent window-open and first concurrent lock can race through check-then-insert paths;
+- only a required-player count is persisted, not immutable required human identities/system classification;
+- Round Intro can navigate from VIP readiness rather than canonical MOV-17 phase;
+- contradictory activation replay is not fully bound to the supplied activation key;
+- required ownership/privacy/deadline/reconnect/exactly-once personas are not executed;
+- post-write rollback drops entitlement and audit state.
 
-- No integrated Rive runtime, production `.riv` asset, reduced-motion proof, missing-asset proof, hydration proof, accessibility proof, or authoritative leave-penalty binding exists.
-- `@rive-app/react-webgl2` is absent from the integration package manifest and lockfile at this review point.
-- Figma write capability was independently probed successfully through a reversible create/remove operation; the displayed seat label alone is not being used as the capability verdict.
+Classification: **CHANGES_REQUESTED / not accepted.**
 
-Owner: MOV-18.
+### MOV-17 — no implementation or PR
 
-### Database security
+Integration still has manual progression, non-atomic board mutation, fail-open real-room fallback, per-player playback timestamps, and no proven selector abandonment, reconnect grace, Buster, no-human closure, or three-client agreement.
 
-Read-only hosted inspection of project `yfatwreicmiocdxzyznd` confirmed:
+Classification: **FAIL on current integration; implementation/evidence absent.**
 
-- six target public tables with RLS disabled and no policies;
-- broad anon and authenticated effective CRUD on those tables;
-- broad anon execution on critical Movie Buff RPCs;
-- critical definer functions generally using `search_path=public` rather than a safe fixed path;
-- `mark_movie_buff_round_media_ready(uuid)` lacking the required active-room-membership check.
+### MOV-18 — PR #8, HEAD `d9139c7a7f6628efdc032326db4b099999b2e8c3`
 
-Service-role continuity and `postgres` ownership are narrow passes only and do not cure public exposure.
+The visual authority boundary is correctly read-only at source level, but:
 
-Owner: MOV-19 security validation; remediation must be reconciled with PR #5 and functional call sites.
+- the “Rive” surface has no Rive runtime and attaches `onError` to a `<div>`, so `.riv` failure cannot trigger the claimed fallback;
+- the Game Menu dialog lacks initial focus, focus containment, Escape handling, and focus restoration;
+- no package, production asset, shared-page integration, Actions run, browser proof, screenshot, hydration proof, or accessibility result exists.
 
-## Evidence classification
+Classification: **CHANGES_REQUESTED / scaffold only.**
 
-### PASS — narrow only
+### MOV-19 — PR #7
 
-- `integration/movie-buff` exists.
-- All five lane branches exist.
-- PR #6 is a draft targeting the integration branch.
-- Hosted hardened `join_movie_buff_room(text)` currently has `postgres` ownership, `SECURITY DEFINER`, fixed `search_path=pg_catalog`, anon denied, and authenticated/service-role execution.
-- Service-role CRUD continuity exists on the six inspected target tables.
-- Figma connected write capability succeeded using a reversible probe.
+MOV-19 found and corrected its own evidence-integrity defects:
+
+- static regex checks now carry `proofScope` and `claimType`;
+- repository-static evidence cannot PASS runtime/hosted claims;
+- three-client matchmaking uses fresh targeted local rooms and leaves full phase synchronization UNKNOWN;
+- pgTAP now targets the six-table and critical RPC security floor;
+- validation and rollback documents now identify exact lane heads and hosted observations.
+
+These are source changes only. PR #7 has no Actions run and remains validation-pending.
+
+## Classification summary
+
+### Narrow PASS
+
+- integration and all lane branches exist;
+- static strict-three source invariants at MOV-15 HEAD;
+- static read-only visual authority invariant at MOV-18 HEAD;
+- hosted hardened `join_movie_buff_room(text)` metadata;
+- hosted service-role table CRUD continuity;
+- Figma write capability was verified by a reversible create/remove probe;
+- MOV-19 evidence schema now forbids static behavioral PASS.
 
 ### FAIL
 
-- Six-table hosted RLS/grant posture.
-- Broad anon RPC execution and unsafe definer search paths.
-- Strict-three matchmaking rule.
-- Integrated server-owned shared phase machine.
-- Shared playback timestamp.
-- Board mutation race and idempotency proof.
-- PR #6 independent acceptance.
-- Rollback metadata and tested post-write rollback safety.
+- hosted six-table RLS/grant posture;
+- hosted anonymous critical RPC execution and mutable definer search paths;
+- current integration phase/board/playback authority;
+- MOV-16 concurrency/participant/phase/rollback findings;
+- MOV-18 actual asset-failure wiring and dialog accessibility;
+- tested post-write rollback readiness.
 
 ### UNKNOWN
 
-- Local lint, TypeScript, production build, pgTAP, route, race, and browser results unless supplied by GitHub Actions or the operator.
-- Three-client synchronization for an exact integrated SHA.
-- Hosted post-fix behavior for MOV-15 through MOV-18.
-- Production application deployed SHA.
-- Final Rive asset quality and visual accessibility.
-- Rollback safety after new phase or VIP state has been written.
+- all lane lint, TypeScript, Node, pgTAP, route, build, and diff-check outputs;
+- MOV-15 runtime race and negative matrix;
+- MOV-16 persona and concurrency behavior;
+- MOV-17 implementation and three-client synchronization;
+- MOV-18 runtime/browser/asset/accessibility behavior;
+- exact preview/staging/production deployed SHA;
+- hosted post-remediation ACL/RLS/RPC state;
+- rollback rehearsal after state writes.
 
-## Required release exit
+## GO exit contract
 
-The verdict cannot become GO until all lane draft PRs are independently reviewed, executable evidence is attached to exact SHAs, security posture is re-probed on the intended target, three clients converge through matchmaking, VIP, board, playback, results, and reconnect, and rollback is proven under explicit operator-authorized staging conditions.
+A GO recommendation requires all of the following on one exact integrated SHA:
+
+1. independently reviewed lane diffs with no unresolved ownership collision;
+2. successful lint, TypeScript, focused tests, pgTAP, production build, and diff check;
+3. repeated fresh three-player matchmaking races and complete negative cases;
+4. executed VIP ownership/privacy/deadline/duplicate/reconnect/exactly-once personas;
+5. three clients agreeing through Round Intro, board, atomic tile selection, transitions, shared playback timestamp, answer/results, selector rotation, and reconnect;
+6. reduced-motion, missing-asset, hydration, accessibility, and responsive visual proof;
+7. staging database proof for migration ledger, object hashes, owners, search paths, direct/effective grants, RLS, policies, and service-role continuity;
+8. tested rollback/containment with explicit authority and data-loss classification;
+9. production identity and exact deployed SHA before any production-ready claim.
 
 ## Safety statement
 
-No merge, deployment, production alias change, destructive reset, paid resource, secret disclosure, or hosted/production Supabase mutation was performed by this review.
+No merge, deployment, production alias change, destructive reset, paid resource, secret disclosure, force-push, hosted/production Supabase mutation, or hosted resource deletion was performed by this review.
