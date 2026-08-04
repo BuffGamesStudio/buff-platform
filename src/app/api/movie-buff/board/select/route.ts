@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { selectMovieBuffBoardTile } from "@/lib/server/movieBuffBoard";
+import { canSelectMovieBuffBoardTile } from "@/lib/server/movieBuffBoardRoutePolicy";
 import {
   MovieBuffAuthorizationError,
   requireActiveMovieBuffRoomMember,
@@ -37,22 +38,27 @@ export async function POST(request: Request) {
       throw new Error("Unable to verify board authority.");
     }
 
-    if (!board || board.selector_player_id !== actor.playerId) {
-      throw new MovieBuffAuthorizationError("Room access denied.", 403);
-    }
-
-    const { data: tile, error: tileError } = await supabaseAdmin
-      .from("movie_buff_board_tiles")
-      .select("id")
-      .eq("id", tileId)
-      .eq("board_id", board.id)
-      .maybeSingle();
+    const { data: tile, error: tileError } = board
+      ? await supabaseAdmin
+          .from("movie_buff_board_tiles")
+          .select("id")
+          .eq("id", tileId)
+          .eq("board_id", board.id)
+          .maybeSingle()
+      : { data: null, error: null };
 
     if (tileError) {
       throw new Error("Unable to verify board tile.");
     }
 
-    if (!tile) {
+    if (
+      !board ||
+      !canSelectMovieBuffBoardTile({
+        actorPlayerId: actor.playerId,
+        selectorPlayerId: board.selector_player_id as string | null,
+        tileBelongsToBoard: Boolean(tile),
+      })
+    ) {
       throw new MovieBuffAuthorizationError("Room access denied.", 403);
     }
 
