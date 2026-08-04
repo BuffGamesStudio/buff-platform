@@ -1,6 +1,6 @@
-import type {
-  MovieBuffVipCanonicalPhase,
-  MovieBuffVipCanonicalPhaseView,
+import {
+  isMovieBuffVipCanonicalPhase,
+  type MovieBuffVipCanonicalPhaseView,
 } from "@/lib/game/movieBuffVipPhasePolicy";
 import { supabase } from "@/lib/supabase";
 
@@ -126,7 +126,7 @@ export async function getMovieBuffVipCanonicalPhaseView(
     view.roomId !== roomId ||
     typeof view.roundId !== "string" ||
     !Number.isInteger(view.roundNumber) ||
-    typeof view.phase !== "string" ||
+    !isMovieBuffVipCanonicalPhase(view.phase) ||
     !Number.isInteger(view.phaseVersion) ||
     (view.phaseRoute !== null && typeof view.phaseRoute !== "string")
   ) {
@@ -137,7 +137,7 @@ export async function getMovieBuffVipCanonicalPhaseView(
     roomId: view.roomId,
     roundId: view.roundId,
     roundNumber: view.roundNumber as number,
-    phase: view.phase as MovieBuffVipCanonicalPhase,
+    phase: view.phase,
     phaseVersion: view.phaseVersion as number,
     phaseRoute: view.phaseRoute as string | null,
   };
