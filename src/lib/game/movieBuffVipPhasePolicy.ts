@@ -17,14 +17,21 @@ export type MovieBuffVipCanonicalPhase =
 const ALLOWED_MOVIE_BUFF_PHASES = new Set<string>(
   MOVIE_BUFF_VIP_CANONICAL_PHASES,
 );
-const ALLOWED_MOVIE_BUFF_PHASE_ROUTES = new Set([
-  "/games/movie-buff/round-intro",
-  "/games/movie-buff/board-preview",
-  "/games/movie-buff/play",
-  "/games/movie-buff/round-results",
-  "/games/movie-buff/final-results",
-  "/games/movie-buff/match-status",
-]);
+const MOVIE_BUFF_PHASE_ROUTE_BY_PHASE: Record<
+  MovieBuffVipCanonicalPhase,
+  string
+> = {
+  round_intro: "/games/movie-buff/round-intro",
+  vip_lock: "/games/movie-buff/round-intro",
+  board_select: "/games/movie-buff/board-preview",
+  transition: "/games/movie-buff/play",
+  playback: "/games/movie-buff/play",
+  answer: "/games/movie-buff/play",
+  results: "/games/movie-buff/round-results",
+  finished: "/games/movie-buff/final-results",
+  abandoned: "/games/movie-buff/match-status",
+  blocked: "/games/movie-buff/match-status",
+};
 
 export type MovieBuffVipCanonicalPhaseView = {
   roomId: string;
@@ -54,7 +61,7 @@ export function getMovieBuffVipCanonicalNavigationTarget({
     return null;
   }
 
-  if (!ALLOWED_MOVIE_BUFF_PHASE_ROUTES.has(phaseView.phaseRoute)) {
+  if (phaseView.phaseRoute !== MOVIE_BUFF_PHASE_ROUTE_BY_PHASE[phaseView.phase]) {
     return null;
   }
 
