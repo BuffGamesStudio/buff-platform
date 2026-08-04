@@ -5,7 +5,14 @@ export {
 export { MovieBuffGameMenu } from "./MovieBuffGameMenu";
 export { MovieBuffMotionRuntime } from "./MovieBuffMotionRuntime";
 export { MovieBuffReconnectVisual } from "./MovieBuffReconnectVisual";
-export { MovieBuffRiveSurface } from "./MovieBuffRiveSurface";
+export {
+  MovieBuffRiveCanvas,
+  type MovieBuffRiveCanvasProps,
+} from "./MovieBuffRiveCanvas";
+export {
+  MovieBuffRiveSurface,
+  type MovieBuffRiveSurfaceProps,
+} from "./MovieBuffRiveSurface";
 export { MovieBuffStaticFallback } from "./MovieBuffStaticFallback";
 export {
   MovieBuffTransitionSurface,
