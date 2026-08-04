@@ -6,16 +6,28 @@ const migration = fs.readFileSync(
   "supabase/migrations/20260804083200_movie_buff_buster_safe_boundary.sql",
   "utf8",
 );
+const alignment = fs.readFileSync(
+  "supabase/migrations/20260804083400_movie_buff_phase_contract_alignment.sql",
+  "utf8",
+);
 const proof = fs.readFileSync(
   "scripts/movie-buff-three-client-phase-proof.mjs",
   "utf8",
 );
 
-test("grace expiry stages a system controller before Buster", () => {
+test("grace expiry preserves an abandoned human seat until Buster is safe", () => {
   assert.match(migration, /movie_buff_stage_abandoned_controller/);
-  assert.match(migration, /new\.controller_type := 'system'/);
+  assert.match(migration, /new\.controller_type := 'human'/);
+  assert.match(migration, /new\.controller_player_id := new\.original_player_id/);
+  assert.match(migration, /participant_state,[\s\S]*excludes this seat/i);
   assert.match(migration, /make_interval\(secs => 2\)/);
-  assert.match(migration, /original_player_id/);
+  assert.doesNotMatch(migration, /new\.controller_type := 'system'/);
+});
+
+test("system remains a non-seat actor under the final controller constraint", () => {
+  assert.match(alignment, /controller_type in \('human', 'buster'\)/);
+  assert.doesNotMatch(migration, /controller_type = 'system'/);
+  assert.doesNotMatch(migration, /controller_type := 'system'/);
 });
 
 test("Buster activates only at declared safe phase boundaries", () => {
@@ -26,7 +38,11 @@ test("Buster activates only at declared safe phase boundaries", () => {
     migration.split(/movie_buff_activate_ready_busters/)[1],
     /'playback'|'answer'|'transition'/,
   );
+  assert.match(migration, /participant_state = 'abandoned'/);
+  assert.match(migration, /controller_type = 'human'/);
+  assert.match(migration, /controller_player_id = original_player_id/);
   assert.match(migration, /replacement_ready_at <= v_now/);
+  assert.match(migration, /controller_type = 'buster'/);
   assert.match(migration, /buster_activated_at_safe_boundary/);
 });
 
@@ -36,7 +52,12 @@ test("canonical view applies ready safe-boundary replacements", () => {
   assert.match(migration, /selectorControllerType/);
 });
 
-test("three-client proof covers abandoned selector timeout", () => {
+test("three-client proof is exact-SHA local-only and covers abandoned selector timeout", () => {
+  assert.match(proof, /MOVIE_BUFF_EXPECTED_GIT_SHA/);
+  assert.match(proof, /MOVIE_BUFF_EVIDENCE_COMMAND/);
+  assert.match(proof, /MOVIE_BUFF_ALLOW_LOCAL_PHASE_MUTATION/);
+  assert.match(proof, /git["'], \["rev-parse", "HEAD"\]/);
+  assert.match(proof, /sourceHashes/);
   assert.match(proof, /reconnect_deadline_at/);
   assert.match(proof, /Room access denied|abandoned/);
   assert.match(proof, /selectorControllerType, "buster"/);
