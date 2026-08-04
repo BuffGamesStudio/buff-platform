@@ -22,7 +22,6 @@ declare
   v_required_count integer := 0;
   v_locked_count integer := 0;
   v_pass_count integer := 0;
-  v_generated_pass_count integer := 0;
 begin
   if p_deadline_at is null then
     raise exception 'VIP finalization deadline is required.';
@@ -73,11 +72,9 @@ begin
       'matchId', v_window.match_id,
       'roundId', v_window.round_id,
       'deadlineAt', v_window.deadline_at,
-      'serverNow', v_now,
       'requiredPlayerCount', v_required_count,
       'lockedCount', v_locked_count,
       'passCount', 0,
-      'generatedPassCount', 0,
       'status', v_window.status,
       'advanceReady', false
     );
@@ -119,8 +116,6 @@ begin
           and existing.player_id = required.player_id
       )
     on conflict (match_id, round_id, player_id) do nothing;
-
-    get diagnostics v_generated_pass_count = row_count;
   end if;
 
   select count(*)::integer
@@ -160,11 +155,9 @@ begin
     'matchId', v_window.match_id,
     'roundId', v_window.round_id,
     'deadlineAt', v_window.deadline_at,
-    'serverNow', v_now,
     'requiredPlayerCount', v_required_count,
     'lockedCount', v_locked_count,
     'passCount', v_pass_count,
-    'generatedPassCount', v_generated_pass_count,
     'status', v_window.status,
     'advanceReady', true
   );
