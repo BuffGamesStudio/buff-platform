@@ -7,14 +7,21 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const usersJson = process.env.MOVIE_BUFF_TEST_USERS;
+const overflowUserJson = process.env.MOVIE_BUFF_OVERFLOW_TEST_USER;
 const outputPath = path.resolve(
   process.env.MOVIE_BUFF_EVIDENCE_OUTPUT ??
     "movie-buff-public-matchmaking-race-evidence.json",
 );
 
-if (!supabaseUrl || !publishableKey || !serviceRoleKey || !usersJson) {
+if (
+  !supabaseUrl ||
+  !publishableKey ||
+  !serviceRoleKey ||
+  !usersJson ||
+  !overflowUserJson
+) {
   throw new Error(
-    "NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, SUPABASE_SERVICE_ROLE_KEY, and MOVIE_BUFF_TEST_USERS are required.",
+    "NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, SUPABASE_SERVICE_ROLE_KEY, MOVIE_BUFF_TEST_USERS, and MOVIE_BUFF_OVERFLOW_TEST_USER are required.",
   );
 }
 
@@ -26,11 +33,13 @@ if (!["localhost", "127.0.0.1", "::1"].includes(target.hostname)) {
 }
 
 const users = JSON.parse(usersJson);
-assert.equal(users.length, 3, "exactly three test-user credentials are required");
-assert.equal(new Set(users.map((user) => user.email)).size, 3, "test users must be distinct");
+const overflowUser = JSON.parse(overflowUserJson);
+assert.equal(users.length, 3, "exactly three core test-user credentials are required");
+assert.equal(new Set([...users.map((user) => user.email), overflowUser.email]).size, 4);
 
 const categoryId = process.env.MOVIE_BUFF_CATEGORY_ID || null;
 const difficulty = (process.env.MOVIE_BUFF_DIFFICULTY ?? "medium").trim().toLowerCase();
+const incompatibleDifficulty = difficulty === "hard" ? "easy" : "hard";
 const totalRounds = Number(process.env.MOVIE_BUFF_TOTAL_ROUNDS ?? 10);
 const raceRuns = Number(process.env.MOVIE_BUFF_RACE_RUNS ?? 10);
 
@@ -51,6 +60,8 @@ const admin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 const clients = users.map(() => browserClient());
+const overflowClient = browserClient();
+let overflowUserId = null;
 
 function roomFromRpc(data) {
   const row = Array.isArray(data) ? data[0] : data;
@@ -58,16 +69,27 @@ function roomFromRpc(data) {
   return row;
 }
 
-async function findRoom(client, overrides = {}) {
+async function findRoom(client, options = {}) {
   const { data, error } = await client.rpc("find_or_create_movie_buff_public_room", {
-    p_category_id: categoryId,
-    p_difficulty: difficulty,
-    p_total_rounds: totalRounds,
-    // Intentionally contradictory. The server must still own strict-three size.
-    p_max_players: overrides.maxPlayers ?? 99,
+    p_category_id: options.categoryId ?? categoryId,
+    p_difficulty: options.difficulty ?? difficulty,
+    p_total_rounds: options.totalRounds ?? totalRounds,
+    p_max_players: options.maxPlayers ?? 99,
   });
   if (error) throw new Error(`matchmaking RPC failed: ${error.message}`);
   return roomFromRpc(data);
+}
+
+async function expectFindRoomError(client, options, expectedPattern) {
+  const { error } = await client.rpc("find_or_create_movie_buff_public_room", {
+    p_category_id: options.categoryId ?? categoryId,
+    p_difficulty: options.difficulty ?? difficulty,
+    p_total_rounds: options.totalRounds ?? totalRounds,
+    p_max_players: options.maxPlayers ?? 99,
+  });
+  assert.ok(error, "expected matchmaking request to fail");
+  assert.match(error.message, expectedPattern);
+  return error.message;
 }
 
 async function setReady(client, roomId, ready = true) {
@@ -96,7 +118,7 @@ async function roomSnapshot(roomId) {
     .order("joined_at", { ascending: true });
   if (memberError) throw new Error(`membership evidence query failed: ${memberError.message}`);
 
-  const { data: compatibleRooms, error: compatibleError } = await admin
+  const { data: joinableRooms, error: compatibleError } = await admin
     .from("game_rooms")
     .select("id,status,public_matchmaking_key")
     .eq("room_type", "public")
@@ -106,7 +128,7 @@ async function roomSnapshot(roomId) {
     throw new Error(`compatibility uniqueness query failed: ${compatibleError.message}`);
   }
 
-  return { room, members, compatibleRooms };
+  return { room, members, joinableRooms };
 }
 
 async function waitForStatus(roomId, expected, timeoutMs = 5000) {
@@ -127,13 +149,21 @@ async function deleteRoom(roomId) {
   if (error) throw new Error(`local test cleanup failed: ${error.message}`);
 }
 
+async function deleteRooms(roomIds) {
+  for (const roomId of new Set(roomIds.filter(Boolean))) await deleteRoom(roomId);
+}
+
 const evidence = {
   schemaVersion: 1,
   target: { kind: "local", identity: target.origin },
   settings: { categoryId, difficulty, totalRounds, raceRuns, callerMaxPlayers: 99 },
   startedAt: new Date().toISOString(),
   users: [],
+  duplicateRequest: null,
+  incompatibleSettings: null,
   lateThird: null,
+  fullRoomRollover: null,
+  staleRoom: null,
   races: [],
 };
 
@@ -142,13 +172,20 @@ try {
     clients.map(async (client, index) => {
       const { data, error } = await client.auth.signInWithPassword(users[index]);
       if (error || !data.user || data.user.is_anonymous) {
-        throw new Error(`Unable to authenticate test user ${index + 1}: ${error?.message ?? "unknown"}`);
+        throw new Error(`Unable to authenticate core test user ${index + 1}: ${error?.message ?? "unknown"}`);
       }
       evidence.users.push({ index: index + 1, userId: data.user.id });
     }),
   );
 
-  // Remove open disposable rooms previously owned by these local-only test users.
+  const { data: overflowSession, error: overflowSignInError } =
+    await overflowClient.auth.signInWithPassword(overflowUser);
+  if (overflowSignInError || !overflowSession.user || overflowSession.user.is_anonymous) {
+    throw new Error(`Unable to authenticate overflow test user: ${overflowSignInError?.message ?? "unknown"}`);
+  }
+  overflowUserId = overflowSession.user.id;
+  evidence.users.push({ index: 4, userId: overflowUserId, role: "overflow" });
+
   const testUserIds = evidence.users.map((user) => user.userId);
   const { data: oldMemberships, error: oldMembershipError } = await admin
     .from("room_players")
@@ -156,12 +193,31 @@ try {
     .in("player_id", testUserIds)
     .is("left_at", null);
   if (oldMembershipError) throw oldMembershipError;
-  for (const roomId of new Set((oldMemberships ?? []).map((row) => row.room_id))) {
-    await deleteRoom(roomId);
-  }
+  await deleteRooms((oldMemberships ?? []).map((row) => row.room_id));
 
-  // Late-third proof: the first two may both be ready, but the room must stay
-  // waiting until the third member joins and all three are ready.
+  const duplicateRooms = await Promise.all([
+    findRoom(clients[0]),
+    findRoom(clients[0]),
+  ]);
+  assert.equal(duplicateRooms[0].id, duplicateRooms[1].id);
+  evidence.duplicateRequest = {
+    roomIds: duplicateRooms.map((room) => room.id),
+    observedAt: new Date().toISOString(),
+  };
+
+  const incompatibleError = await expectFindRoomError(
+    clients[0],
+    { difficulty: incompatibleDifficulty },
+    /leave your current open movie buff room/i,
+  );
+  evidence.incompatibleSettings = {
+    roomId: duplicateRooms[0].id,
+    requestedDifficulty: incompatibleDifficulty,
+    error: incompatibleError,
+    observedAt: new Date().toISOString(),
+  };
+  await deleteRoom(duplicateRooms[0].id);
+
   const firstPair = await Promise.all([findRoom(clients[0]), findRoom(clients[1])]);
   assert.equal(firstPair[0].id, firstPair[1].id, "first two players split across rooms");
   const lateThirdRoomId = firstPair[0].id;
@@ -173,31 +229,73 @@ try {
   ]);
   const beforeThird = await roomSnapshot(lateThirdRoomId);
   assert.equal(beforeThird.room.status, "waiting", "public match started with only two ready players");
-  assert.equal(beforeThird.members.length, 2, "late-third precondition did not have two members");
+  assert.equal(beforeThird.members.length, 2);
   assert.equal(beforeThird.members.filter((member) => member.is_ready).length, 2);
-  assert.equal(beforeThird.compatibleRooms.length, 1, "duplicate compatible waiting room exists");
+  assert.equal(beforeThird.joinableRooms.length, 1, "duplicate joinable waiting room exists");
 
   const thirdRoom = await findRoom(clients[2]);
-  assert.equal(thirdRoom.id, lateThirdRoomId, "late third player did not converge on the same room");
+  assert.equal(thirdRoom.id, lateThirdRoomId, "late third player did not converge");
+  assert.equal(thirdRoom.status, "starting", "full public cohort was not sealed");
 
   const duplicateThirdRoom = await findRoom(clients[2]);
-  assert.equal(duplicateThirdRoom.id, lateThirdRoomId, "duplicate request was not idempotent");
+  assert.equal(duplicateThirdRoom.id, lateThirdRoomId, "duplicate third-player request was not idempotent");
+
+  const overflowRoom = await findRoom(overflowClient);
+  assert.notEqual(overflowRoom.id, lateThirdRoomId, "fourth player joined a full cohort");
+  const fullSnapshot = await roomSnapshot(lateThirdRoomId);
+  const overflowSnapshot = await roomSnapshot(overflowRoom.id);
+  assert.equal(fullSnapshot.members.length, 3);
+  assert.equal(fullSnapshot.room.status, "starting");
+  assert.equal(overflowSnapshot.members.length, 1);
+  assert.equal(overflowSnapshot.room.status, "waiting");
+  assert.equal(overflowSnapshot.joinableRooms.length, 1);
+  evidence.fullRoomRollover = {
+    sealedRoomId: lateThirdRoomId,
+    overflowRoomId: overflowRoom.id,
+    sealedSnapshot: fullSnapshot,
+    overflowSnapshot,
+    observedAt: new Date().toISOString(),
+  };
 
   await setReady(clients[2], lateThirdRoomId);
   const afterThird = await waitForStatus(lateThirdRoomId, "active");
-  assert.equal(afterThird.members.length, 3, "active public match lacks exactly three members");
+  assert.equal(afterThird.members.length, 3);
   assert.equal(afterThird.members.filter((member) => member.is_ready).length, 3);
-  assert.equal(afterThird.room.max_players, 3);
-
   evidence.lateThird = {
     roomId: lateThirdRoomId,
     beforeThird,
     afterThird,
     finishedAt: new Date().toISOString(),
   };
-  await deleteRoom(lateThirdRoomId);
+  await deleteRooms([lateThirdRoomId, overflowRoom.id]);
 
-  // Repeated simultaneous convergence proof.
+  const staleRoom = await findRoom(overflowClient);
+  const staleTimestamp = new Date(Date.now() - 120_000).toISOString();
+  const { error: staleUpdateError } = await admin
+    .from("room_players")
+    .update({ last_seen_at: staleTimestamp })
+    .eq("room_id", staleRoom.id)
+    .eq("player_id", overflowUserId);
+  if (staleUpdateError) throw staleUpdateError;
+
+  const replacementRoom = await findRoom(clients[0]);
+  assert.notEqual(replacementRoom.id, staleRoom.id, "stale room was reused");
+  const { data: staleRoomRow, error: staleRoomError } = await admin
+    .from("game_rooms")
+    .select("id,status")
+    .eq("id", staleRoom.id)
+    .single();
+  if (staleRoomError) throw staleRoomError;
+  assert.equal(staleRoomRow.status, "cancelled");
+  evidence.staleRoom = {
+    staleRoomId: staleRoom.id,
+    replacementRoomId: replacementRoom.id,
+    staleTimestamp,
+    staleRoomStatus: staleRoomRow.status,
+    observedAt: new Date().toISOString(),
+  };
+  await deleteRooms([staleRoom.id, replacementRoom.id]);
+
   for (let run = 1; run <= raceRuns; run += 1) {
     const startedAt = new Date().toISOString();
     const rooms = await Promise.all(clients.map((client) => findRoom(client)));
@@ -206,9 +304,10 @@ try {
     assert.ok(rooms.every((room) => room.max_players === 3));
 
     const roomId = roomIds[0];
-    const waitingSnapshot = await roomSnapshot(roomId);
-    assert.equal(waitingSnapshot.members.length, 3, `race run ${run}: wrong active member count`);
-    assert.equal(waitingSnapshot.compatibleRooms.length, 1, `race run ${run}: duplicate waiting key`);
+    const sealedSnapshot = await roomSnapshot(roomId);
+    assert.equal(sealedSnapshot.room.status, "starting");
+    assert.equal(sealedSnapshot.members.length, 3);
+    assert.equal(sealedSnapshot.joinableRooms.length, 0, "sealed cohort remained joinable");
 
     await Promise.all(clients.map((client) => setReady(client, roomId)));
     const activeSnapshot = await waitForStatus(roomId, "active");
@@ -220,7 +319,7 @@ try {
       startedAt,
       finishedAt: new Date().toISOString(),
       roomIds,
-      waitingSnapshot,
+      sealedSnapshot,
       activeSnapshot,
     });
     await deleteRoom(roomId);
@@ -238,4 +337,5 @@ try {
   throw error;
 } finally {
   await Promise.all(clients.map((client) => client.auth.signOut()));
+  await overflowClient.auth.signOut();
 }
