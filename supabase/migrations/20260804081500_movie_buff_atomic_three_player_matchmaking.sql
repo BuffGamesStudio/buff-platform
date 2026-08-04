@@ -33,39 +33,6 @@ $$;
 alter table public.game_rooms
   add column if not exists public_matchmaking_key text;
 
--- Fail closed rather than silently merging or deleting duplicate compatible
--- waiting rooms that predate the durable uniqueness boundary.
-do $$
-declare
-  v_duplicate_key text;
-begin
-  select duplicate_key
-  into v_duplicate_key
-  from (
-    select
-      public.movie_buff_public_compatibility_key(
-        gr.category_id,
-        gr.difficulty,
-        gr.total_rounds
-      ) as duplicate_key,
-      count(*) as room_count
-    from public.game_rooms as gr
-    where gr.room_type = 'public'
-      and gr.status = 'waiting'
-    group by 1
-    having count(*) > 1
-    order by 1
-    limit 1
-  ) as duplicates;
-
-  if v_duplicate_key is not null then
-    raise exception
-      'MOV-15 preflight blocked: duplicate compatible public waiting rooms exist for key %.',
-      v_duplicate_key;
-  end if;
-end;
-$$;
-
 update public.game_rooms as gr
 set
   difficulty = pg_catalog.lower(pg_catalog.btrim(gr.difficulty)),
@@ -77,6 +44,79 @@ set
   )
 where gr.room_type = 'public'
   and gr.status = 'waiting';
+
+-- Existing over-capacity waiting rooms require human reconciliation. Do not
+-- silently evict or rewrite memberships during a schema migration.
+do $$
+declare
+  v_room_id uuid;
+  v_player_count integer;
+begin
+  select gr.id, count(rp.player_id)::integer
+  into v_room_id, v_player_count
+  from public.game_rooms as gr
+  join public.room_players as rp
+    on rp.room_id = gr.id
+   and rp.left_at is null
+  where gr.room_type = 'public'
+    and gr.status = 'waiting'
+  group by gr.id
+  having count(rp.player_id) > public.movie_buff_public_match_size()
+  order by gr.created_at asc
+  limit 1;
+
+  if v_room_id is not null then
+    raise exception
+      'MOV-15 preflight blocked: public waiting room % has % active players.',
+      v_room_id,
+      v_player_count;
+  end if;
+end;
+$$;
+
+-- A cohort with all three seats is sealed from further matchmaking but remains
+-- on the waiting-room screen until all three players are ready. This also lets
+-- another trio use the same compatibility settings without creating duplicate
+-- joinable waiting rooms.
+update public.game_rooms as gr
+set status = 'starting'
+where gr.room_type = 'public'
+  and gr.status = 'waiting'
+  and (
+    select count(*)
+    from public.room_players as rp
+    where rp.room_id = gr.id
+      and rp.left_at is null
+  ) = public.movie_buff_public_match_size();
+
+-- Fail closed rather than silently merging duplicate joinable waiting rooms
+-- that predate the durable uniqueness boundary.
+do $$
+declare
+  v_duplicate_key text;
+begin
+  select duplicate_key
+  into v_duplicate_key
+  from (
+    select
+      gr.public_matchmaking_key as duplicate_key,
+      count(*) as room_count
+    from public.game_rooms as gr
+    where gr.room_type = 'public'
+      and gr.status = 'waiting'
+    group by gr.public_matchmaking_key
+    having count(*) > 1
+    order by gr.public_matchmaking_key
+    limit 1
+  ) as duplicates;
+
+  if v_duplicate_key is not null then
+    raise exception
+      'MOV-15 preflight blocked: duplicate joinable public waiting rooms exist for key %.',
+      v_duplicate_key;
+  end if;
+end;
+$$;
 
 alter table public.game_rooms
   drop constraint if exists movie_buff_public_waiting_room_key_required;
@@ -125,11 +165,11 @@ begin
   end if;
 
   select
-    count(*) filter (where rp.left_at is null)::integer,
-    count(*) filter (
+    (count(*) filter (where rp.left_at is null))::integer,
+    (count(*) filter (
       where rp.left_at is null
         and rp.is_ready = true
-    )::integer
+    ))::integer
   into v_active_players, v_ready_players
   from public.room_players as rp
   where rp.room_id = p_room_id;
@@ -276,7 +316,7 @@ begin
 
   if found then
     if v_existing_room.room_type = 'public'
-       and v_existing_room.status = 'waiting'
+       and v_existing_room.status in ('waiting', 'starting')
        and v_existing_room.public_matchmaking_key = v_compatibility_key
     then
       update public.room_players
@@ -350,7 +390,10 @@ begin
       where id = v_candidate_room.id;
       v_candidate_room.id := null;
     elsif v_active_members >= v_public_size then
-      raise exception 'The compatible public room is already full.';
+      update public.game_rooms
+      set status = 'starting'
+      where id = v_candidate_room.id;
+      v_candidate_room.id := null;
     end if;
   end if;
 
@@ -485,6 +528,22 @@ begin
     where id = v_candidate_room.id;
   end if;
 
+  select count(*)::integer
+  into v_active_members
+  from public.room_players as rp
+  where rp.room_id = v_candidate_room.id
+    and rp.left_at is null;
+
+  if v_active_members > v_public_size then
+    raise exception 'Public room contains more than 3 active players.';
+  end if;
+
+  if v_active_members = v_public_size then
+    update public.game_rooms
+    set status = 'starting'
+    where id = v_candidate_room.id;
+  end if;
+
   if v_created_new then
     insert into public.movie_buff_round_events (
       event_type,
@@ -557,7 +616,10 @@ begin
   join public.room_players as rp
     on rp.room_id = gr.id
   where gr.id = p_room_id
-    and gr.status = 'waiting'
+    and (
+      (gr.room_type = 'public' and gr.status in ('waiting', 'starting'))
+      or (gr.room_type <> 'public' and gr.status = 'waiting')
+    )
     and rp.player_id = v_user_id
     and rp.left_at is null
   limit 1
@@ -567,7 +629,7 @@ begin
     raise exception 'You can only change ready status for your current waiting room.';
   end if;
 
-  if v_room.room_type = 'public' then
+  if v_room.room_type = 'public' and v_room.status = 'waiting' then
     perform public.cleanup_movie_buff_waiting_room(p_room_id, v_user_id);
   end if;
 
@@ -588,11 +650,11 @@ begin
   end if;
 
   select
-    count(*) filter (where rp.left_at is null)::integer,
-    count(*) filter (
+    (count(*) filter (where rp.left_at is null))::integer,
+    (count(*) filter (
       where rp.left_at is null
         and rp.is_ready = true
-    )::integer
+    ))::integer
   into v_active_players, v_ready_players
   from public.room_players as rp
   where rp.room_id = p_room_id;
@@ -663,7 +725,7 @@ begin
     raise exception 'This room is no longer active.';
   end if;
 
-  if v_room.status in ('starting', 'active') then
+  if v_room.status = 'active' then
     select m.id
     into v_match_id
     from public.matches as m
@@ -691,8 +753,12 @@ begin
     return;
   end if;
 
-  if v_room.status <> 'waiting' then
-    raise exception 'This room cannot be started from its current state.';
+  if v_room.room_type = 'public' then
+    if v_room.status not in ('waiting', 'starting') then
+      raise exception 'This public room cannot be started from its current state.';
+    end if;
+  elsif v_room.status <> 'waiting' then
+    raise exception 'This private room cannot be started from its current state.';
   end if;
 
   select count(*)::integer
