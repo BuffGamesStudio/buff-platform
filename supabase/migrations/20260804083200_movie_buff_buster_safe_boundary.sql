@@ -1,5 +1,6 @@
--- MOV-17 follow-up: reconnect-grace expiry creates a pending system
--- controller. Buster activates only after the delay at a safe phase boundary.
+-- MOV-17 follow-up: reconnect-grace expiry preserves the abandoned human seat
+-- until Buster activates after the delay at a declared safe phase boundary.
+-- The trusted system is never written as a participant-seat controller.
 
 create or replace function public.movie_buff_stage_abandoned_controller()
 returns trigger
@@ -11,8 +12,11 @@ begin
   if old.participant_state <> 'abandoned'
      and new.participant_state = 'abandoned'
      and new.controller_type = 'buster' then
-    new.controller_type := 'system';
-    new.controller_player_id := null;
+    -- The phase worker requested replacement, but the seat remains the original
+    -- abandoned human until the safe-boundary delay expires. participant_state,
+    -- not controller_type, excludes this seat from human completion counts.
+    new.controller_type := 'human';
+    new.controller_player_id := new.original_player_id;
     new.replacement_ready_at := coalesce(
       new.replacement_ready_at,
       pg_catalog.clock_timestamp() + pg_catalog.make_interval(secs => 2)
@@ -62,7 +66,8 @@ begin
       updated_at = v_now
     where match_id = v_state.match_id
       and participant_state = 'abandoned'
-      and controller_type = 'system'
+      and controller_type = 'human'
+      and controller_player_id = original_player_id
       and replacement_ready_at is not null
       and replacement_ready_at <= v_now
     returning seat_index, original_player_id
