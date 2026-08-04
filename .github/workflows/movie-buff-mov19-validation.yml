@@ -57,6 +57,9 @@ jobs:
 
       - name: Run validator self-guards
         shell: bash
+        env:
+          MOVIE_BUFF_VALIDATION_ROOT: ${{ github.workspace }}
+          MOVIE_BUFF_VALIDATION_SHA: ${{ env.EXPECTED_SHA }}
         run: |
           set -euo pipefail
           mkdir -p "${EVIDENCE_DIR}"
