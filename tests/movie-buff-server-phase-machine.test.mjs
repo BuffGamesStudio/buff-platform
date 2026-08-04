@@ -3,53 +3,70 @@ import fs from "node:fs";
 import test from "node:test";
 
 const {
+  getMovieBuffCanonicalRoute,
   shouldNavigateForMovieBuffPhase,
 } = await import("../src/lib/game/movieBuffPhaseService.ts");
 
 const contract = fs.readFileSync(
-  "docs/product/movie-buff-server-phase-machine-v1.md",
+  "docs/product/movie-buff-authoritative-phase-vip-participant-leave-v1.md",
   "utf8",
 );
 
-test("phase routes are derived from persisted phase names", () => {
+test("canonical routes are derived from authoritative phase names", () => {
+  assert.equal(getMovieBuffCanonicalRoute("vip_lock"), "/games/movie-buff/round-intro");
+  assert.equal(getMovieBuffCanonicalRoute("board_select"), "/games/movie-buff/board-preview");
+  assert.equal(getMovieBuffCanonicalRoute("transition"), "/games/movie-buff/play");
+  assert.equal(getMovieBuffCanonicalRoute("playback"), "/games/movie-buff/play");
+  assert.equal(getMovieBuffCanonicalRoute("results"), "/games/movie-buff/round-results");
+  assert.equal(getMovieBuffCanonicalRoute("finished"), "/games/movie-buff/final-results");
+  assert.equal(getMovieBuffCanonicalRoute("abandoned"), "/games/movie-buff/match-status");
+  assert.equal(getMovieBuffCanonicalRoute("blocked"), "/games/movie-buff/match-status");
+});
+
+test("navigation changes only when canonical route differs", () => {
   assert.equal(
-    shouldNavigateForMovieBuffPhase("/games/movie-buff/round-intro", "vip_selection"),
+    shouldNavigateForMovieBuffPhase("/games/movie-buff/round-intro", "vip_lock"),
     null,
   );
   assert.equal(
-    shouldNavigateForMovieBuffPhase("/games/movie-buff/round-intro", "board"),
+    shouldNavigateForMovieBuffPhase("/games/movie-buff/round-intro", "board_select"),
     "/games/movie-buff/board-preview",
   );
   assert.equal(
     shouldNavigateForMovieBuffPhase("/games/movie-buff/play", "answer"),
     null,
   );
-  assert.equal(
-    shouldNavigateForMovieBuffPhase("/games/movie-buff/play", "results"),
-    "/games/movie-buff/round-results",
-  );
 });
 
-test("contract forbids browser and animation authority", () => {
-  assert.match(contract, /No browser, host, selector, animation callback, or local timer may advance/i);
-  assert.match(contract, /client route change/i);
-  assert.match(contract, /local countdown completion cannot advance/i);
+test("contract forbids browser, local timer, and animation authority", () => {
+  assert.match(contract, /browser may render timers, animations, and routes, but it may not create, extend, skip, or advance a phase/i);
+  assert.match(contract, /Animation completion callbacks cannot advance the match/i);
+  assert.match(contract, /Normal-path controls named `Start Round`/i);
 });
 
-test("contract preserves MOV-15, PR #3, and PR #5 boundaries", () => {
-  assert.match(contract, /MOV-15 owns public admission and strict-three readiness/i);
-  assert.match(contract, /PR #3 is the visual baseline/i);
-  assert.match(contract, /PR #5 is the authorization baseline/i);
+test("contract defines human, Buster, and system authority", () => {
+  assert.match(contract, /Lobby membership is not active-match authority/i);
+  assert.match(contract, /Buster is not a fake user profile/i);
+  assert.match(contract, /The `system` is not a seat or player/i);
+  assert.match(contract, /`room_players\.left_at is null` alone is not an active-human predicate/i);
 });
 
-test("manual shared-flow controls are prohibited", () => {
-  for (const label of [
-    "Start Round",
-    "Continue to Clip Round",
-    "Current live flow",
-    "Next Round",
-    "Waiting for host to click",
+test("contract defines VIP auto-pass and active leave authority", () => {
+  assert.match(contract, /Deadline expiry creates server no-VIP pass records/i);
+  assert.match(contract, /Buster never receives a VIP/i);
+  assert.match(contract, /get_movie_buff_active_leave_quote/i);
+  assert.match(contract, /confirm_movie_buff_active_leave/i);
+  assert.match(contract, /cannot double-charge/i);
+});
+
+test("launch timing is server-owned", () => {
+  for (const requiredText of [
+    "round introduction: 4 seconds",
+    "VIP lock: 15 seconds",
+    "selector window: 20 seconds",
+    "reconnect grace: 45 seconds",
+    "Buster takeover delay: 2 seconds",
   ]) {
-    assert.match(contract, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+    assert.match(contract, new RegExp(requiredText, "i"));
   }
 });
