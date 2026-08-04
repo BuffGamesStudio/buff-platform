@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(103);
+select plan(111);
 
 -- Six exposed tables: object presence, RLS, minimum grants, and policy shape.
 with targets(table_name) as (
