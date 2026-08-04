@@ -14,6 +14,10 @@ const race = fs.readFileSync(
   "scripts/movie-buff-public-matchmaking-race.mjs",
   "utf8",
 );
+const evidenceRunner = fs.readFileSync(
+  "scripts/movie-buff-public-matchmaking-evidence-runner.mjs",
+  "utf8",
+);
 const helper = fs.readFileSync(
   "scripts/movie-buff-public-matchmaking-race-helper.sql",
   "utf8",
@@ -74,6 +78,8 @@ test("browser no longer owns public start eligibility", () => {
     waitingRoom,
     /There is no host start button or browser auto-start timer/i,
   );
+  assert.match(waitingRoom, /const stableCategoryId = categoryId/);
+  assert.match(waitingRoom, /\[stableCategoryId\]/);
 });
 
 test("race evidence is exact-SHA bound and local-only", () => {
@@ -85,6 +91,14 @@ test("race evidence is exact-SHA bound and local-only", () => {
   assert.match(race, /127\.0\.0\.1/);
   assert.match(race, /classification: "UNKNOWN"/);
   assert.match(race, /exitCode/);
+});
+
+test("evidence wrapper binds its manifest and child to the same checkout SHA", () => {
+  assert.match(evidenceRunner, /execFileSync\("git", \["rev-parse", "HEAD"\]/);
+  assert.match(evidenceRunner, /checkoutSha !== exactSha/);
+  assert.match(evidenceRunner, /MOVIE_BUFF_EXPECTED_GIT_SHA: exactSha/);
+  assert.match(evidenceRunner, /MOVIE_BUFF_EVIDENCE_COMMAND: commandLabel/);
+  assert.match(evidenceRunner, /exactSha,\s*checkoutSha,/);
 });
 
 test("race cleanup requires explicit consent and is targeted", () => {
