@@ -11,17 +11,36 @@ const {
   parseMovieBuffVipBearerToken,
   shouldAdvanceMovieBuffVipWindow,
 } = await import("../src/lib/server/movieBuffVipRoutePolicy.ts");
+const { getMovieBuffVipCanonicalNavigationTarget } = await import(
+  "../src/lib/game/movieBuffVipPhasePolicy.ts"
+);
 
 const migration = fs.readFileSync(
   "supabase/migrations/20260804073000_movie_buff_vip_authority.sql",
+  "utf8",
+);
+const releaseHardening = fs.readFileSync(
+  "supabase/migrations/20260804073200_movie_buff_vip_snapshot_release_hardening.sql",
   "utf8",
 );
 const roundIntro = fs.readFileSync(
   "src/app/games/movie-buff/round-intro/page.tsx",
   "utf8",
 );
+const roundIntroLayout = fs.readFileSync(
+  "src/app/games/movie-buff/round-intro/layout.tsx",
+  "utf8",
+);
+const vipService = fs.readFileSync(
+  "src/lib/game/movieBuffVipService.ts",
+  "utf8",
+);
 const personaHarness = fs.readFileSync(
   "scripts/movie-buff-vip-authority-personas.mjs",
+  "utf8",
+);
+const adversarialHarness = fs.readFileSync(
+  "scripts/movie-buff-vip-authority-adversarial.mjs",
   "utf8",
 );
 
@@ -84,7 +103,7 @@ test("deadline and missing-model conditions fail closed", () => {
   );
 });
 
-test("all required locks or an expired deadline make the VIP window ready", () => {
+test("all required locks or an expired deadline make only the VIP condition ready", () => {
   assert.equal(
     shouldAdvanceMovieBuffVipWindow({
       status: "open",
@@ -103,23 +122,40 @@ test("all required locks or an expired deadline make the VIP window ready", () =
     }),
     true,
   );
+  assert.equal(
+    getMovieBuffVipCanonicalNavigationTarget({
+      currentPath: "/games/movie-buff/round-intro",
+      roomId: "room-a",
+      phaseView: null,
+    }),
+    null,
+  );
 });
 
-test("window and lock creation are transaction-serialized", () => {
+test("window, lock, and activation creation are transaction serialized", () => {
   assert.match(migration, /movie-buff-vip-window\|/);
   assert.match(migration, /movie-buff-vip-lock\|/);
   assert.match(migration, /movie-buff-vip-activation\|/);
   assert.ok((migration.match(/pg_advisory_xact_lock/gi) ?? []).length >= 4);
 });
 
-test("required humans are persisted by identity, not count alone", () => {
+test("required humans are persisted and compared by exact identity", () => {
   assert.match(migration, /movie_buff_vip_round_required_players/);
-  assert.match(
-    migration,
-    /p_required_player_ids\s+uuid\[\]/,
-  );
+  assert.match(migration, /p_required_player_ids\s+uuid\[\]/);
+  assert.match(migration, /v_existing_ids\s+is distinct from\s+v_required_ids/i);
+  assert.match(migration, /nonmember or nonparticipant/i);
   assert.match(migration, /Explicit required-human participant IDs are required/i);
-  assert.match(migration, /release_movie_buff_vip_required_player/);
+});
+
+test("required-player release is idempotent but contradictory release fails", () => {
+  assert.match(releaseHardening, /status', 'unavailable'/i);
+  assert.match(releaseHardening, /'released', false/i);
+  assert.match(releaseHardening, /'idempotent', true/i);
+  assert.match(releaseHardening, /already released with a different reason/i);
+  assert.match(releaseHardening, /released_at is null/i);
+  assert.match(releaseHardening, /required\.released_at is null/i);
+  assert.match(releaseHardening, /to service_role/i);
+  assert.doesNotMatch(releaseHardening, /to authenticated/i);
 });
 
 test("selection eligibility is separate from later activation phase", () => {
@@ -149,13 +185,73 @@ test("activation revalidates definition, inventory, context, and phase", () => {
   assert.match(activation, /different request/i);
 });
 
-test("Round Intro never routes from VIP readiness or invokes legacy leave", () => {
+test("VIP readiness cannot navigate; only an allowlisted canonical phase route can", () => {
+  const boardTarget = getMovieBuffVipCanonicalNavigationTarget({
+    currentPath: "/games/movie-buff/round-intro",
+    roomId: "room-a",
+    phaseView: {
+      roomId: "room-a",
+      roundId: "round-a",
+      roundNumber: 2,
+      phase: "board_select",
+      phaseVersion: 7,
+      phaseRoute: "/games/movie-buff/board-preview",
+    },
+  });
+  assert.equal(
+    boardTarget,
+    "/games/movie-buff/board-preview?roomId=room-a&round=2",
+  );
+
+  assert.equal(
+    getMovieBuffVipCanonicalNavigationTarget({
+      currentPath: "/games/movie-buff/round-intro",
+      roomId: "room-a",
+      phaseView: {
+        roomId: "room-a",
+        roundId: "round-a",
+        roundNumber: 2,
+        phase: "vip_lock",
+        phaseVersion: 6,
+        phaseRoute: "/games/movie-buff/round-intro",
+      },
+    }),
+    null,
+  );
+
+  assert.equal(
+    getMovieBuffVipCanonicalNavigationTarget({
+      currentPath: "/games/movie-buff/round-intro",
+      roomId: "room-a",
+      phaseView: {
+        roomId: "room-a",
+        roundId: "round-a",
+        roundNumber: 2,
+        phase: "board_select",
+        phaseVersion: 7,
+        phaseRoute: "https://example.com/escape",
+      },
+    }),
+    null,
+  );
+});
+
+test("Round Intro consumes the canonical view read-only", () => {
   assert.doesNotMatch(roundIntro, /board-preview/);
   assert.doesNotMatch(roundIntro, /leaveCurrentRoom/);
   assert.match(roundIntro, /Waiting for the authoritative shared phase/i);
+  assert.match(roundIntroLayout, /getMovieBuffVipCanonicalPhaseView/);
+  assert.match(roundIntroLayout, /getMovieBuffVipCanonicalNavigationTarget/);
+  assert.match(roundIntroLayout, /phaseVersion < latestVersion\.current/);
+  assert.match(roundIntroLayout, /router\.replace\(target\)/);
+  assert.doesNotMatch(roundIntroLayout, /advanceReady/);
+  assert.doesNotMatch(roundIntroLayout, /match\/advance/);
+  assert.match(vipService, /\/api\/movie-buff\/match\/view/);
+  assert.match(vipService, /response\.status === 404/);
+  assert.doesNotMatch(vipService, /\/api\/movie-buff\/match\/advance/);
 });
 
-test("persona harness is local-only and covers required adversarial families", () => {
+test("original persona harness covers core API and reconnect behavior", () => {
   assert.match(personaHarness, /Refusing non-local Supabase/i);
   assert.match(personaHarness, /Refusing non-local application/i);
   for (const term of [
@@ -171,5 +267,27 @@ test("persona harness is local-only and covers required adversarial families", (
     "missing window and inventory model fails closed",
   ]) {
     assert.match(personaHarness, new RegExp(term, "i"));
+  }
+});
+
+test("adversarial harness is exact-SHA local-only and covers repaired gaps", () => {
+  assert.match(adversarialHarness, /MOVIE_BUFF_EXPECTED_GIT_SHA/);
+  assert.match(adversarialHarness, /MOVIE_BUFF_EVIDENCE_COMMAND/);
+  assert.match(adversarialHarness, /MOVIE_BUFF_ALLOW_LOCAL_DELETIONS/);
+  assert.match(adversarialHarness, /git["'], \["rev-parse", "HEAD"\]/);
+  assert.match(adversarialHarness, /createHash\("sha256"\)/);
+  assert.match(adversarialHarness, /Refusing non-local Supabase/i);
+  assert.match(adversarialHarness, /Refusing non-local application/i);
+  assert.match(adversarialHarness, /concurrent|Promise\.all/);
+  for (const term of [
+    "safe idempotent no-op",
+    "immutable identity snapshot",
+    "identical and contradictory lock races",
+    "different reason",
+    "old lock no longer count",
+    "wrong phase fails",
+    "concurrent activation consumes exactly once",
+  ]) {
+    assert.match(adversarialHarness, new RegExp(term, "i"));
   }
 });
