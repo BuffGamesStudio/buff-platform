@@ -2,21 +2,35 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 
+import { MovieBuffRiveCanvas } from "./MovieBuffRiveCanvas";
 import { MovieBuffStaticFallback } from "./MovieBuffStaticFallback";
 
 type AssetStatus = "checking" | "ready" | "failed";
 
+export type MovieBuffRiveSurfaceProps = {
+  assetSource: string;
+  label: string;
+  artboard?: string;
+  stateMachines?: string | string[];
+  canvasClassName?: string;
+  children?: ReactNode;
+};
+
+/**
+ * Fail-closed presentation boundary around the Rive WebGL2 canvas.
+ *
+ * Asset availability, reduced-motion preference, or renderer failure may only
+ * change what is painted. They never change a Movie Buff phase, deadline,
+ * selector, score, navigation target, or other authoritative state.
+ */
 export function MovieBuffRiveSurface({
   assetSource,
   label,
-  runtimeContent,
+  artboard,
+  stateMachines,
+  canvasClassName,
   children,
-}: {
-  assetSource: string;
-  label: string;
-  runtimeContent?: ReactNode;
-  children?: ReactNode;
-}) {
+}: MovieBuffRiveSurfaceProps) {
   const [assetStatus, setAssetStatus] = useState<AssetStatus>("checking");
   const [reducedMotion, setReducedMotion] = useState(false);
 
@@ -30,14 +44,15 @@ export function MovieBuffRiveSurface({
 
   useEffect(() => {
     const controller = new AbortController();
+    const normalizedSource = assetSource.trim();
 
-    if (!assetSource.trim()) {
+    if (!normalizedSource) {
       setAssetStatus("failed");
       return () => controller.abort();
     }
 
     setAssetStatus("checking");
-    void fetch(assetSource, {
+    void fetch(normalizedSource, {
       method: "HEAD",
       cache: "no-store",
       signal: controller.signal,
@@ -67,7 +82,7 @@ export function MovieBuffRiveSurface({
     return (
       <MovieBuffStaticFallback
         title={label}
-        description="The motion asset could not load. Gameplay continues from authoritative server state."
+        description="The motion asset or renderer could not load. Gameplay continues from authoritative server state."
       >
         {children}
       </MovieBuffStaticFallback>
@@ -78,13 +93,22 @@ export function MovieBuffRiveSurface({
     <div
       data-rive-source={assetSource}
       data-rive-asset-status={assetStatus}
-      data-rive-runtime-status={runtimeContent ? "connected" : "adapter-pending"}
+      data-rive-runtime-status={assetStatus === "ready" ? "connected" : "checking"}
       aria-label={label}
       aria-busy={assetStatus === "checking"}
-      className="relative overflow-hidden rounded-3xl"
+      className="relative min-h-64 overflow-hidden rounded-3xl"
     >
-      {runtimeContent}
-      {children}
+      {assetStatus === "ready" ? (
+        <MovieBuffRiveCanvas
+          assetSource={assetSource}
+          label={label}
+          artboard={artboard}
+          stateMachines={stateMachines}
+          className={canvasClassName}
+          onRuntimeError={() => setAssetStatus("failed")}
+        />
+      ) : null}
+      <div className="relative z-10">{children}</div>
       {assetStatus === "checking" ? (
         <span className="sr-only" role="status" aria-live="polite">
           Checking cinematic asset availability.
