@@ -74,22 +74,7 @@ begin
 end;
 $$;
 
--- A cohort with all three seats is sealed from further matchmaking but remains
--- on the waiting-room screen until all three players are ready. This also lets
--- another trio use the same compatibility settings without creating duplicate
--- joinable waiting rooms.
-update public.game_rooms as gr
-set status = 'starting'
-where gr.room_type = 'public'
-  and gr.status = 'waiting'
-  and (
-    select count(*)
-    from public.room_players as rp
-    where rp.room_id = gr.id
-      and rp.left_at is null
-  ) = public.movie_buff_public_match_size();
-
--- Fail closed rather than silently merging duplicate joinable waiting rooms
+-- Fail closed rather than silently merging duplicate compatible waiting rooms
 -- that predate the durable uniqueness boundary.
 do $$
 declare
@@ -112,7 +97,7 @@ begin
 
   if v_duplicate_key is not null then
     raise exception
-      'MOV-15 preflight blocked: duplicate joinable public waiting rooms exist for key %.',
+      'MOV-15 preflight blocked: duplicate compatible public waiting rooms exist for key %.',
       v_duplicate_key;
   end if;
 end;
@@ -261,6 +246,16 @@ begin
     )
   );
 
+  -- Refresh the requesting player's presence before stale cleanup so a genuine
+  -- reconnect does not evict itself.
+  update public.room_players as rp
+  set last_seen_at = pg_catalog.clock_timestamp()
+  from public.game_rooms as gr
+  where gr.id = rp.room_id
+    and rp.player_id = v_user_id
+    and rp.left_at is null
+    and gr.status in ('waiting', 'starting', 'active');
+
   v_presence_cutoff := pg_catalog.clock_timestamp()
     - pg_catalog.make_interval(
         secs => public.movie_buff_room_presence_timeout_seconds()
@@ -316,15 +311,9 @@ begin
 
   if found then
     if v_existing_room.room_type = 'public'
-       and v_existing_room.status in ('waiting', 'starting')
+       and v_existing_room.status = 'waiting'
        and v_existing_room.public_matchmaking_key = v_compatibility_key
     then
-      update public.room_players
-      set last_seen_at = pg_catalog.clock_timestamp()
-      where room_id = v_existing_room.id
-        and player_id = v_user_id
-        and left_at is null;
-
       return query
       select
         v_existing_room.id,
@@ -390,10 +379,7 @@ begin
       where id = v_candidate_room.id;
       v_candidate_room.id := null;
     elsif v_active_members >= v_public_size then
-      update public.game_rooms
-      set status = 'starting'
-      where id = v_candidate_room.id;
-      v_candidate_room.id := null;
+      raise exception 'The compatible public room is already full.';
     end if;
   end if;
 
@@ -538,12 +524,6 @@ begin
     raise exception 'Public room contains more than 3 active players.';
   end if;
 
-  if v_active_members = v_public_size then
-    update public.game_rooms
-    set status = 'starting'
-    where id = v_candidate_room.id;
-  end if;
-
   if v_created_new then
     insert into public.movie_buff_round_events (
       event_type,
@@ -616,10 +596,7 @@ begin
   join public.room_players as rp
     on rp.room_id = gr.id
   where gr.id = p_room_id
-    and (
-      (gr.room_type = 'public' and gr.status in ('waiting', 'starting'))
-      or (gr.room_type <> 'public' and gr.status = 'waiting')
-    )
+    and gr.status = 'waiting'
     and rp.player_id = v_user_id
     and rp.left_at is null
   limit 1
@@ -629,7 +606,7 @@ begin
     raise exception 'You can only change ready status for your current waiting room.';
   end if;
 
-  if v_room.room_type = 'public' and v_room.status = 'waiting' then
+  if v_room.room_type = 'public' then
     perform public.cleanup_movie_buff_waiting_room(p_room_id, v_user_id);
   end if;
 
@@ -753,12 +730,8 @@ begin
     return;
   end if;
 
-  if v_room.room_type = 'public' then
-    if v_room.status not in ('waiting', 'starting') then
-      raise exception 'This public room cannot be started from its current state.';
-    end if;
-  elsif v_room.status <> 'waiting' then
-    raise exception 'This private room cannot be started from its current state.';
+  if v_room.status <> 'waiting' then
+    raise exception 'This room cannot be started from its current state.';
   end if;
 
   select count(*)::integer
