@@ -23,8 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      EXPECTED_SHA: 54f270439fb7be182df5106208d374152124ff01
-      RUNNER_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       EXPECTED_BRANCH: copilot/MOV-19-security-validation
       EVIDENCE_DIR: ${{ runner.temp }}/mov19-evidence
 
@@ -124,7 +123,6 @@ jobs:
           {
             echo "lane=MOV-19"
             echo "source_sha=$(git rev-parse HEAD)"
-            echo "runner_sha=${RUNNER_SHA}"
             echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
             echo "runner_os=${RUNNER_OS}"
             echo "node_version=$(node --version)"
