@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { MovieBuffStaticFallback } from "./MovieBuffStaticFallback";
 
@@ -11,7 +11,7 @@ export function MovieBuffRiveSurface({
 }: {
   assetSource: string;
   label: string;
-  children?: React.ReactNode;
+  children?: ReactNode;
 }) {
   const [failed, setFailed] = useState(false);
 
