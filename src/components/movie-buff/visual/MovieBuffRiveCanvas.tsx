@@ -1,9 +1,10 @@
 "use client";
 
-import Rive, {
+import {
   Alignment,
   Fit,
   Layout,
+  useRive,
 } from "@rive-app/react-webgl2";
 
 const containedCenterLayout = new Layout({
@@ -36,16 +37,23 @@ export function MovieBuffRiveCanvas({
   className = "h-full min-h-64 w-full",
   onRuntimeError,
 }: MovieBuffRiveCanvasProps) {
+  const { RiveComponent } = useRive(
+    {
+      src: assetSource,
+      artboard,
+      stateMachines,
+      autoplay: true,
+      layout: containedCenterLayout,
+      shouldDisableRiveListeners: true,
+      onLoadError: onRuntimeError,
+    },
+    {
+      useOffscreenRenderer: true,
+    },
+  );
+
   return (
-    <Rive
-      src={assetSource}
-      artboard={artboard}
-      stateMachines={stateMachines}
-      autoplay
-      layout={containedCenterLayout}
-      useOffscreenRenderer
-      shouldDisableRiveListeners
-      onLoadError={onRuntimeError}
+    <RiveComponent
       className={className}
       role="img"
       aria-label={label}
