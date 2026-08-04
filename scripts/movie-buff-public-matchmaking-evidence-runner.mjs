@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -35,12 +35,23 @@ if (!["localhost", "127.0.0.1", "::1"].includes(target.hostname)) {
   throw new Error(`Refusing non-local Supabase target ${target.origin}.`);
 }
 
+const checkoutSha = execFileSync("git", ["rev-parse", "HEAD"], {
+  encoding: "utf8",
+}).trim();
+if (checkoutSha !== exactSha) {
+  throw new Error(
+    `Checkout HEAD ${checkoutSha} does not match MOVIE_BUFF_EXACT_SHA ${exactSha}.`,
+  );
+}
+
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
 const scriptPath = path.resolve("scripts/movie-buff-public-matchmaking-race.mjs");
 const command = [process.execPath, scriptPath];
+const commandLabel =
+  process.env.MOVIE_BUFF_EVIDENCE_COMMAND?.trim() || command.join(" ");
 const startedAt = new Date().toISOString();
 let stdout = "";
 let stderr = "";
@@ -49,6 +60,8 @@ const child = spawn(command[0], command.slice(1), {
   cwd: process.cwd(),
   env: {
     ...process.env,
+    MOVIE_BUFF_EXPECTED_GIT_SHA: exactSha,
+    MOVIE_BUFF_EVIDENCE_COMMAND: commandLabel,
     MOVIE_BUFF_EVIDENCE_OUTPUT: outputPath,
   },
   stdio: ["ignore", "pipe", "pipe"],
@@ -77,6 +90,7 @@ const manifest = {
   schemaVersion: 1,
   lane: "MOV-15",
   exactSha,
+  checkoutSha,
   target: {
     kind: "local",
     origin: target.origin,
@@ -84,6 +98,7 @@ const manifest = {
   },
   consentValue: requiredConsent,
   command,
+  commandLabel,
   startedAt,
   finishedAt,
   exitCode,
@@ -102,6 +117,7 @@ console.log(
       manifestPath,
       classification: manifest.classification,
       exactSha,
+      checkoutSha,
       exitCode,
       evidenceSha256: manifest.evidenceSha256,
     },
