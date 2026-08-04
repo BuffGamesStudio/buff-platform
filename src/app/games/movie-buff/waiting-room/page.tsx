@@ -44,7 +44,6 @@ function getPlayerName(player: RoomPlayer): string {
 
 export default function WaitingRoomPage() {
   const router = useRouter();
-
   const [roomId, setRoomId] = useState("");
   const [urlRoomCode, setUrlRoomCode] = useState("");
   const [currentPlayerId, setCurrentPlayerId] = useState("");
@@ -74,7 +73,6 @@ export default function WaitingRoomPage() {
       setRoomId(parameters.get("roomId") ?? "");
       setUrlRoomCode(parameters.get("code") ?? "");
     }, 0);
-
     return () => window.clearTimeout(parameterTimer);
   }, []);
 
@@ -99,7 +97,6 @@ export default function WaitingRoomPage() {
 
         if (userError) throw userError;
         if (sessionError) throw sessionError;
-
         const resolvedUser = user ?? session?.user ?? null;
         if (cancelled) return;
 
@@ -153,13 +150,15 @@ export default function WaitingRoomPage() {
       setPlayers(lobby.players);
       setError("");
 
-      // `starting` means the strict-three public roster is sealed while the
-      // server waits for all three ready signals. Only the authoritative active
-      // state leaves this screen.
-      if (lobby.room.status === "active") {
+      if (
+        lobby.room.status === "active" ||
+        lobby.room.status === "starting"
+      ) {
         router.replace(
           `/games/movie-buff/round-intro?roomId=${encodeURIComponent(lobby.room.id)}`,
         );
+      } else if (lobby.room.status === "cancelled") {
+        router.replace("/games/movie-buff/lobby");
       }
     } catch (loadError) {
       setError(
@@ -174,7 +173,6 @@ export default function WaitingRoomPage() {
 
   useEffect(() => {
     if (!roomId) return;
-
     const loadTimer = window.setTimeout(() => void loadLobby(), 0);
     const refreshInterval = window.setInterval(() => void loadLobby(), 2000);
     const channel = subscribeToLobby(roomId, () => void loadLobby());
@@ -228,13 +226,10 @@ export default function WaitingRoomPage() {
   const currentPlayerReady = currentPlayer?.is_ready ?? false;
   const isCurrentPlayerHost = currentPlayer?.is_host ?? false;
   const isPublicRoom = room?.room_type === "public";
-  const publicRosterSealed = isPublicRoom && room?.status === "starting";
   const publicRosterComplete = isPublicRoom && players.length === PUBLIC_MATCH_SIZE;
   const allPlayersReady =
     players.length > 0 && players.every((player) => player.is_ready);
-  const canToggleReady =
-    room?.status === "waiting" ||
-    (isPublicRoom && room?.status === "starting");
+  const canToggleReady = room?.status === "waiting";
   const canPrivateStart =
     !isPublicRoom &&
     isCurrentPlayerHost &&
@@ -251,7 +246,7 @@ export default function WaitingRoomPage() {
   const publicStatusMessage = !publicRosterComplete
     ? `Waiting for exactly ${PUBLIC_MATCH_SIZE} players. ${players.length} joined.`
     : !allPlayersReady
-      ? "Roster locked. The server starts the match after all 3 players are ready."
+      ? "The 3-player room is full. The server waits for all 3 ready signals."
       : "All 3 players are ready. The server is starting the match automatically.";
 
   async function copyRoomCode() {
@@ -262,7 +257,6 @@ export default function WaitingRoomPage() {
 
   async function toggleReady() {
     if (!roomId || !currentPlayerId || working || !canToggleReady) return;
-
     setWorking(true);
     setError("");
     try {
@@ -281,7 +275,6 @@ export default function WaitingRoomPage() {
 
   const handlePrivateStartMatch = useCallback(async () => {
     if (!roomId || !currentPlayerId || !canPrivateStart || working) return;
-
     setWorking(true);
     setError("");
     try {
@@ -302,7 +295,6 @@ export default function WaitingRoomPage() {
 
   async function handleLeaveRoom() {
     if (working) return;
-
     const resolvedRoomId =
       roomId ||
       new URLSearchParams(window.location.search).get("roomId") ||
@@ -351,14 +343,12 @@ export default function WaitingRoomPage() {
           >
             <ArrowLeft size={20} /> Back to Lobby
           </button>
-
           <div className="text-center">
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-red-500">
               {isPublicRoom ? "Public Match" : "Private Match"}
             </p>
             <h1 className="text-2xl font-black">Waiting Room</h1>
           </div>
-
           <button
             type="button"
             onClick={handleLeaveRoom}
@@ -393,7 +383,7 @@ export default function WaitingRoomPage() {
             </div>
             <p className="max-w-3xl text-lg leading-8 text-zinc-300">
               {isPublicRoom
-                ? "Public matches use one server-owned roster of exactly 3 players. There is no host start button or browser auto-start timer."
+                ? "Public matches use one server-owned room of exactly 3 players. There is no host start button or browser auto-start timer."
                 : "The match begins when every player is ready and the host starts it."}{" "}
               You will have limited time to identify each movie, so answer quickly.
             </p>
@@ -560,7 +550,7 @@ export default function WaitingRoomPage() {
             {isPublicRoom ? (
               <div
                 className={`w-full rounded-xl border px-6 py-5 text-center font-black ${
-                  publicRosterSealed
+                  publicRosterComplete
                     ? "border-amber-500/40 bg-amber-500/10 text-amber-100"
                     : "border-zinc-700 bg-zinc-950 text-zinc-300"
                 }`}
