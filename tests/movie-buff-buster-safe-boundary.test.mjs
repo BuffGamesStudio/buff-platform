@@ -14,6 +14,10 @@ const proof = fs.readFileSync(
   "scripts/movie-buff-three-client-phase-proof.mjs",
   "utf8",
 );
+const evidenceRunner = fs.readFileSync(
+  "scripts/movie-buff-three-client-phase-evidence-runner.mjs",
+  "utf8",
+);
 
 test("grace expiry preserves an abandoned human seat until Buster is safe", () => {
   assert.match(migration, /movie_buff_stage_abandoned_controller/);
@@ -52,15 +56,26 @@ test("canonical view applies ready safe-boundary replacements", () => {
   assert.match(migration, /selectorControllerType/);
 });
 
-test("three-client proof is exact-SHA local-only and covers abandoned selector timeout", () => {
-  assert.match(proof, /MOVIE_BUFF_EXPECTED_GIT_SHA/);
-  assert.match(proof, /MOVIE_BUFF_EVIDENCE_COMMAND/);
-  assert.match(proof, /MOVIE_BUFF_ALLOW_LOCAL_PHASE_MUTATION/);
-  assert.match(proof, /git["'], \["rev-parse", "HEAD"\]/);
-  assert.match(proof, /sourceHashes/);
+test("three-client proof covers abandoned selector timeout", () => {
   assert.match(proof, /reconnect_deadline_at/);
   assert.match(proof, /Room access denied|abandoned/);
   assert.match(proof, /selectorControllerType, "buster"/);
   assert.match(proof, /selectionSource, "buster_timeout"/);
   assert.match(proof, /selectedTileId, context\.tileIds\[1\]/);
+});
+
+test("only the evidence wrapper can make an exact-SHA proof claim", () => {
+  assert.match(evidenceRunner, /MOVIE_BUFF_EXPECTED_GIT_SHA/);
+  assert.match(evidenceRunner, /MOVIE_BUFF_EVIDENCE_COMMAND/);
+  assert.match(evidenceRunner, /MOVIE_BUFF_ALLOW_LOCAL_PHASE_MUTATION/);
+  assert.match(
+    evidenceRunner,
+    /execFileSync\("git", \["rev-parse", "HEAD"\]/,
+  );
+  assert.match(evidenceRunner, /checkoutSha !== exactSha/);
+  assert.match(evidenceRunner, /sourceHashes/);
+  assert.match(evidenceRunner, /stdoutSha256/);
+  assert.match(evidenceRunner, /stderrSha256/);
+  assert.match(evidenceRunner, /profilesRestored/);
+  assert.match(evidenceRunner, /classification:/);
 });
