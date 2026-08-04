@@ -55,15 +55,24 @@ Lobby `room_players` membership is not enough to classify an active-match human.
 
 The match participant/seat snapshot records stable seat order, original human, controller kind (`human` or `buster`), state (`active`, `reconnect_grace`, `abandoned`, `completed`), reconnect deadline, abandonment reason, and replacement relationship.
 
-The system is a trusted non-seat actor. Buster is a controller, not a fake profile. Buster/system never count toward required-human VIP or answer completion.
+The system is a trusted non-seat actor and is rejected as a participant-seat controller. Buster is a controller, not a fake profile. Buster/system never count toward required-human VIP or answer completion.
 
 ## VIP boundary
 
-MOV-16 owns inventory, eligibility, private locks, caller-private views, and consumption. MOV-17 owns the 15-second phase deadline, required-human snapshot, atomic window opening, deadline auto-passes, abandonment release, closure, and activation-phase handshake.
+MOV-16 owns inventory, eligibility, private locks, caller-private views, consumption, window closure, and deadline no-VIP record creation. MOV-17 owns the 15-second phase deadline, required-human snapshot, atomic window opening, abandonment release, phase advance, and activation-phase handshake.
 
-A VIP lock may contain an eligible VIP or explicit no-VIP pass. Deadline expiry writes idempotent no-VIP pass records. Buster never owns or locks a VIP.
+Stable service-only calls:
 
-Missing VIP model/window fails closed. A client cannot open, extend, close, or navigate from the VIP window by itself.
+- `open_movie_buff_vip_round_window(uuid,uuid,uuid,timestamptz,uuid[])`
+- `finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)`
+- `release_movie_buff_vip_required_player(uuid,uuid,uuid,text)`
+- `set_movie_buff_vip_activation_phase(uuid,uuid,text)`
+
+The count-only open overload is forbidden. MOV-17 must not infer readiness from MOV-16 private tables or create no-VIP records itself. The `vip_lock → board_select` phase update is guarded by the MOV-16 finalize result and proceeds only when `advanceReady` is true.
+
+A VIP lock may contain an eligible VIP or explicit no-VIP pass. Deadline expiry writes idempotent no-VIP pass records through MOV-16. Buster never owns or locks a VIP.
+
+Missing VIP model, open boundary, finalize boundary, or activation boundary fails closed. A client cannot open, extend, close, or navigate from the VIP window by itself.
 
 ## Board and playback boundary
 
