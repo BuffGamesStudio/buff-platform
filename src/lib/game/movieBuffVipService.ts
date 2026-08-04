@@ -5,6 +5,8 @@ export type MovieBuffVipInventoryItem = {
   code: string;
   name: string;
   description: string;
+  activationWindow: "round_intro" | "board_select" | "playback" | "answer" | "results";
+  effectScope: "personal" | "shared";
   quantityRemaining: number;
   available: boolean;
   unavailableReason: string | null;
@@ -29,6 +31,7 @@ export type MovieBuffVipRoundView = {
   status: "open" | "closed" | "unavailable";
   lockedCount: number;
   requiredPlayerCount: number;
+  originalRequiredPlayerCount: number;
   advanceReady: boolean;
   inventory: MovieBuffVipInventoryItem[];
   lock: MovieBuffVipLock | null;
