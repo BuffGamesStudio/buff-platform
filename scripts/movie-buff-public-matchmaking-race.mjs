@@ -118,7 +118,7 @@ async function roomSnapshot(roomId) {
     .order("joined_at", { ascending: true });
   if (memberError) throw new Error(`membership evidence query failed: ${memberError.message}`);
 
-  const { data: joinableRooms, error: compatibleError } = await admin
+  const { data: compatibleWaitingRooms, error: compatibleError } = await admin
     .from("game_rooms")
     .select("id,status,public_matchmaking_key")
     .eq("room_type", "public")
@@ -128,7 +128,7 @@ async function roomSnapshot(roomId) {
     throw new Error(`compatibility uniqueness query failed: ${compatibleError.message}`);
   }
 
-  return { room, members, joinableRooms };
+  return { room, members, compatibleWaitingRooms };
 }
 
 async function waitForStatus(roomId, expected, timeoutMs = 5000) {
@@ -162,7 +162,7 @@ const evidence = {
   duplicateRequest: null,
   incompatibleSettings: null,
   lateThird: null,
-  fullRoomRollover: null,
+  fullRoom: null,
   staleRoom: null,
   races: [],
 };
@@ -231,29 +231,28 @@ try {
   assert.equal(beforeThird.room.status, "waiting", "public match started with only two ready players");
   assert.equal(beforeThird.members.length, 2);
   assert.equal(beforeThird.members.filter((member) => member.is_ready).length, 2);
-  assert.equal(beforeThird.joinableRooms.length, 1, "duplicate joinable waiting room exists");
+  assert.equal(beforeThird.compatibleWaitingRooms.length, 1);
 
   const thirdRoom = await findRoom(clients[2]);
   assert.equal(thirdRoom.id, lateThirdRoomId, "late third player did not converge");
-  assert.equal(thirdRoom.status, "starting", "full public cohort was not sealed");
+  assert.equal(thirdRoom.status, "waiting");
 
   const duplicateThirdRoom = await findRoom(clients[2]);
   assert.equal(duplicateThirdRoom.id, lateThirdRoomId, "duplicate third-player request was not idempotent");
 
-  const overflowRoom = await findRoom(overflowClient);
-  assert.notEqual(overflowRoom.id, lateThirdRoomId, "fourth player joined a full cohort");
+  const fullRoomError = await expectFindRoomError(
+    overflowClient,
+    {},
+    /compatible public room is already full/i,
+  );
   const fullSnapshot = await roomSnapshot(lateThirdRoomId);
-  const overflowSnapshot = await roomSnapshot(overflowRoom.id);
   assert.equal(fullSnapshot.members.length, 3);
-  assert.equal(fullSnapshot.room.status, "starting");
-  assert.equal(overflowSnapshot.members.length, 1);
-  assert.equal(overflowSnapshot.room.status, "waiting");
-  assert.equal(overflowSnapshot.joinableRooms.length, 1);
-  evidence.fullRoomRollover = {
-    sealedRoomId: lateThirdRoomId,
-    overflowRoomId: overflowRoom.id,
-    sealedSnapshot: fullSnapshot,
-    overflowSnapshot,
+  assert.equal(fullSnapshot.room.status, "waiting");
+  assert.equal(fullSnapshot.compatibleWaitingRooms.length, 1);
+  evidence.fullRoom = {
+    roomId: lateThirdRoomId,
+    overflowError: fullRoomError,
+    snapshot: fullSnapshot,
     observedAt: new Date().toISOString(),
   };
 
@@ -267,7 +266,7 @@ try {
     afterThird,
     finishedAt: new Date().toISOString(),
   };
-  await deleteRooms([lateThirdRoomId, overflowRoom.id]);
+  await deleteRoom(lateThirdRoomId);
 
   const staleRoom = await findRoom(overflowClient);
   const staleTimestamp = new Date(Date.now() - 120_000).toISOString();
@@ -304,10 +303,10 @@ try {
     assert.ok(rooms.every((room) => room.max_players === 3));
 
     const roomId = roomIds[0];
-    const sealedSnapshot = await roomSnapshot(roomId);
-    assert.equal(sealedSnapshot.room.status, "starting");
-    assert.equal(sealedSnapshot.members.length, 3);
-    assert.equal(sealedSnapshot.joinableRooms.length, 0, "sealed cohort remained joinable");
+    const waitingSnapshot = await roomSnapshot(roomId);
+    assert.equal(waitingSnapshot.room.status, "waiting");
+    assert.equal(waitingSnapshot.members.length, 3);
+    assert.equal(waitingSnapshot.compatibleWaitingRooms.length, 1);
 
     await Promise.all(clients.map((client) => setReady(client, roomId)));
     const activeSnapshot = await waitForStatus(roomId, "active");
@@ -319,7 +318,7 @@ try {
       startedAt,
       finishedAt: new Date().toISOString(),
       roomIds,
-      sealedSnapshot,
+      waitingSnapshot,
       activeSnapshot,
     });
     await deleteRoom(roomId);
