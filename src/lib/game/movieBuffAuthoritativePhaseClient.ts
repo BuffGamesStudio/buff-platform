@@ -15,7 +15,7 @@ export type MovieBuffCanonicalPhase =
 export type MovieBuffPhaseParticipant = {
   seatIndex: number;
   playerId: string;
-  controllerType: "human" | "buster" | "system";
+  controllerType: "human" | "buster";
   participantState: "active" | "reconnect_grace" | "abandoned" | "completed";
   reconnectDeadlineAt: string | null;
   isSelector: boolean;
@@ -32,10 +32,10 @@ export type MovieBuffAuthoritativePhaseView = {
   phaseVersion: number;
   phaseStartedAt: string;
   phaseEndsAt: string | null;
-  phaseRoute: string | null;
+  phaseRoute: string;
   selectorSeatIndex: number | null;
   selectorPlayerId: string | null;
-  selectorControllerType: "human" | "buster" | "system" | null;
+  selectorControllerType: "human" | "buster" | null;
   callerIsSelector: boolean;
   selectorDeadlineAt: string | null;
   selectedTileId: string | null;
