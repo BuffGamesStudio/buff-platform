@@ -155,6 +155,25 @@ test("Rive surface checks assets, honors reduced motion, and fails closed", asyn
   assert.doesNotMatch(riveSurface, /supabase/i);
 });
 
+test("Buster and transitions remain passive Rive consumers", async () => {
+  const [buster, transition] = await Promise.all([
+    source("../src/components/movie-buff/visual/MovieBuffBusterReplacement.tsx"),
+    source("../src/components/movie-buff/visual/MovieBuffTransitionSurface.tsx"),
+  ]);
+
+  for (const visual of [buster, transition]) {
+    assert.match(visual, /MovieBuffRiveSurface/);
+    assert.doesNotMatch(visual, /useStateMachineInput/);
+    assert.doesNotMatch(visual, /router\.(push|replace)/);
+    assert.doesNotMatch(visual, /window\.location/);
+    assert.doesNotMatch(visual, /supabase/i);
+    assert.doesNotMatch(visual, /\/api\/movie-buff/);
+  }
+
+  assert.match(buster, /data-buster-visual-state=\{state\}/);
+  assert.match(transition, /authoritative playback timestamp/);
+});
+
 test("isolated preview route cannot call gameplay or hosted APIs", async () => {
   const preview = await source(
     "../src/app/games/movie-buff/visual-runtime-preview/page.tsx",
