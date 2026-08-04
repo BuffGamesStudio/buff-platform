@@ -15,6 +15,7 @@ test("public capacity is server-owned and fixed at three", () => {
   assert.match(migration, /movie_buff_public_match_size\(\)/);
   assert.match(migration, /select\s+3\s*;/i);
   assert.match(migration, /exactly 3 active players/i);
+  assert.match(migration, /perform\s+p_max_players\s*;/i);
 });
 
 test("matchmaking derives identity from auth uid", () => {
@@ -23,13 +24,26 @@ test("matchmaking derives identity from auth uid", () => {
 });
 
 test("compatibility selection is serialized and durable", () => {
+  assert.match(migration, /movie-buff-public-player\|/);
   assert.match(migration, /movie-buff-public-compatibility\|/);
   assert.match(migration, /pg_advisory_xact_lock/i);
+  assert.match(migration, /public_matchmaking_key/);
   assert.match(
     migration,
     /game_rooms_one_public_waiting_compatibility_key_idx/,
   );
   assert.doesNotMatch(migration, /skip\s+locked/i);
+});
+
+test("a full trio is sealed before another joinable room is created", () => {
+  assert.match(
+    migration,
+    /if\s+v_active_members\s*=\s*v_public_size\s+then[\s\S]*status\s*=\s*'starting'/i,
+  );
+  assert.match(
+    migration,
+    /v_existing_room\.status\s+in\s*\('waiting',\s*'starting'\)/i,
+  );
 });
 
 test("security definer functions use fixed search path and explicit grants", () => {
@@ -46,11 +60,18 @@ test("browser no longer owns public start eligibility", () => {
   assert.doesNotMatch(waitingRoom, /autoStartTimer/);
   assert.doesNotMatch(waitingRoom, /},\s*350\s*\)/);
   assert.doesNotMatch(waitingRoom, /at least 2 players are ready/i);
+  assert.match(waitingRoom, /There is no host start button or browser auto-start timer/i);
+  assert.match(waitingRoom, /lobby\.room\.status === "active"/);
 });
 
-test("race harness refuses hosted Supabase and uses three identities", () => {
+test("race harness is local-only and covers required edge families", () => {
   assert.match(race, /localhost/);
   assert.match(race, /127\.0\.0\.1/);
-  assert.match(race, /exactly three test-user credentials/i);
-  assert.match(race, /new Set\(users\.map/);
+  assert.match(race, /exactly three core test-user credentials/i);
+  assert.match(race, /MOVIE_BUFF_OVERFLOW_TEST_USER/);
+  assert.match(race, /duplicateRequest/);
+  assert.match(race, /incompatibleSettings/);
+  assert.match(race, /fullRoomRollover/);
+  assert.match(race, /staleRoom/);
+  assert.match(race, /lateThird/);
 });
