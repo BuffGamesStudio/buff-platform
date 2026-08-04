@@ -59,7 +59,12 @@ const evidence = {
 };
 
 function record(name, details = {}) {
-  evidence.checks.push({ name, classification: "PASS", observedAt: new Date().toISOString(), details });
+  evidence.checks.push({
+    name,
+    classification: "PASS",
+    observedAt: new Date().toISOString(),
+    details,
+  });
 }
 
 function randomCode(prefix) {
@@ -196,7 +201,9 @@ async function createDefinition(overrides = {}) {
     allow_ranked: false,
     allow_unranked: true,
   };
-  const { error } = await admin.from("movie_buff_vip_definitions").insert(definition);
+  const { error } = await admin
+    .from("movie_buff_vip_definitions")
+    .insert(definition);
   if (error) throw error;
   cleanupDefinitionIds.add(definition.id);
   return definition;
@@ -216,15 +223,22 @@ async function grantInventory(playerIndex, definitionId, quantity, overrides = {
   return row;
 }
 
-async function openWindow(context, participantIndexes, deadline = new Date(Date.now() + 60_000)) {
+async function openWindow(
+  context,
+  participantIndexes,
+  deadline = new Date(Date.now() + 60_000),
+) {
   const requiredIds = participantIndexes.map((index) => sessions[index].user.id);
-  const { data, error } = await admin.rpc("open_movie_buff_vip_round_window", {
-    p_room_id: context.roomId,
-    p_match_id: context.matchId,
-    p_round_id: context.roundId,
-    p_deadline_at: deadline.toISOString(),
-    p_required_player_ids: requiredIds,
-  });
+  const { data, error } = await admin.rpc(
+    "open_movie_buff_vip_round_window",
+    {
+      p_room_id: context.roomId,
+      p_match_id: context.matchId,
+      p_round_id: context.roundId,
+      p_deadline_at: deadline.toISOString(),
+      p_required_player_ids: requiredIds,
+    },
+  );
   if (error) throw error;
   return data;
 }
@@ -243,7 +257,9 @@ try {
     clients.map(async (client, index) => {
       const { data, error } = await client.auth.signInWithPassword(users[index]);
       if (error || !data.session || !data.user || data.user.is_anonymous) {
-        throw new Error(`Unable to authenticate test user ${index + 1}: ${error?.message ?? "unknown"}`);
+        throw new Error(
+          `Unable to authenticate test user ${index + 1}: ${error?.message ?? "unknown"}`,
+        );
       }
       sessions[index] = { ...data.session, user: data.user };
     }),
@@ -261,8 +277,14 @@ try {
   const context = await createRoomContext({ participantIndexes: [0, 1] });
   const otherContext = await createRoomContext({ participantIndexes: [3] });
   const owned = await createDefinition({ activationWindow: "answer" });
-  const secondOwned = await createDefinition({ activationWindow: "playback", name: "Second Test VIP" });
-  const exhausted = await createDefinition({ activationWindow: "answer", name: "Exhausted Test VIP" });
+  const secondOwned = await createDefinition({
+    activationWindow: "playback",
+    name: "Second Test VIP",
+  });
+  const exhausted = await createDefinition({
+    activationWindow: "answer",
+    name: "Exhausted Test VIP",
+  });
   const unconfigured = await createDefinition({
     activationWindow: "answer",
     name: "Unconfigured Test VIP",
@@ -282,16 +304,32 @@ try {
     openWindow(context, [0, 1], deadline),
   ]);
   assert.deepEqual(firstOpen, duplicateOpen);
-  record("concurrent identical window open is idempotent", { roundId: context.roundId });
+  record("concurrent identical window open is idempotent", {
+    roundId: context.roundId,
+  });
 
   const user1View = await routePost(0, "/api/movie-buff/vip/view", {
     roomId: context.roomId,
     roundId: context.roundId,
   });
-  assert.ok(user1View.view.inventory.some((item) => item.vipId === owned.id && item.available));
-  assert.ok(user1View.view.inventory.some((item) => item.vipId === exhausted.id && !item.available));
-  assert.ok(user1View.view.inventory.some((item) => item.vipId === unconfigured.id && !item.available));
-  record("player sees owned eligibility only", { inventoryCount: user1View.view.inventory.length });
+  assert.ok(
+    user1View.view.inventory.some(
+      (item) => item.vipId === owned.id && item.available,
+    ),
+  );
+  assert.ok(
+    user1View.view.inventory.some(
+      (item) => item.vipId === exhausted.id && !item.available,
+    ),
+  );
+  assert.ok(
+    user1View.view.inventory.some(
+      (item) => item.vipId === unconfigured.id && !item.available,
+    ),
+  );
+  record("player sees owned eligibility only", {
+    inventoryCount: user1View.view.inventory.length,
+  });
 
   const user2View = await routePost(1, "/api/movie-buff/vip/view", {
     roomId: context.roomId,
@@ -411,15 +449,21 @@ try {
     const { data: reconnectData, error: reconnectError } =
       await reconnectClient.auth.signInWithPassword(users[0]);
     if (reconnectError || !reconnectData.session) throw reconnectError;
-    const reconnectResponse = await fetch(`${localAppOrigin}/api/movie-buff/vip/view`, {
-      method: "POST",
-      cache: "no-store",
-      headers: {
-        Authorization: `Bearer ${reconnectData.session.access_token}`,
-        "Content-Type": "application/json",
+    const reconnectResponse = await fetch(
+      `${localAppOrigin}/api/movie-buff/vip/view`,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${reconnectData.session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          roomId: context.roomId,
+          roundId: context.roundId,
+        }),
       },
-      body: JSON.stringify({ roomId: context.roomId, roundId: context.roundId }),
-    });
+    );
     const reconnectPayload = await reconnectResponse.json();
     assert.equal(reconnectResponse.status, 200);
     assert.equal(reconnectPayload.view.lock.lockId, lockA.lock.lockId);
@@ -461,17 +505,28 @@ try {
 
   await setActivationPhase(context, "answer");
   const activationKey = randomCode("activation");
-  const firstActivation = await routePost(0, "/api/movie-buff/vip/activate", {
-    roomId: context.roomId,
-    roundId: context.roundId,
-    activationKey,
-  });
-  const duplicateActivation = await routePost(0, "/api/movie-buff/vip/activate", {
-    roomId: context.roomId,
-    roundId: context.roundId,
-    activationKey,
-  });
-  assert.equal(firstActivation.activation.lockId, duplicateActivation.activation.lockId);
+  const firstActivation = await routePost(
+    0,
+    "/api/movie-buff/vip/activate",
+    {
+      roomId: context.roomId,
+      roundId: context.roundId,
+      activationKey,
+    },
+  );
+  const duplicateActivation = await routePost(
+    0,
+    "/api/movie-buff/vip/activate",
+    {
+      roomId: context.roomId,
+      roundId: context.roundId,
+      activationKey,
+    },
+  );
+  assert.equal(
+    firstActivation.activation.lockId,
+    duplicateActivation.activation.lockId,
+  );
 
   await expectRouteFailure(
     0,
@@ -502,19 +557,19 @@ try {
   assert.deepEqual(roundAfterActivation, roundBeforeActivation);
   record("VIP activation does not reset shared round or hint timers");
 
-  const deadlineContext = await createRoomContext({ participantIndexes: [0, 1], roundNumber: 2 });
-  await openWindow(deadlineContext, [0, 1], new Date(Date.now() + 60_000));
+  const deadlineContext = await createRoomContext({
+    participantIndexes: [0, 1],
+    roundNumber: 2,
+  });
+  const shortDeadline = new Date(Date.now() + 1_250);
+  await openWindow(deadlineContext, [0, 1], shortDeadline);
   await routePost(0, "/api/movie-buff/vip/lock", {
     roomId: deadlineContext.roomId,
     roundId: deadlineContext.roundId,
     vipId: null,
     idempotencyKey: randomCode("deadline_lock"),
   });
-  const { error: expireWindowError } = await admin
-    .from("movie_buff_vip_round_windows")
-    .update({ deadline_at: new Date(Date.now() - 1000).toISOString() })
-    .eq("round_id", deadlineContext.roundId);
-  if (expireWindowError) throw expireWindowError;
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
 
   await expectRouteFailure(
     1,
@@ -533,9 +588,13 @@ try {
   });
   assert.equal(deadlineView.view.status, "closed");
   assert.equal(deadlineView.view.advanceReady, true);
+  assert.equal(deadlineView.view.deadlineAt, shortDeadline.toISOString());
   record("deadline rejects late lock and inactive client cannot stall");
 
-  const noModelContext = await createRoomContext({ participantIndexes: [0, 1], roundNumber: 3 });
+  const noModelContext = await createRoomContext({
+    participantIndexes: [0, 1],
+    roundNumber: 3,
+  });
   const noModelView = await routePost(0, "/api/movie-buff/vip/view", {
     roomId: noModelContext.roomId,
     roundId: noModelContext.roundId,
@@ -547,7 +606,17 @@ try {
   evidence.classification = "PASS";
   evidence.finishedAt = new Date().toISOString();
   fs.writeFileSync(outputPath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(JSON.stringify({ outputPath, classification: "PASS", checks: evidence.checks.length }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        outputPath,
+        classification: "PASS",
+        checks: evidence.checks.length,
+      },
+      null,
+      2,
+    ),
+  );
 } catch (error) {
   evidence.classification = "FAIL";
   evidence.finishedAt = new Date().toISOString();
