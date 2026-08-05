@@ -15,7 +15,7 @@ const outputPath = path.resolve(
     "movie-buff-combined-race-residual.json",
 );
 
-for (const [name, value] of Object.entries({
+for (const [key, value] of Object.entries({
   NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: publishableKey,
   SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
@@ -23,18 +23,18 @@ for (const [name, value] of Object.entries({
   MOVIE_BUFF_PHASE_TEST_USERS: usersJson,
   MOVIE_BUFF_EXPECTED_GIT_SHA: expectedSha,
 })) {
-  if (!value) throw new Error(`${name} is required.`);
+  if (!value) throw new Error(`${key} is required.`);
 }
 
-function requireLocal(value, label) {
+for (const [label, value] of [
+  ["Supabase", supabaseUrl],
+  ["database", databaseUrl],
+]) {
   const parsed = new URL(value);
   if (!["localhost", "127.0.0.1", "::1"].includes(parsed.hostname)) {
     throw new Error(`Refusing non-local ${label} target ${parsed.origin}.`);
   }
-  return parsed;
 }
-requireLocal(supabaseUrl, "Supabase");
-requireLocal(databaseUrl, "database");
 
 const checkoutSha = execFileSync("git", ["rev-parse", "HEAD"], {
   encoding: "utf8",
@@ -45,44 +45,51 @@ const users = JSON.parse(usersJson);
 assert.equal(users.length, 3);
 assert.equal(new Set(users.map((user) => user.email)).size, 3);
 
-const admin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
 const clients = users.map(() =>
   createClient(supabaseUrl, publishableKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   }),
 );
+const admin = createClient(supabaseUrl, serviceRoleKey, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
 const sessions = [];
-const roomIds = new Set();
+const ownedRooms = new Set();
 
 const evidence = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   classification: "UNKNOWN",
   sourceSha: checkoutSha,
   target: "disposable-localhost",
   startedAt: new Date().toISOString(),
   checks: [],
-  failures: [],
   cleanup: [],
 };
 
 function record(name, classification, details = {}) {
-  const item = {
+  evidence.checks.push({
     name,
     classification,
-    observedAt: new Date().toISOString(),
     details,
+    observedAt: new Date().toISOString(),
+  });
+}
+function hasCheck(name) {
+  return evidence.checks.some((item) => item.name === name);
+}
+function recordMissing(names, error) {
+  const details = {
+    error:
+      error instanceof Error
+        ? { name: error.name, message: error.message, stack: error.stack }
+        : { message: String(error) },
   };
-  evidence.checks.push(item);
-  if (classification === "FAIL") evidence.failures.push(item);
+  for (const name of names) {
+    if (!hasCheck(name)) record(name, "FAIL", details);
+  }
 }
-
-function quote(value) {
+function q(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
-}
-function uuid() {
-  return crypto.randomUUID();
 }
 function ownerSql(sql) {
   return execFileSync(
@@ -91,12 +98,9 @@ function ownerSql(sql) {
     { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
   ).trim();
 }
-
 async function rpc(index, name, args) {
-  const result = await clients[index].rpc(name, args);
-  return result;
+  return clients[index].rpc(name, args);
 }
-
 async function view(index, roomId) {
   const { data, error } = await rpc(index, "get_movie_buff_match_phase_view", {
     p_room_id: roomId,
@@ -105,321 +109,357 @@ async function view(index, roomId) {
   return data;
 }
 
-function createContext(roundNumber = 1) {
-  const roomId = uuid();
-  const matchId = uuid();
-  const roundId = uuid();
+function createContext() {
+  const roomId = crypto.randomUUID();
+  const matchId = crypto.randomUUID();
+  const roundId = crypto.randomUUID();
   const now = new Date().toISOString();
-  const roomCode = uuid().replaceAll("-", "").slice(0, 8).toUpperCase();
   const playerIds = sessions.map((session) => session.user.id);
   const roomPlayers = playerIds
     .map(
-      (playerId, index) =>
-        `(${quote(roomId)}::uuid,${quote(playerId)}::uuid,true,${index === 0},null,${quote(now)}::timestamptz,${quote(now)}::timestamptz)`,
+      (id, index) =>
+        `(${q(roomId)}::uuid,${q(id)}::uuid,true,${index === 0},null,${q(now)}::timestamptz,${q(now)}::timestamptz)`,
     )
     .join(",");
   const matchPlayers = playerIds
-    .map((playerId) => `(${quote(matchId)}::uuid,${quote(playerId)}::uuid)`)
+    .map((id) => `(${q(matchId)}::uuid,${q(id)}::uuid)`)
     .join(",");
+  const roomCode = crypto.randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase();
 
   ownerSql(`
     begin;
     insert into public.game_rooms
       (id,room_code,host_id,room_type,status,difficulty,total_rounds,max_players,current_round,is_ranked,started_at)
     values
-      (${quote(roomId)}::uuid,${quote(roomCode)},${quote(playerIds[0])}::uuid,'private','active','medium',2,3,${roundNumber},false,${quote(now)}::timestamptz);
+      (${q(roomId)}::uuid,${q(roomCode)},${q(playerIds[0])}::uuid,'private','active','medium',2,3,1,false,${q(now)}::timestamptz);
     insert into public.room_players
       (room_id,player_id,is_ready,is_host,left_at,joined_at,last_seen_at)
     values ${roomPlayers};
     insert into public.matches
       (id,room_id,difficulty,total_rounds,status,started_at)
     values
-      (${quote(matchId)}::uuid,${quote(roomId)}::uuid,'medium',2,'active',${quote(now)}::timestamptz);
+      (${q(matchId)}::uuid,${q(roomId)}::uuid,'medium',2,'active',${q(now)}::timestamptz);
     insert into public.match_players (match_id,player_id) values ${matchPlayers};
     insert into public.match_rounds
       (id,match_id,round_number,time_limit_seconds,started_at)
     values
-      (${quote(roundId)}::uuid,${quote(matchId)}::uuid,${roundNumber},5,null);
+      (${q(roundId)}::uuid,${q(matchId)}::uuid,1,5,null);
     commit;
   `);
-  roomIds.add(roomId);
+  ownedRooms.add(roomId);
   return { roomId, matchId, roundId, playerIds };
 }
 
-function stateRow(matchId) {
+function phaseState(matchId) {
   return JSON.parse(
     ownerSql(`
-      select row_to_json(state)::text
-      from public.movie_buff_match_phase_state as state
-      where state.match_id=${quote(matchId)}::uuid;
+      select row_to_json(s)::text
+      from public.movie_buff_match_phase_state s
+      where s.match_id=${q(matchId)}::uuid;
     `),
   );
 }
-
-function countEvents(matchId, fromPhase, toPhase) {
+function transitionEventCount(matchId, fromPhase, toPhase) {
   return Number(
     ownerSql(`
       select count(*)
       from public.movie_buff_match_phase_events
-      where match_id=${quote(matchId)}::uuid
-        and from_phase=${quote(fromPhase)}
-        and to_phase=${quote(toPhase)};
+      where match_id=${q(matchId)}::uuid
+        and from_phase=${q(fromPhase)}
+        and to_phase=${q(toPhase)};
     `),
   );
 }
-
-async function advanceMany(roomId, expectedVersion, count = 12) {
-  const promises = Array.from({ length: count }, (_, index) =>
-    rpc(index % clients.length, "advance_movie_buff_match_phase", {
-      p_room_id: roomId,
-      p_expected_version: expectedVersion,
-    }),
-  );
-  return Promise.all(promises);
-}
-
-async function testExactlyOncePhaseAndVipDeadline() {
-  const context = createContext();
-  const initial = await view(0, context.roomId);
-  assert.equal(initial.phase, "round_intro");
+function expirePhase(matchId) {
   ownerSql(`
     update public.movie_buff_match_phase_state
-    set phase_ends_at=pg_catalog.clock_timestamp()-interval '1 second'
-    where match_id=${quote(context.matchId)}::uuid;
+    set phase_started_at=clock_timestamp()-interval '2 seconds',
+        phase_ends_at=clock_timestamp()-interval '1 second'
+    where match_id=${q(matchId)}::uuid;
   `);
-
-  const introRace = await advanceMany(context.roomId, initial.phaseVersion, 15);
-  for (const result of introRace) {
-    if (result.error) throw result.error;
-  }
-  const vipState = stateRow(context.matchId);
-  assert.equal(vipState.phase, "vip_lock");
-  assert.equal(Number(vipState.phase_version), Number(initial.phaseVersion) + 1);
-  assert.equal(countEvents(context.matchId, "round_intro", "vip_lock"), 1);
-  assert.equal(
-    Number(
-      ownerSql(`select count(*) from public.movie_buff_vip_round_windows where round_id=${quote(context.roundId)}::uuid;`),
-    ),
-    1,
-  );
-  assert.equal(
-    Number(
-      ownerSql(`select count(*) from public.movie_buff_vip_round_required_players where round_id=${quote(context.roundId)}::uuid and released_at is null;`),
-    ),
-    3,
-  );
-  record("exactly-once round_intro to vip_lock transition", "PASS", {
-    concurrentWorkers: introRace.length,
-    phaseVersion: vipState.phase_version,
-  });
-  record("private VIP required-human snapshot", "PASS", {
-    requiredHumans: 3,
-  });
-
+}
+function expireVipWindow(matchId, roundId) {
   const deadline = new Date(Date.now() - 1000).toISOString();
   ownerSql(`
     update public.movie_buff_vip_round_windows
-    set deadline_at=${quote(deadline)}::timestamptz, updated_at=pg_catalog.clock_timestamp()
-    where round_id=${quote(context.roundId)}::uuid;
+    set deadline_at=${q(deadline)}::timestamptz,
+        updated_at=clock_timestamp()
+    where round_id=${q(roundId)}::uuid;
     update public.movie_buff_match_phase_state
-    set phase_ends_at=${quote(deadline)}::timestamptz
-    where match_id=${quote(context.matchId)}::uuid;
+    set phase_started_at=${q(new Date(Date.now() - 2000).toISOString())}::timestamptz,
+        phase_ends_at=${q(deadline)}::timestamptz
+    where match_id=${q(matchId)}::uuid;
   `);
-
-  const vipRace = await advanceMany(context.roomId, vipState.phase_version, 15);
-  for (const result of vipRace) {
-    if (result.error) throw result.error;
-  }
-  const boardState = stateRow(context.matchId);
-  assert.equal(boardState.phase, "board_select");
-  assert.equal(Number(boardState.phase_version), Number(vipState.phase_version) + 1);
-  assert.equal(countEvents(context.matchId, "vip_lock", "board_select"), 1);
-  const passCount = Number(
-    ownerSql(`
-      select count(*)
-      from public.movie_buff_vip_round_locks
-      where round_id=${quote(context.roundId)}::uuid
-        and vip_id is null
-        and inventory_id is null;
-    `),
-  );
-  assert.equal(passCount, 3);
-  assert.equal(
-    Number(
-      ownerSql(`select count(distinct player_id) from public.movie_buff_vip_round_locks where round_id=${quote(context.roundId)}::uuid;`),
-    ),
-    3,
-  );
-  record("private VIP deadline finalization", "PASS", {
-    concurrentWorkers: vipRace.length,
-    explicitNoVipPasses: passCount,
-  });
-  record("exactly-once vip_lock to board_select transition", "PASS", {
-    eventCount: 1,
-    phaseVersion: boardState.phase_version,
-  });
 }
-
-async function testDuplicateExpiryWorkers() {
-  const context = createContext();
-  const initial = await view(1, context.roomId);
-  ownerSql(`
-    update public.movie_buff_match_phase_state
-    set phase_ends_at=pg_catalog.clock_timestamp()-interval '1 second'
-    where match_id=${quote(context.matchId)}::uuid;
-  `);
-  const introAdvance = await rpc(1, "advance_movie_buff_match_phase", {
-    p_room_id: context.roomId,
-    p_expected_version: initial.phaseVersion,
-  });
-  if (introAdvance.error) throw introAdvance.error;
-  const vipState = stateRow(context.matchId);
-  assert.equal(vipState.phase, "vip_lock");
-
-  const expiredPlayerId = context.playerIds[0];
-  ownerSql(`
-    update public.movie_buff_match_participant_seats
-    set participant_state='reconnect_grace',
-        controller_type='human',
-        controller_player_id=original_player_id,
-        last_seen_at=pg_catalog.clock_timestamp()-interval '60 seconds',
-        reconnect_deadline_at=pg_catalog.clock_timestamp()-interval '1 second',
-        abandoned_at=null,
-        replacement_ready_at=null
-    where match_id=${quote(context.matchId)}::uuid
-      and original_player_id=${quote(expiredPlayerId)}::uuid;
-  `);
-
-  const workers = await Promise.all([
-    ...Array.from({ length: 12 }, (_, index) =>
-      rpc((index % 2) + 1, "advance_movie_buff_match_phase", {
-        p_room_id: context.roomId,
-        p_expected_version: vipState.phase_version,
+async function advanceMany(roomId, expectedVersion, count, workerIndexes) {
+  return Promise.all(
+    Array.from({ length: count }, (_, index) =>
+      rpc(workerIndexes[index % workerIndexes.length], "advance_movie_buff_match_phase", {
+        p_room_id: roomId,
+        p_expected_version: expectedVersion,
       }),
     ),
-    rpc(0, "touch_movie_buff_match_participant", {
-      p_room_id: context.roomId,
-    }),
-  ]);
-  for (const result of workers) {
-    if (result.error && !/abandoned|access denied/i.test(result.error.message)) {
-      throw result.error;
-    }
+  );
+}
+function assertNoRpcErrors(results, allowed = null) {
+  for (const result of results) {
+    if (!result.error) continue;
+    if (allowed && allowed.test(result.error.message)) continue;
+    throw result.error;
   }
-
-  const seat = JSON.parse(
-    ownerSql(`
-      select row_to_json(seat)::text
-      from public.movie_buff_match_participant_seats as seat
-      where seat.match_id=${quote(context.matchId)}::uuid
-        and seat.original_player_id=${quote(expiredPlayerId)}::uuid;
-    `),
-  );
-  assert.equal(seat.participant_state, "abandoned");
-  assert.ok(seat.abandoned_at);
-  assert.ok(seat.replacement_ready_at);
-  const memberLeftCount = Number(
-    ownerSql(`
-      select count(*) from public.room_players
-      where room_id=${quote(context.roomId)}::uuid
-        and player_id=${quote(expiredPlayerId)}::uuid
-        and left_at is not null;
-    `),
-  );
-  assert.equal(memberLeftCount, 1);
-  const requiredRows = Number(
-    ownerSql(`
-      select count(*) from public.movie_buff_vip_round_required_players
-      where round_id=${quote(context.roundId)}::uuid
-        and player_id=${quote(expiredPlayerId)}::uuid;
-    `),
-  );
-  const releasedRows = Number(
-    ownerSql(`
-      select count(*) from public.movie_buff_vip_round_required_players
-      where round_id=${quote(context.roundId)}::uuid
-        and player_id=${quote(expiredPlayerId)}::uuid
-        and released_at is not null;
-    `),
-  );
-  assert.equal(requiredRows, 1);
-  assert.equal(releasedRows, 1);
-  record("duplicate reconnect-expiry workers", "PASS", {
-    concurrentWorkers: workers.length,
-    stableSeatRows: 1,
-    releasedVipRequirementRows: releasedRows,
-    roomMembershipRowsMarkedLeft: memberLeftCount,
-  });
-
-  const currentState = stateRow(context.matchId);
-  assert.equal(currentState.phase, "vip_lock");
-  assert.equal(seat.controller_type, "human");
-  record("Buster inactivity during VIP", "PASS", {
-    phase: currentState.phase,
-    controllerType: seat.controller_type,
-  });
-
-  const deadline = new Date(Date.now() - 1000).toISOString();
-  ownerSql(`
-    update public.movie_buff_vip_round_windows
-    set deadline_at=${quote(deadline)}::timestamptz
-    where round_id=${quote(context.roundId)}::uuid;
-    update public.movie_buff_match_phase_state
-    set phase_ends_at=${quote(deadline)}::timestamptz
-    where match_id=${quote(context.matchId)}::uuid;
-  `);
-  const boardAdvance = await advanceMany(
-    context.roomId,
-    currentState.phase_version,
-    10,
-  );
-  for (const result of boardAdvance) {
-    if (result.error) throw result.error;
-  }
-  const boardView = await view(1, context.roomId);
-  assert.equal(boardView.phase, "board_select");
-  const activatedSeat = JSON.parse(
-    ownerSql(`
-      select row_to_json(seat)::text
-      from public.movie_buff_match_participant_seats as seat
-      where seat.match_id=${quote(context.matchId)}::uuid
-        and seat.original_player_id=${quote(expiredPlayerId)}::uuid;
-    `),
-  );
-  assert.equal(activatedSeat.controller_type, "buster");
-  record("Buster activation only at board-safe boundary", "PASS", {
-    phase: boardView.phase,
-    controllerType: activatedSeat.controller_type,
-  });
 }
 
-function testLeaveAuthoritySurface() {
-  const functions = ownerSql(`
-    select coalesce(json_agg(p.proname order by p.proname)::text,'[]')
-    from pg_catalog.pg_proc as p
-    join pg_catalog.pg_namespace as n on n.oid=p.pronamespace
-    where n.nspname='public'
-      and p.proname in (
-        'get_movie_buff_active_leave_quote',
-        'confirm_movie_buff_active_leave',
-        'finalize_movie_buff_reconnect_expiry'
-      );
-  `);
-  const names = JSON.parse(functions);
-  const hasQuote = names.includes("get_movie_buff_active_leave_quote");
-  const hasConfirm = names.includes("confirm_movie_buff_active_leave");
-  if (!hasQuote || !hasConfirm) {
-    record("exactly-once leave penalties", "FAIL", {
-      reason: "authoritative active-leave quote/confirm RPC surface is absent",
-      discoveredFunctions: names,
+async function runPhaseAndVipRace() {
+  const names = [
+    "exactly-once round_intro to vip_lock transition",
+    "private VIP required-human snapshot",
+    "private VIP deadline finalization",
+    "exactly-once vip_lock to board_select transition",
+  ];
+  try {
+    const context = createContext();
+    const initial = await view(0, context.roomId);
+    assert.equal(initial.phase, "round_intro");
+    expirePhase(context.matchId);
+
+    const introWorkers = await advanceMany(
+      context.roomId,
+      initial.phaseVersion,
+      15,
+      [0, 1, 2],
+    );
+    assertNoRpcErrors(introWorkers);
+    const vip = phaseState(context.matchId);
+    assert.equal(vip.phase, "vip_lock");
+    assert.equal(Number(vip.phase_version), Number(initial.phaseVersion) + 1);
+    assert.equal(transitionEventCount(context.matchId, "round_intro", "vip_lock"), 1);
+    record("exactly-once round_intro to vip_lock transition", "PASS", {
+      concurrentWorkers: introWorkers.length,
+      phaseVersion: vip.phase_version,
+      transitionEvents: 1,
     });
-    return;
+
+    const required = Number(
+      ownerSql(`
+        select count(*)
+        from public.movie_buff_vip_round_required_players
+        where round_id=${q(context.roundId)}::uuid
+          and released_at is null;
+      `),
+    );
+    assert.equal(required, 3);
+    assert.equal(
+      Number(
+        ownerSql(`
+          select count(*)
+          from public.movie_buff_vip_round_windows
+          where round_id=${q(context.roundId)}::uuid;
+        `),
+      ),
+      1,
+    );
+    record("private VIP required-human snapshot", "PASS", {
+      requiredHumans: required,
+      privateWindowRows: 1,
+    });
+
+    expireVipWindow(context.matchId, context.roundId);
+    const vipWorkers = await advanceMany(
+      context.roomId,
+      vip.phase_version,
+      15,
+      [0, 1, 2],
+    );
+    assertNoRpcErrors(vipWorkers);
+    const board = phaseState(context.matchId);
+    assert.equal(board.phase, "board_select");
+    assert.equal(Number(board.phase_version), Number(vip.phase_version) + 1);
+    assert.equal(transitionEventCount(context.matchId, "vip_lock", "board_select"), 1);
+    const passCount = Number(
+      ownerSql(`
+        select count(*)
+        from public.movie_buff_vip_round_locks
+        where round_id=${q(context.roundId)}::uuid
+          and vip_id is null
+          and inventory_id is null;
+      `),
+    );
+    assert.equal(passCount, 3);
+    assert.equal(
+      Number(
+        ownerSql(`
+          select count(distinct player_id)
+          from public.movie_buff_vip_round_locks
+          where round_id=${q(context.roundId)}::uuid;
+        `),
+      ),
+      3,
+    );
+    record("private VIP deadline finalization", "PASS", {
+      concurrentWorkers: vipWorkers.length,
+      explicitNoVipPasses: passCount,
+    });
+    record("exactly-once vip_lock to board_select transition", "PASS", {
+      phaseVersion: board.phase_version,
+      transitionEvents: 1,
+    });
+  } catch (error) {
+    recordMissing(names, error);
   }
-  record("exactly-once leave penalties", "UNKNOWN", {
-    reason:
-      "leave RPCs exist but this residual probe requires an owning policy/ledger fixture before duplicate confirmation can be safely executed",
-    discoveredFunctions: names,
-  });
+}
+
+async function runExpiryAndBusterRace() {
+  const names = [
+    "duplicate reconnect-expiry workers",
+    "Buster inactivity during VIP",
+    "Buster activation only at board-safe boundary",
+  ];
+  try {
+    const context = createContext();
+    const initial = await view(1, context.roomId);
+    expirePhase(context.matchId);
+    const intro = await rpc(1, "advance_movie_buff_match_phase", {
+      p_room_id: context.roomId,
+      p_expected_version: initial.phaseVersion,
+    });
+    if (intro.error) throw intro.error;
+    const vip = phaseState(context.matchId);
+    assert.equal(vip.phase, "vip_lock");
+
+    const expiredPlayerId = context.playerIds[0];
+    ownerSql(`
+      update public.movie_buff_match_participant_seats
+      set participant_state='reconnect_grace',
+          controller_type='human',
+          controller_player_id=original_player_id,
+          last_seen_at=clock_timestamp()-interval '60 seconds',
+          reconnect_deadline_at=clock_timestamp()-interval '1 second',
+          abandoned_at=null,
+          replacement_ready_at=null
+      where match_id=${q(context.matchId)}::uuid
+        and original_player_id=${q(expiredPlayerId)}::uuid;
+    `);
+
+    const expiryWorkers = await Promise.all([
+      ...Array.from({ length: 16 }, (_, index) =>
+        rpc((index % 2) + 1, "advance_movie_buff_match_phase", {
+          p_room_id: context.roomId,
+          p_expected_version: vip.phase_version,
+        }),
+      ),
+      rpc(0, "touch_movie_buff_match_participant", {
+        p_room_id: context.roomId,
+      }),
+    ]);
+    assertNoRpcErrors(expiryWorkers, /abandoned|access denied/i);
+
+    const seat = JSON.parse(
+      ownerSql(`
+        select row_to_json(s)::text
+        from public.movie_buff_match_participant_seats s
+        where s.match_id=${q(context.matchId)}::uuid
+          and s.original_player_id=${q(expiredPlayerId)}::uuid;
+      `),
+    );
+    assert.equal(seat.participant_state, "abandoned");
+    assert.ok(seat.abandoned_at);
+    assert.ok(seat.replacement_ready_at);
+    const leftRows = Number(
+      ownerSql(`
+        select count(*)
+        from public.room_players
+        where room_id=${q(context.roomId)}::uuid
+          and player_id=${q(expiredPlayerId)}::uuid
+          and left_at is not null;
+      `),
+    );
+    const releasedRows = Number(
+      ownerSql(`
+        select count(*)
+        from public.movie_buff_vip_round_required_players
+        where round_id=${q(context.roundId)}::uuid
+          and player_id=${q(expiredPlayerId)}::uuid
+          and released_at is not null;
+      `),
+    );
+    assert.equal(leftRows, 1);
+    assert.equal(releasedRows, 1);
+    record("duplicate reconnect-expiry workers", "PASS", {
+      concurrentWorkers: expiryWorkers.length,
+      stableSeatRows: 1,
+      membershipRowsMarkedLeft: leftRows,
+      releasedVipRequirementRows: releasedRows,
+    });
+
+    const vipAfterExpiry = phaseState(context.matchId);
+    assert.equal(vipAfterExpiry.phase, "vip_lock");
+    assert.equal(seat.controller_type, "human");
+    record("Buster inactivity during VIP", "PASS", {
+      phase: vipAfterExpiry.phase,
+      controllerType: seat.controller_type,
+    });
+
+    expireVipWindow(context.matchId, context.roundId);
+    const boardWorkers = await advanceMany(
+      context.roomId,
+      vipAfterExpiry.phase_version,
+      16,
+      [1, 2],
+    );
+    assertNoRpcErrors(boardWorkers);
+    const boardView = await view(1, context.roomId);
+    assert.equal(boardView.phase, "board_select");
+    const activatedSeat = JSON.parse(
+      ownerSql(`
+        select row_to_json(s)::text
+        from public.movie_buff_match_participant_seats s
+        where s.match_id=${q(context.matchId)}::uuid
+          and s.original_player_id=${q(expiredPlayerId)}::uuid;
+      `),
+    );
+    assert.equal(activatedSeat.controller_type, "buster");
+    record("Buster activation only at board-safe boundary", "PASS", {
+      concurrentWorkers: boardWorkers.length,
+      phase: boardView.phase,
+      controllerType: activatedSeat.controller_type,
+    });
+  } catch (error) {
+    recordMissing(names, error);
+  }
+}
+
+function runLeaveSurfaceProbe() {
+  try {
+    const functions = JSON.parse(
+      ownerSql(`
+        select coalesce(json_agg(p.proname order by p.proname)::text,'[]')
+        from pg_catalog.pg_proc p
+        join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+        where n.nspname='public'
+          and p.proname in (
+            'get_movie_buff_active_leave_quote',
+            'confirm_movie_buff_active_leave'
+          );
+      `),
+    );
+    const ready =
+      functions.includes("get_movie_buff_active_leave_quote") &&
+      functions.includes("confirm_movie_buff_active_leave");
+    if (!ready) {
+      record("exactly-once leave penalties", "FAIL", {
+        reason: "authoritative active-leave quote/confirm RPC surface is absent",
+        discoveredFunctions: functions,
+      });
+      return;
+    }
+    record("exactly-once leave penalties", "UNKNOWN", {
+      reason:
+        "active-leave RPC surface exists, but no approved penalty policy/ledger fixture was discoverable for safe duplicate-confirm execution",
+      discoveredFunctions: functions,
+    });
+  } catch (error) {
+    recordMissing(["exactly-once leave penalties"], error);
+  }
 }
 
 try {
@@ -433,13 +473,18 @@ try {
     }),
   );
 
-  await testExactlyOncePhaseAndVipDeadline();
-  await testDuplicateExpiryWorkers();
-  testLeaveAuthoritySurface();
+  await runPhaseAndVipRace();
+  await runExpiryAndBusterRace();
+  runLeaveSurfaceProbe();
 
-  evidence.classification = evidence.failures.length > 0 ? "FAIL" : "PASS";
+  const classifications = evidence.checks.map((item) => item.classification);
+  evidence.classification = classifications.includes("FAIL")
+    ? "FAIL"
+    : classifications.includes("UNKNOWN")
+      ? "UNKNOWN"
+      : "PASS";
 } catch (error) {
-  record("residual laboratory execution", "FAIL", {
+  record("residual laboratory setup", "FAIL", {
     error:
       error instanceof Error
         ? { name: error.name, message: error.message, stack: error.stack }
@@ -447,9 +492,9 @@ try {
   });
   evidence.classification = "FAIL";
 } finally {
-  for (const roomId of [...roomIds].reverse()) {
+  for (const roomId of [...ownedRooms].reverse()) {
     try {
-      ownerSql(`delete from public.game_rooms where id=${quote(roomId)}::uuid;`);
+      ownerSql(`delete from public.game_rooms where id=${q(roomId)}::uuid;`);
       evidence.cleanup.push({ roomId, classification: "PASS" });
     } catch (error) {
       evidence.cleanup.push({
@@ -469,7 +514,6 @@ console.log(
     outputPath,
     classification: evidence.classification,
     checks: evidence.checks.length,
-    failures: evidence.failures.length,
   }),
 );
 if (evidence.classification === "FAIL") process.exitCode = 1;
