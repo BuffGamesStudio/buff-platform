@@ -1,0 +1,100 @@
+name: MOV-17 disposable local Supabase evidence
+
+on:
+  push:
+    branches:
+      - copilot/MOV-17-shared-phase-machine
+    paths:
+      - ".github/workflows/movie-buff-mov17-local-supabase.yml"
+      - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
+      - "supabase/config.toml"
+      - "supabase/migrations/**"
+      - "supabase/rollbacks/**"
+      - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+      - "supabase/tests/movie_buff_reconnect_buster_rollback_probe.sql"
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - ".github/workflows/movie-buff-mov17-local-supabase.yml"
+      - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
+      - "supabase/config.toml"
+      - "supabase/migrations/**"
+      - "supabase/rollbacks/**"
+      - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+      - "supabase/tests/movie_buff_reconnect_buster_rollback_probe.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  disposable-local-supabase:
+    name: Migration, pgTAP, rollback, and forward rehearsal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_BRANCH: copilot/MOV-17-shared-phase-machine
+
+    steps:
+      - name: Check out exact MOV-17 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify isolated exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          docker --version
+          psql --version
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Verify pinned CLI and wrapper syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(supabase --version)" = "2.111.0"
+          bash -n scripts/movie-buff-mov17-local-supabase-evidence.sh
+
+      - name: Run disposable local database evidence wrapper
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-local-supabase-evidence
+        run: |
+          bash scripts/movie-buff-mov17-local-supabase-evidence.sh \
+            "${EXPECTED_SHA}" \
+            "${EVIDENCE_DIR}"
+
+      - name: Verify source checkout remained clean
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Upload exact-SHA local database evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov17-local-supabase-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/mov17-local-supabase-evidence
+          if-no-files-found: error
+          retention-days: 7
