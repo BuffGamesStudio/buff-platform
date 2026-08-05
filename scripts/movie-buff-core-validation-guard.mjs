@@ -66,8 +66,9 @@ function git(...args) {
 }
 
 function commandVersion(command, args = ["--version"]) {
+  const executable = process.platform === "win32" && command === "npm" ? "npm.cmd" : command;
   try {
-    return execFileSync(command, args, { encoding: "utf8" }).trim();
+    return execFileSync(executable, args, { encoding: "utf8" }).trim();
   } catch {
     return null;
   }
@@ -148,7 +149,7 @@ function baseFixture() {
   return {
     repository: "BuffGamesStudio/buff-platform", expectedRepository: "BuffGamesStudio/buff-platform",
     remote: "https://github.com/BuffGamesStudio/buff-platform", expectedRemote: "https://github.com/BuffGamesStudio/buff-platform",
-    branch: "validation/movie-buff-core-v1", expectedBranch: "validation/movie-buff-core-v1",
+    branch: "validation/movie-buff-core-v2", expectedBranch: "validation/movie-buff-core-v2",
     sha: "a".repeat(40), expectedSha: "a".repeat(40), tree: "b".repeat(40), expectedTree: "b".repeat(40),
     cwdName: "buff-platform", dirty: false, evidenceInsideRepository: false, evidenceSha: "a".repeat(40),
     missingFiles: [], missingTools: [], unsupportedVersions: [], absentVariables: [], malformedVariables: [],
