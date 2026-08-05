@@ -1,4 +1,4 @@
-import MovieBuffLobbyClient from "@/app/games/movie-buff/lobby/LobbyClient";
+import MovieBuffLobbyAuthBootstrap from "@/app/games/movie-buff/lobby/LobbyAuthBootstrap";
 import type { MovieBuffCategoryOption } from "@/lib/db/movieBuff";
 import { listMovieBuffLobbyCategories } from "@/lib/server/movieBuffLobby";
 
@@ -19,7 +19,7 @@ export default async function MovieBuffLobbyPage() {
   }
 
   return (
-    <MovieBuffLobbyClient
+    <MovieBuffLobbyAuthBootstrap
       initialCategories={initialCategories}
       initialCategoryError={initialCategoryError}
     />
