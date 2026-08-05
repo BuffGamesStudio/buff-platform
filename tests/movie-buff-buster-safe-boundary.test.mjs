@@ -22,6 +22,10 @@ const proof = fs.readFileSync(
   "scripts/movie-buff-three-client-phase-proof.mjs",
   "utf8",
 );
+const reconnectProof = fs.readFileSync(
+  "scripts/movie-buff-reconnect-race-proof.mjs",
+  "utf8",
+);
 const evidenceRunner = fs.readFileSync(
   "scripts/movie-buff-three-client-phase-evidence-runner.mjs",
   "utf8",
@@ -86,12 +90,16 @@ test("canonical view applies ready replacements after authoritative advancement"
   assert.match(migration, /selectorControllerType/);
 });
 
-test("three-client proof races expired resume against finalization and proves pre-deadline resume", () => {
-  assert.match(proof, /preDeadlineReconnect/);
-  assert.match(proof, /expiredReconnectRace/);
-  assert.match(proof, /Promise\.allSettled/);
-  assert.match(proof, /reconnect_deadline_at/);
-  assert.match(proof, /resumeAllowed/);
+test("local reconnect proof races expiry and proves pre-deadline resume", () => {
+  assert.match(reconnectProof, /preDeadlineReconnect/);
+  assert.match(reconnectProof, /expiredReconnectRace/);
+  assert.match(reconnectProof, /Promise\.allSettled/);
+  assert.match(reconnectProof, /reconnect_deadline_at/);
+  assert.match(reconnectProof, /resumeAllowed/);
+  assert.match(reconnectProof, /selectorControllerType, "buster"/);
+});
+
+test("three-client proof covers abandoned selector timeout", () => {
   assert.match(proof, /Room access denied|abandoned/);
   assert.match(proof, /selectorControllerType, "buster"/);
   assert.match(proof, /selectionSource, "buster_timeout"/);
