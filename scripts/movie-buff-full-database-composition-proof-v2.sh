@@ -20,6 +20,40 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 
 source = replace_once(
     source,
+    """      -e '/^SET transaction_timeout/d' \\
+    >\"$destination\"""",
+    """      -e '/^SET transaction_timeout/d' \\
+      -e 's/extensions\\.gen_random_uuid\\(\\)/gen_random_uuid()/g' \\
+    >\"$destination\"""",
+    "canonicalize equivalent extension qualification",
+)
+
+source = replace_once(
+    source,
+    """), routine_grants as (
+  select 'ROUTINE'::text object_kind, routine_schema object_schema,
+         routine_name || '(' || coalesce(specific_name,'') || ')' object_name,
+         grantee, privilege_type
+  from information_schema.routine_privileges
+  where routine_schema = 'public'
+    and grantee in ('PUBLIC','anon','authenticated','service_role')
+)""",
+    """), routine_grants as (
+  select 'ROUTINE'::text object_kind, n.nspname object_schema,
+         p.proname || '(' || pg_catalog.pg_get_function_identity_arguments(p.oid) || ')' object_name,
+         rp.grantee, rp.privilege_type
+  from information_schema.routine_privileges rp
+  join pg_catalog.pg_proc p
+    on p.oid = pg_catalog.substring(rp.specific_name from '_([0-9]+)$')::oid
+  join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and rp.grantee in ('PUBLIC','anon','authenticated','service_role')
+)""",
+    "use stable routine identities for direct grants",
+)
+
+source = replace_once(
+    source,
     """select pg_catalog.set_config('movie_buff.allow_public_matchmaking_containment','on',false);
 set search_path=public,extensions,pg_catalog;""",
     """select pg_catalog.set_config('movie_buff.allow_public_matchmaking_containment','on',false);
@@ -59,6 +93,35 @@ source = replace_once(
     """  (:'shared'::uuid, :'p2'::uuid, false, false, null, now(), now()),
   (:'private'::uuid, :'p3'::uuid, false, true, null, now(), now());""",
     "separate private-room membership",
+)
+
+source = replace_once(
+    source,
+    """      classification=\"PASS\"
+      if [[ \"$code\" -ne 0 || \"$observed\" != \"$expected\" ]]; then classification=\"FAIL\"; failed=1; fi
+      printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' \\
+        \"$persona\" \"$table\" \"$expected\" \"${observed:-ERROR}\" \"$classification\" \\
+""",
+    """      classification=\"PASS\"
+      if [[ \"$expected\" == \"DENIED\" ]]; then
+        if [[ \"$code\" -eq 0 ]]; then classification=\"FAIL\"; failed=1; fi
+        observed=\"$([[ \"$code\" -ne 0 ]] && echo DENIED || echo \"${observed:-VISIBLE}\")\"
+      elif [[ \"$code\" -ne 0 || \"$observed\" != \"$expected\" ]]; then
+        classification=\"FAIL\"; failed=1
+      fi
+      printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' \\
+        \"$persona\" \"$table\" \"$expected\" \"${observed:-ERROR}\" \"$classification\" \\
+""",
+    "classify expected anonymous denial",
+)
+
+source = replace_once(
+    source,
+    """  check_count anonymous anon \"\" game_rooms 0
+  check_count anonymous anon \"\" room_players 0""",
+    """  check_count anonymous anon \"\" game_rooms DENIED
+  check_count anonymous anon \"\" room_players DENIED""",
+    "expect anonymous denial",
 )
 
 source = replace_once(
@@ -124,6 +187,112 @@ source = replace_once(
     RESULT[direct_effective_grants]=\"PASS\"
   fi""",
     "separate function, RLS, and grant classifications",
+)
+
+source = replace_once(
+    source,
+    """      if compare_snapshot_set \\
+        \"$EVIDENCE_ROOT/control-baseline\" \\
+        \"$EVIDENCE_ROOT/rolled-back-observed\" \\
+        \"$EVIDENCE_ROOT/containment-comparison.tsv\"; then
+        RESULT[containment]=\"PASS\"
+      else
+        RESULT[containment]=\"FAIL\"
+        record_failure containment-mismatch
+      fi""",
+    """      compare_snapshot_set \\
+        \"$EVIDENCE_ROOT/control-baseline\" \\
+        \"$EVIDENCE_ROOT/rolled-back-observed\" \\
+        \"$EVIDENCE_ROOT/containment-control-delta.tsv\" || true
+
+      psql \"$DATABASE_URL\" -X -v ON_ERROR_STOP=1 -AtF $'\\t' \\
+        >\"$EVIDENCE_ROOT/containment-contract-verification.tsv\" <<'SQL'
+with checks(scope, observed, pass) as (
+  select 'mov16-vip-tables-removed', count(*)::text, count(*) = 0
+  from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  where n.nspname='public'
+    and c.relname in (
+      'movie_buff_vip_definitions','movie_buff_vip_inventory',
+      'movie_buff_vip_round_windows','movie_buff_vip_round_required_players',
+      'movie_buff_vip_round_locks','movie_buff_vip_consumptions'
+    )
+  union all
+  select 'mov16-vip-routines-removed', count(*)::text, count(*) = 0
+  from pg_catalog.pg_proc p
+  join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public'
+    and p.proname in (
+      'activate_movie_buff_round_vip','lock_movie_buff_round_vip',
+      'get_movie_buff_vip_round_view','set_movie_buff_vip_activation_phase',
+      'release_movie_buff_vip_required_player','open_movie_buff_vip_round_window',
+      'movie_buff_vip_ineligibility_reason','finalize_movie_buff_vip_round_window'
+    )
+  union all
+  select 'mov17-phase-tables-removed', count(*)::text, count(*) = 0
+  from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  where n.nspname='public'
+    and c.relname in (
+      'movie_buff_match_phase_state','movie_buff_match_phase_actions',
+      'movie_buff_match_phase_events','movie_buff_match_participant_seats'
+    )
+  union all
+  select 'mov17-phase-routines-removed', count(*)::text, count(*) = 0
+  from pg_catalog.pg_proc p
+  join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public'
+    and p.proname in ('advance_movie_buff_match_phase','select_movie_buff_match_tile')
+  union all
+  select 'match-start-handoff-contained',
+         concat_ws(',',
+           coalesce(pg_catalog.has_function_privilege('public','public.begin_movie_buff_match_from_admission(uuid)','EXECUTE'),false),
+           coalesce(pg_catalog.has_function_privilege('anon','public.begin_movie_buff_match_from_admission(uuid)','EXECUTE'),false),
+           coalesce(pg_catalog.has_function_privilege('authenticated','public.begin_movie_buff_match_from_admission(uuid)','EXECUTE'),false),
+           coalesce(pg_catalog.has_function_privilege('service_role','public.begin_movie_buff_match_from_admission(uuid)','EXECUTE'),false)
+         ),
+         not coalesce(pg_catalog.has_function_privilege('public','public.begin_movie_buff_match_from_admission(uuid)','EXECUTE'),false)
+         and not coalesce(pg_catalog.has_function_privilege('anon','public.begin_movie_buff_match_from_admission(uuid)','EXECUTE'),false)
+         and not coalesce(pg_catalog.has_function_privilege('authenticated','public.begin_movie_buff_match_from_admission(uuid)','EXECUTE'),false)
+         and not coalesce(pg_catalog.has_function_privilege('service_role','public.begin_movie_buff_match_from_admission(uuid)','EXECUTE'),false)
+  union all
+  select 'matchmaking-service-only',
+         concat_ws(',',
+           pg_catalog.has_function_privilege('authenticated','public.find_or_create_movie_buff_public_room(uuid,text,integer,integer)','EXECUTE'),
+           pg_catalog.has_function_privilege('service_role','public.find_or_create_movie_buff_public_room(uuid,text,integer,integer)','EXECUTE')
+         ),
+         not pg_catalog.has_function_privilege('authenticated','public.find_or_create_movie_buff_public_room(uuid,text,integer,integer)','EXECUTE')
+         and pg_catalog.has_function_privilege('service_role','public.find_or_create_movie_buff_public_room(uuid,text,integer,integer)','EXECUTE')
+  union all
+  select 'ready-service-only',
+         concat_ws(',',
+           pg_catalog.has_function_privilege('authenticated','public.set_movie_buff_player_ready(uuid,boolean)','EXECUTE'),
+           pg_catalog.has_function_privilege('service_role','public.set_movie_buff_player_ready(uuid,boolean)','EXECUTE')
+         ),
+         not pg_catalog.has_function_privilege('authenticated','public.set_movie_buff_player_ready(uuid,boolean)','EXECUTE')
+         and pg_catalog.has_function_privilege('service_role','public.set_movie_buff_player_ready(uuid,boolean)','EXECUTE')
+  union all
+  select 'start-service-only',
+         concat_ws(',',
+           pg_catalog.has_function_privilege('authenticated','public.start_movie_buff_match(uuid)','EXECUTE'),
+           pg_catalog.has_function_privilege('service_role','public.start_movie_buff_match(uuid)','EXECUTE')
+         ),
+         not pg_catalog.has_function_privilege('authenticated','public.start_movie_buff_match(uuid)','EXECUTE')
+         and pg_catalog.has_function_privilege('service_role','public.start_movie_buff_match(uuid)','EXECUTE')
+)
+select scope, observed, case when pass then 'PASS' else 'FAIL' end
+from checks
+order by scope;
+SQL
+      if ! grep -q $'\\tFAIL$' \"$EVIDENCE_ROOT/containment-contract-verification.tsv\" \\
+        && cmp -s \"$EVIDENCE_ROOT/control-baseline.ledger.tsv\" \\
+          \"$EVIDENCE_ROOT/rolled-back-observed.ledger.tsv\"; then
+        RESULT[containment]=\"PASS\"
+      else
+        RESULT[containment]=\"FAIL\"
+        record_failure containment-contract
+      fi""",
+    "validate intended fail-closed containment contract",
 )
 
 output.write_text(source, encoding="utf-8")
