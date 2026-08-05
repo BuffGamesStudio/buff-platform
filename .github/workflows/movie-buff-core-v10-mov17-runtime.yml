@@ -1,0 +1,301 @@
+name: Movie Buff core v10 current MOV-17 runtime laboratory
+
+on:
+  push:
+    branches: [validation/movie-buff-core-v10-current-mov17]
+    paths:
+      - ".github/workflows/movie-buff-core-v10-mov17-runtime.yml"
+      - "scripts/movie-buff-core-v10-patch-mov17-owner-fixtures.py"
+      - "scripts/movie-buff-three-client-phase*"
+      - "scripts/movie-buff-reconnect*"
+      - "scripts/movie-buff-core-v6-local-users.mjs"
+      - "supabase/**"
+      - "src/app/api/movie-buff/match/**"
+      - "src/lib/game/movieBuff*"
+      - "tests/movie-buff-phase-digest-schema-repair.test.mjs"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-core-v10-current-mov17
+  RAW_COMPOSITION_SHA: af30156151fde4f8d85fdcff998f3c802e4d003f
+  RAW_COMPOSITION_TREE: 68865b56a181039969616e626321e83d4beb8da3
+  MOV17_SOURCE_SHA: 7cf981c76c41056699ef24a049fa314b9c5b4191
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-current-mov17-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Bind exact identity and tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          git merge-base --is-ancestor "${RAW_COMPOSITION_SHA}" HEAD
+          git merge-base --is-ancestor "${MOV17_SOURCE_SHA}" HEAD
+          test "$(git rev-parse "${RAW_COMPOSITION_SHA}^{tree}")" = "${RAW_COMPOSITION_TREE}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          python3 -B - <<'PY'
+          from pathlib import Path
+          compile(Path('scripts/movie-buff-core-v10-patch-mov17-owner-fixtures.py').read_text(), 'patch', 'exec')
+          PY
+          node --check scripts/movie-buff-three-client-phase-evidence-runner.mjs
+          docker --version
+          psql --version
+      - name: Install committed lock and run digest source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/movie-buff-phase-digest-schema-repair.test.mjs
+      - name: Execute current exact phase, selector, and reconnect proof
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-core-v10-mov17-runtime"
+          raw="${RUNNER_TEMP}/movie-buff-core-v10-mov17-runtime-raw"
+          stack="${RUNNER_TEMP}/movie-buff-core-v10-mov17-stack"
+          proof="${RUNNER_TEMP}/movie-buff-core-v10-mov17-worktree"
+          users="${RUNNER_TEMP}/movie-buff-core-v10-mov17-users.json"
+          app_pid=""
+          worktree_added=0
+          overall=0
+          failure_step=""
+          mkdir -p "${evidence}" "${raw}" "${stack}"
+
+          finish() {
+            set +e
+            if [ -n "${app_pid}" ]; then
+              kill "${app_pid}" >/dev/null 2>&1 || true
+              wait "${app_pid}" >/dev/null 2>&1 || true
+            fi
+            cleanup_exit=125
+            if [ -d "${stack}/supabase" ]; then
+              (cd "${stack}" && supabase stop --no-backup) >"${raw}/cleanup.log" 2>&1
+              cleanup_exit=$?
+            fi
+            echo "${cleanup_exit}" >"${raw}/cleanup.exit"
+            if [ "${cleanup_exit}" -ne 0 ]; then
+              overall=1
+              [ -n "${failure_step}" ] || failure_step="cleanup"
+            fi
+            rm -f "${users}"
+            if [ "${worktree_added}" -eq 1 ]; then
+              git worktree remove --force "${proof}" >"${raw}/worktree-remove.log" 2>&1
+              worktree_exit=$?
+              echo "${worktree_exit}" >"${raw}/worktree-remove.exit"
+              if [ "${worktree_exit}" -ne 0 ]; then
+                overall=1
+                [ -n "${failure_step}" ] || failure_step="worktree-remove"
+              fi
+            fi
+            unset NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY SUPABASE_SERVICE_ROLE_KEY PGPASSWORD
+          }
+          trap finish EXIT
+
+          git worktree add --detach "${proof}" "${GITHUB_SHA}" >"${raw}/worktree-add.log" 2>&1
+          x=$?
+          echo "${x}" >"${raw}/worktree-add.exit"
+          if [ "${x}" -ne 0 ]; then overall=1; failure_step="worktree-add"; else worktree_added=1; fi
+
+          if [ "${overall}" -eq 0 ]; then
+            ln -s "${GITHUB_WORKSPACE}/node_modules" "${proof}/node_modules"
+            python3 -B "${proof}/scripts/movie-buff-core-v10-patch-mov17-owner-fixtures.py" "${proof}" \
+              >"${raw}/fixture-patch.log" 2>&1
+            x=$?
+            echo "${x}" >"${raw}/fixture-patch.exit"
+            if [ "${x}" -ne 0 ]; then overall=1; failure_step="fixture-patch"; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            node --check "${proof}/scripts/movie-buff-three-client-phase-proof.mjs" >"${raw}/phase-parse.log" 2>&1
+            x=$?; echo "${x}" >"${raw}/phase-parse.exit"; if [ "${x}" -ne 0 ]; then overall=1; failure_step="phase-parse"; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            node --check "${proof}/scripts/movie-buff-reconnect-race-proof.mjs" >"${raw}/reconnect-parse.log" 2>&1
+            x=$?; echo "${x}" >"${raw}/reconnect-parse.exit"; if [ "${x}" -ne 0 ]; then overall=1; failure_step="reconnect-parse"; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            git -C "${proof}" diff --check >"${raw}/derived-diff-check.log" 2>&1
+            x=$?; echo "${x}" >"${raw}/derived-diff-check.exit"; if [ "${x}" -ne 0 ]; then overall=1; failure_step="derived-diff-check"; fi
+            git -C "${proof}" diff -- scripts/movie-buff-three-client-phase-proof.mjs scripts/movie-buff-reconnect-race-proof.mjs \
+              >"${evidence}/derived-owner-fixture.patch"
+            sha256sum \
+              "${proof}/scripts/movie-buff-three-client-phase-proof.mjs" \
+              "${proof}/scripts/movie-buff-reconnect-race-proof.mjs" \
+              >"${evidence}/derived-proof-sources.sha256"
+          fi
+
+          if [ "${overall}" -eq 0 ]; then
+            cp -a "${proof}/supabase" "${stack}/supabase"
+            python3 - "${stack}/supabase/config.toml" "mov17-v10-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" <<'PY'
+          import pathlib,re,sys
+          p=pathlib.Path(sys.argv[1]); text=p.read_text(encoding='utf-8'); project=sys.argv[2]
+          text,n=re.subn(r'(?m)^project_id\s*=\s*"[^"]+"\s*$',f'project_id = "{project}"',text,count=1)
+          text,m=re.subn(r'(?ms)(^\[db\.seed\]\s*.*?^enabled\s*=\s*)true(\s*$)',r'\1false\2',text,count=1)
+          if n != 1 or m != 1: raise SystemExit('ephemeral config rewrite failed')
+          p.write_text(text,encoding='utf-8')
+          PY
+            x=$?; echo "${x}" >"${raw}/ephemeral-config.exit"; if [ "${x}" -ne 0 ]; then overall=1; failure_step="ephemeral-config"; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            (cd "${stack}" && supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor) >"${raw}/supabase-start.log" 2>&1
+            x=$?; echo "${x}" >"${raw}/supabase-start.exit"; if [ "${x}" -ne 0 ]; then overall=1; failure_step="supabase-start"; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            (cd "${stack}" && supabase db reset --local) >"${raw}/db-reset.log" 2>&1
+            x=$?; echo "${x}" >"${raw}/db-reset.exit"; if [ "${x}" -ne 0 ]; then overall=1; failure_step="db-reset"; fi
+          fi
+          export PGPASSWORD=postgres
+          if [ "${overall}" -eq 0 ]; then
+            psql -h 127.0.0.1 -p 55322 -U postgres -d postgres -v ON_ERROR_STOP=1 -At <<'SQL' \
+              >"${raw}/digest-schema-probe.log" 2>&1
+          do $$
+          declare
+            definition text;
+          begin
+            if to_regprocedure('extensions.digest(bytea,text)') is null then
+              raise exception 'extensions.digest(bytea,text) unavailable';
+            end if;
+            select pg_get_functiondef('public.select_movie_buff_match_tile(uuid,uuid,bigint,text)'::regprocedure)
+              into definition;
+            if position('extensions.digest' in definition) = 0 then
+              raise exception 'selector RPC does not use extensions.digest';
+            end if;
+            if position('public.digest' in definition) > 0 then
+              raise exception 'selector RPC retains public.digest';
+            end if;
+          end;
+          $$;
+          select 'digest_schema=PASS';
+          SQL
+            x=$?; echo "${x}" >"${raw}/digest-schema-probe.exit"; if [ "${x}" -ne 0 ]; then overall=1; failure_step="digest-schema-probe"; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            status_env="$(cd "${stack}" && supabase status -o env 2>"${raw}/status.stderr.log")"
+            x=$?; echo "${x}" >"${raw}/status.exit"
+            if [ "${x}" -ne 0 ]; then overall=1; failure_step="status"; else
+              eval "${status_env}"
+              export NEXT_PUBLIC_SUPABASE_URL="${API_URL:-http://127.0.0.1:55321}"
+              export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+              export SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY:-${SECRET_KEY:-}}"
+              export MOVIE_BUFF_APP_URL="http://127.0.0.1:3001"
+            fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            MOVIE_BUFF_LOCAL_USERS_OUTPUT="${users}" MOVIE_BUFF_LOCAL_RUN_ID="mov17-v10-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+              node "${proof}/scripts/movie-buff-core-v6-local-users.mjs" >"${raw}/local-users.log" 2>&1
+            x=$?; echo "${x}" >"${raw}/local-users.exit"; if [ "${x}" -ne 0 ]; then overall=1; failure_step="local-users"; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            (cd "${proof}" && \
+              NEXT_PUBLIC_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL}" \
+              NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}" \
+              SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY}" \
+              npm run dev -- --hostname 127.0.0.1 --port 3001) >"${raw}/application.log" 2>&1 &
+            app_pid=$!
+            healthy=1
+            for _ in $(seq 1 120); do
+              curl -fsS "http://127.0.0.1:3001/sign-in" >/dev/null 2>&1
+              x=$?; if [ "${x}" -eq 0 ]; then healthy=0; break; fi
+              kill -0 "${app_pid}" >/dev/null 2>&1 || break
+              sleep 1
+            done
+            echo "${healthy}" >"${raw}/application-health.exit"
+            if [ "${healthy}" -ne 0 ]; then overall=1; failure_step="application-health"; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            core_users="$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))[:3],separators=(",",":")))' "${users}")"
+            (cd "${proof}" && \
+              MOVIE_BUFF_ALLOW_LOCAL_PHASE_MUTATION=YES \
+              MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
+              MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-three-client-phase-evidence-runner.mjs" \
+              MOVIE_BUFF_PHASE_TEST_USERS="${core_users}" \
+              MOVIE_BUFF_EVIDENCE_OUTPUT="${evidence}/mov17-three-client-phase.json" \
+              MOVIE_BUFF_RECONNECT_EVIDENCE_OUTPUT="${evidence}/mov17-reconnect-race.json" \
+              MOVIE_BUFF_EVIDENCE_MANIFEST="${evidence}/mov17-three-client-phase.manifest.json" \
+              MOVIE_BUFF_LOCAL_DB_HOST=127.0.0.1 \
+              MOVIE_BUFF_LOCAL_DB_PORT=55322 \
+              MOVIE_BUFF_LOCAL_DB_NAME=postgres \
+              MOVIE_BUFF_LOCAL_DB_USER=postgres \
+              MOVIE_BUFF_LOCAL_DB_PASSWORD=postgres \
+                node scripts/movie-buff-three-client-phase-evidence-runner.mjs) \
+                >"${raw}/mov17.stdout.log" 2>"${raw}/mov17.stderr.log"
+            x=$?; echo "${x}" >"${raw}/mov17-runtime.exit"; if [ "${x}" -ne 0 ]; then overall=1; failure_step="mov17-runtime"; fi
+          fi
+
+          finish
+          trap - EXIT
+          unset PGPASSWORD
+          python3 - "${raw}" "${evidence}" <<'PY'
+          import pathlib,re,sys
+          raw=pathlib.Path(sys.argv[1]); out=pathlib.Path(sys.argv[2]); out.mkdir(parents=True,exist_ok=True)
+          pats=[
+            (r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[REDACTED_JWT]'),
+            (r'postgres(?:ql)?://[^\s]+','postgresql://[REDACTED_LOCAL_DB_URL]'),
+            (r'sb_(?:secret|publishable)_[A-Za-z0-9_-]+','[REDACTED_SUPABASE_KEY]'),
+            (r'(?i)(authorization:\s*bearer\s+)[A-Za-z0-9._-]+',r'\1[REDACTED]'),
+            (r'(?i)(password["=: ]+)[^",\s]+',r'\1[REDACTED]'),
+          ]
+          for p in raw.iterdir():
+            if not p.is_file(): continue
+            text=p.read_text(encoding='utf-8',errors='replace')
+            for a,b in pats: text=re.sub(a,b,text)
+            (out/p.name).write_text(text,encoding='utf-8')
+          PY
+          {
+            echo "classification=$([ "${overall}" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "failure_step=${failure_step}"
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "source_branch=${GITHUB_REF_NAME}"
+            echo "source_sha=${GITHUB_SHA}"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "raw_composition_sha=${RAW_COMPOSITION_SHA}"
+            echo "raw_composition_tree=${RAW_COMPOSITION_TREE}"
+            echo "mov17_source_sha=${MOV17_SOURCE_SHA}"
+            echo "target=disposable-localhost"
+            echo "fixture_authority=local-database-owner"
+            echo "production_grants_changed=NO"
+            echo "supabase_cli=$(supabase --version)"
+            echo "node=$(node --version)"
+            echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"${evidence}/metadata.txt"
+          if grep -RIlE 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|postgres(ql)?://[^[:space:]]+:[^[:space:]]+@|sb_secret_[A-Za-z0-9_-]+|AKIA[0-9A-Z]{16}|[Bb]earer[[:space:]]+[A-Za-z0-9._-]{20,}' "${evidence}" >"${evidence}/secret-scan.txt"; then overall=1; else echo tested_secret_patterns=PASS >"${evidence}/secret-scan.txt"; fi
+          (cd "${evidence}" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt) || overall=1
+          git diff --check || overall=1
+          test -z "$(git status --porcelain)" || overall=1
+          exit "${overall}"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-core-v10-mov17-runtime-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-core-v10-mov17-runtime
+          if-no-files-found: error
+          retention-days: 7
+      - if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
