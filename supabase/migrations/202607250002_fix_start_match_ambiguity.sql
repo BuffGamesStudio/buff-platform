@@ -1,4 +1,4 @@
-﻿drop function if exists public.start_movie_buff_match(uuid);
+drop function if exists public.start_movie_buff_match(uuid);
 
 create function public.start_movie_buff_match(
   p_room_id uuid

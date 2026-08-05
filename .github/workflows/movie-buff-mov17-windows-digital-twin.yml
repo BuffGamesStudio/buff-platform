@@ -1,0 +1,127 @@
+# Final exact-SHA trigger for validation twin v3.
+name: MOV-17 Windows digital twin
+
+on:
+  push:
+    branches:
+      - validation/MOV-17-encoding-twin-v3
+    paths:
+      - ".github/workflows/movie-buff-mov17-windows-digital-twin.yml"
+      - "scripts/movie-buff-mov17-windows-digital-twin.ps1"
+      - "scripts/movie-buff-three-client-phase-proof.mjs"
+      - "scripts/movie-buff-reconnect-race-proof.mjs"
+      - "scripts/movie-buff-three-client-phase-evidence-runner.mjs"
+      - "supabase/migrations/20260804083*_movie_buff_*.sql"
+      - "supabase/rollbacks/20260804083*_movie_buff_*.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
+      - "tests/movie-buff-server-phase-machine.test.mjs"
+      - "tests/movie-buff-authoritative-phase-runtime.test.mjs"
+      - "tests/movie-buff-buster-safe-boundary.test.mjs"
+      - "tests/movie-buff-phase-tile-mutation-guard.test.mjs"
+      - "tests/movie-buff-match-start-handoff.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-digital-twin:
+    name: Windows PowerShell command-shell digital twin
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      EXPECTED_SHA: ${{ github.sha }}
+      EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v3
+      COMPONENT_MOV17_SHA: 6d7e9aabe5b07796a3a17fdf6c11df091dd1f978
+      COMPONENT_MOV17_TREE: 8264d2e30b0c75a8bebaa1ad938df6a635f7d991
+      COMPONENT_ENCODING_SHA: bf5e6d6f251f6840d17eed2fc68e0d580295437f
+      COMPONENT_ENCODING_TREE: d97528616454b9e93c6be9a44705d008a901ac66
+      INTEGRATION_BASE_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
+
+    steps:
+      - name: Check out exact composition SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify Windows runner identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REF_NAME -ne $env:EXPECTED_BRANCH) { throw "Branch mismatch: $env:GITHUB_REF_NAME" }
+          if ((git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'SHA mismatch' }
+          if ((git remote get-url origin).Trim() -ne 'https://github.com/BuffGamesStudio/buff-platform') { throw 'Repository remote mismatch' }
+          if ((Split-Path -Leaf (Get-Location)) -ne 'buff-platform') { throw "Unexpected working directory: $(Get-Location)" }
+          if (git status --porcelain) { throw 'Checkout is not clean' }
+          $PSVersionTable | Out-String
+          node --version
+          npm --version
+
+      - name: Execute checked-in PowerShell wrapper
+        shell: pwsh
+        run: |
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'mov17-windows-evidence'
+          ./scripts/movie-buff-mov17-windows-digital-twin.ps1 `
+            -ExpectedSha $env:EXPECTED_SHA `
+            -EvidenceRoot $evidenceRoot
+
+      - name: Bind composition identity and verify portable hashes
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'mov17-windows-evidence'
+          New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
+          @(
+            'lane=MOV-17-validation-twin-v3'
+            'repository=BuffGamesStudio/buff-platform'
+            "remote=$((git remote get-url origin).Trim())"
+            "source_sha=$((git rev-parse HEAD).Trim())"
+            "source_tree=$((git rev-parse 'HEAD^{tree}').Trim())"
+            "source_ref=$env:GITHUB_REF_NAME"
+            "component_mov17_sha=$env:COMPONENT_MOV17_SHA"
+            "component_mov17_tree=$env:COMPONENT_MOV17_TREE"
+            "component_encoding_sha=$env:COMPONENT_ENCODING_SHA"
+            "component_encoding_tree=$env:COMPONENT_ENCODING_TREE"
+            "integration_base_sha=$env:INTEGRATION_BASE_SHA"
+            'physical_windows_cursor_equivalence=UNKNOWN'
+            "generated_at=$([DateTime]::UtcNow.ToString('o'))"
+          ) | Set-Content -LiteralPath (Join-Path $evidenceRoot 'composition-metadata.txt') -Encoding utf8
+
+          $manifestPath = Join-Path $evidenceRoot 'sha256.csv'
+          Get-ChildItem -LiteralPath $evidenceRoot -File |
+            Where-Object Name -ne 'sha256.csv' |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256
+              [pscustomobject]@{ Path = $_.Name; Hash = $hash.Hash }
+            } |
+            Export-Csv -LiteralPath $manifestPath -NoTypeInformation
+
+          foreach ($entry in Import-Csv -LiteralPath $manifestPath) {
+            if ([System.IO.Path]::IsPathRooted($entry.Path)) { throw "Evidence path must be relative: $($entry.Path)" }
+            $artifactPath = Join-Path $evidenceRoot $entry.Path
+            if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) { throw "Missing evidence target: $($entry.Path)" }
+            if ((Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash -ne $entry.Hash) { throw "Evidence hash mismatch: $($entry.Path)" }
+          }
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
+          if (git status --porcelain) { throw 'Checkout is not clean after validation' }
+
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov17-v3-windows-digital-twin-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}\mov17-windows-evidence
+          if-no-files-found: error
+          retention-days: 7

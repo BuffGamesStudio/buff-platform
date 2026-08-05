@@ -1,0 +1,228 @@
+name: MOV-17 disposable local Supabase evidence
+
+on:
+  push:
+    branches:
+      - validation/MOV-17-encoding-twin-v3
+    paths:
+      - ".github/workflows/movie-buff-mov17-local-supabase.yml"
+      - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
+      - "scripts/movie-buff-redact-evidence.py"
+      - "scripts/movie-buff-redact-evidence-test.py"
+      - "supabase/config.toml"
+      - "supabase/migrations/**"
+      - "supabase/rollbacks/**"
+      - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+      - "supabase/tests/movie_buff_reconnect_buster_rollback_probe.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - ".github/workflows/movie-buff-mov17-local-supabase.yml"
+      - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
+      - "scripts/movie-buff-redact-evidence.py"
+      - "scripts/movie-buff-redact-evidence-test.py"
+      - "supabase/config.toml"
+      - "supabase/migrations/**"
+      - "supabase/rollbacks/**"
+      - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+      - "supabase/tests/movie_buff_reconnect_buster_rollback_probe.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  disposable-local-supabase:
+    name: Migration, pgTAP, rollback, and forward rehearsal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v3
+      COMPONENT_MOV17_SHA: 6d7e9aabe5b07796a3a17fdf6c11df091dd1f978
+      COMPONENT_MOV17_TREE: 8264d2e30b0c75a8bebaa1ad938df6a635f7d991
+      COMPONENT_ENCODING_SHA: bf5e6d6f251f6840d17eed2fc68e0d580295437f
+      COMPONENT_ENCODING_TREE: d97528616454b9e93c6be9a44705d008a901ac66
+      INTEGRATION_BASE_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
+
+    steps:
+      - name: Check out exact composition SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Initialize evidence directory
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-local-supabase-evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          {
+            echo "lane=MOV-17-validation-twin-v3"
+            echo "source_sha=${EXPECTED_SHA}"
+            echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+            echo "component_mov17_sha=${COMPONENT_MOV17_SHA}"
+            echo "component_encoding_sha=${COMPONENT_ENCODING_SHA}"
+            echo "preflight=UNKNOWN"
+            echo "classification=UNKNOWN"
+          } > "${EVIDENCE_DIR}/preflight.txt"
+
+      - name: Verify isolated exact checkout
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-local-supabase-evidence
+        run: |
+          set -euo pipefail
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          docker --version
+          psql --version
+          python3 --version
+          {
+            echo "lane=MOV-17-validation-twin-v3"
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "remote=$(git remote get-url origin)"
+            echo "source_sha=${EXPECTED_SHA}"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "source_ref=${resolved_ref}"
+            echo "component_mov17_sha=${COMPONENT_MOV17_SHA}"
+            echo "component_mov17_tree=${COMPONENT_MOV17_TREE}"
+            echo "component_encoding_sha=${COMPONENT_ENCODING_SHA}"
+            echo "component_encoding_tree=${COMPONENT_ENCODING_TREE}"
+            echo "integration_base_sha=${INTEGRATION_BASE_SHA}"
+            echo "preflight=PASS"
+            echo "classification=UNKNOWN"
+          } > "${EVIDENCE_DIR}/preflight.txt"
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Verify pinned CLI, wrapper, and redaction contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(supabase --version)" = "2.111.0"
+          bash -n scripts/movie-buff-mov17-local-supabase-evidence.sh
+          python3 -B - <<'PY'
+          from pathlib import Path
+          for name in (
+              "scripts/movie-buff-redact-evidence.py",
+              "scripts/movie-buff-redact-evidence-test.py",
+          ):
+              compile(Path(name).read_text(encoding="utf-8"), name, "exec")
+          PY
+          python3 -B scripts/movie-buff-redact-evidence-test.py
+          test -z "$(git status --porcelain)"
+
+      - name: Run disposable local database evidence wrapper
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-local-supabase-evidence
+        run: |
+          set -uo pipefail
+          set +e
+          bash scripts/movie-buff-mov17-local-supabase-evidence.sh \
+            "${EXPECTED_SHA}" \
+            "${EVIDENCE_DIR}"
+          wrapper_exit=$?
+          set -e
+
+          {
+            echo "lane=MOV-17-validation-twin-v3"
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "remote=$(git remote get-url origin)"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+            echo "component_mov17_sha=${COMPONENT_MOV17_SHA}"
+            echo "component_mov17_tree=${COMPONENT_MOV17_TREE}"
+            echo "component_encoding_sha=${COMPONENT_ENCODING_SHA}"
+            echo "component_encoding_tree=${COMPONENT_ENCODING_TREE}"
+            echo "integration_base_sha=${INTEGRATION_BASE_SHA}"
+            echo "browser_behavior=UNKNOWN"
+            echo "hosted_state=UNKNOWN"
+            echo "physical_windows_cursor_equivalence=UNKNOWN"
+            echo "workflow_run_id=${GITHUB_RUN_ID}"
+            echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${EVIDENCE_DIR}/composition-metadata.txt"
+
+          while IFS= read -r -d '' evidence_file; do
+            temporary_file="${evidence_file}.redacted"
+            python3 -B scripts/movie-buff-redact-evidence.py \
+              "${evidence_file}" \
+              "${temporary_file}"
+            mv "${temporary_file}" "${evidence_file}"
+          done < <(find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0)
+
+          python3 -B - "${EVIDENCE_DIR}" <<'PY'
+          import importlib.util
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          script = pathlib.Path("scripts/movie-buff-redact-evidence.py")
+          spec = importlib.util.spec_from_file_location("movie_buff_redactor", script)
+          if spec is None or spec.loader is None:
+              raise SystemExit("unable to load evidence redactor")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+
+          changed = []
+          for path in sorted(root.glob("*")):
+              if not path.is_file() or path.name == "sha256.txt":
+                  continue
+              text = path.read_text(encoding="utf-8", errors="replace")
+              if module.redact_text(text) != text:
+                  changed.append(path.name)
+          if changed:
+              raise SystemExit(
+                  "evidence redaction is not idempotent for: " + ", ".join(changed)
+              )
+          PY
+
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > sha256.txt
+            sha256sum -c sha256.txt
+          )
+
+          exit "${wrapper_exit}"
+
+      - name: Verify source checkout remained clean
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Upload exact-SHA local database evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov17-v3-local-supabase-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/mov17-local-supabase-evidence
+          if-no-files-found: error
+          retention-days: 7
