@@ -5,7 +5,7 @@ SOURCE_ROOT="$(git rev-parse --show-toplevel)"
 BASE_SHA="db6d0a1c442cc06bd69e5aa7ae970fe8fd87bfde"
 BASE_BLOB="1e1c075fdcd9c2964e7c868f92e53b2491ff9df3"
 BASE_PATH="scripts/movie-buff-mov17-repair-runtime-lab.sh"
-PATCHED_LAB="$(mktemp "${RUNNER_TEMP:-/tmp}/mov17-runtime-lab-v10-XXXXXX.sh")"
+PATCHED_LAB="$(mktemp "${RUNNER_TEMP:-/tmp}/mov17-runtime-lab-v11-XXXXXX.sh")"
 trap 'rm -f "$PATCHED_LAB"' EXIT
 
 git -C "$SOURCE_ROOT" merge-base --is-ancestor "$BASE_SHA" HEAD
@@ -44,10 +44,10 @@ new_buster_end = """    controllerAfterBoundary: activated.controller_type,
       set left_at=coalesce(left_at,clock_timestamp())
       where room_id=${q(context.roomId)}::uuid;
     update public.matches
-      set status='cancelled', ended_at=coalesce(ended_at,clock_timestamp())
+      set status='cancelled', finished_at=coalesce(finished_at,clock_timestamp())
       where id=${q(context.matchId)}::uuid;
     update public.game_rooms
-      set status='cancelled', ended_at=coalesce(ended_at,clock_timestamp())
+      set status='cancelled', finished_at=coalesce(finished_at,clock_timestamp())
       where id=${q(context.roomId)}::uuid;
   `);
 }"""
@@ -65,10 +65,10 @@ new_leave_end = """    resumeMessage: rejoin.error.message,
       set left_at=coalesce(left_at,clock_timestamp())
       where room_id=${q(context.roomId)}::uuid;
     update public.matches
-      set status='cancelled', ended_at=coalesce(ended_at,clock_timestamp())
+      set status='cancelled', finished_at=coalesce(finished_at,clock_timestamp())
       where id=${q(context.matchId)}::uuid;
     update public.game_rooms
-      set status='cancelled', ended_at=coalesce(ended_at,clock_timestamp())
+      set status='cancelled', finished_at=coalesce(finished_at,clock_timestamp())
       where id=${q(context.roomId)}::uuid;
   `);
 }"""
