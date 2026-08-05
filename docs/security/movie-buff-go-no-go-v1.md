@@ -1,6 +1,6 @@
 # Movie Buff independent GO/NO-GO — v1
 
-Captured: 2026-08-04  
+Captured: 2026-08-05  
 Reviewer lane: MOV-19  
 Repository: `BuffGamesStudio/buff-platform`  
 Integration target: `integration/movie-buff`  
@@ -10,148 +10,227 @@ Integration SHA: `bf316a15a2120e32d8a32e479df2ae439081f9a1`
 
 # **NO-GO**
 
-UNKNOWN is not PASS. Lane-specific build evidence does not prove one reconciled integrated application, database behavior, hosted state, browser synchronization, accessibility, or rollback execution.
+Evidence is classified only as **PASS**, **FAIL**, **UNKNOWN**, or **NOT APPLICABLE**. Missing, stale, unexecuted, cross-SHA, local-only, preview-only, or documentation-only evidence is never converted into PASS.
 
-## Exact lane state reviewed
+## Exact lane heads reviewed
 
 - MOV-15 PR #9: `cf95ade4f050a70f73077561ea95fbb0c0d82b6a`
 - MOV-16 PR #6: `95c292ead66fc83cf13d7154bd3cf691610f549d`
-- MOV-17 PR #10: `e40f639c761b6f1e61e36b0c807c9beafad7349c`
-- MOV-18 PR #8: `6bd23661743d82914ea9c922221883a83be84582`
-- MOV-19 PR #7: pre-refresh head `8b81c7c2a57aa720de9516349171e8af8aa356a6`; GitHub records the final head after these document commits.
+- MOV-17 PR #10: `e9984841e5e0e323feaf835e4ddc0fc1ccf4d3a1`
+- MOV-18 PR #8: `e335a07eed20c97bc2487962ad0cf67c4f9dcc03`
+- MOV-19 PR #7 before this record refresh: `9a00afcca8310fe849ec60eb0818e9d6a85b54e3`
 
-All four functional PRs and the validation PR remain open, draft, unmerged, and targeted to `integration/movie-buff`.
+All lane PRs remain open, draft, unmerged, isolated, and targeted to `integration/movie-buff`. The integration branch still contains none of the current functional lane heads.
 
-## Confirmed hosted security failures
+## Hosted read-only security capture
 
-Read-only inspection of Supabase project `yfatwreicmiocdxzyznd` confirmed:
+Target project: `yfatwreicmiocdxzyznd`  
+Captured: `2026-08-05T04:19:02Z`
 
-- all six target public tables have RLS disabled and no policies;
-- anon and authenticated have effective SELECT/INSERT/UPDATE/DELETE on all six;
-- broad anonymous execution remains on critical Movie Buff SECURITY DEFINER functions;
-- most critical functions use mutable `search_path=public`;
-- only migrations `20260803233057` and `20260803235116` are hosted; none of the current lane migrations is hosted.
+### FAIL — six exposed tables
 
-The hardened `join_movie_buff_room(text)` remains a narrow hosted PASS: owner `postgres`, SECURITY DEFINER, `search_path=pg_catalog`, anon denied, authenticated/service role retained. It does not cure the wider exposure.
+The following six public tables all have RLS disabled, zero policies, effective anon SELECT/INSERT/UPDATE/DELETE, effective authenticated SELECT/INSERT/UPDATE/DELETE, and retained service-role CRUD:
 
-## Lane decisions
+- `match_round_player_hints`
+- `match_round_player_playback`
+- `movie_buff_boards`
+- `movie_buff_board_categories`
+- `movie_buff_board_tiles`
+- `movie_buff_board_events`
 
-### MOV-15 — source/build repaired; database proof pending
+### FAIL — critical legacy SECURITY DEFINER posture
 
-At exact SHA `cf95ade…`:
+The following hosted functions exist, are SECURITY DEFINER, retain service-role execution, remain executable by anon and authenticated, and use `search_path=public`:
 
-- server-owned public size is exactly three;
-- canonical compatibility, partial waiting-room uniqueness, player/key advisory locks, ordinary row waits, and no `SKIP LOCKED` are present;
-- browser two-player/350 ms start authority is removed;
-- the exact-SHA evidence wrapper now binds checkout HEAD, manifest SHA, and child expected SHA to one value;
-- Vercel deployment `dpl_8MgC3s81XUiYEXpUDmQZWyU7dniT` compiled, completed TypeScript, generated all pages, and reached READY.
+- `advance_movie_buff_round(uuid)`
+- `find_or_create_movie_buff_public_room(uuid,text,integer,integer)`
+- `mark_movie_buff_round_media_ready(uuid)`
+- `prepare_movie_buff_round_playback(uuid)`
+- `start_movie_buff_match(uuid)`
+- `start_movie_buff_round_playback(uuid)`
+- `submit_movie_buff_answer(uuid,text)`
+- `use_movie_buff_round_hint(uuid,integer)`
 
-Still UNKNOWN: migration apply, pgTAP, Node contract tests, repeated three-player races, external row-lock contention, browser behavior, containment/rollback rehearsal, and MOV-17 start compatibility.
+### PASS — narrow hosted exception
 
-Classification: **WAITING_FOR_LOCAL_EVIDENCE / not accepted.**
+`join_movie_buff_room(text)` remains owned by `postgres`, SECURITY DEFINER, fixed to `search_path=pg_catalog`, denied to anon, and executable by authenticated and service_role.
 
-### MOV-16 — required finalizer present; database proof pending
+### FAIL — hosted lane migration state
 
-At exact SHA `95c292…`:
+Hosted migration ledger contains only:
 
-- first-open, lock, activation, participant-snapshot, release, and replay source repairs are present;
-- Round Intro consumes canonical MOV-17 navigation rather than VIP readiness;
-- required service-only `finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)` now exists;
-- the finalizer binds the exact deadline, creates deterministic explicit no-VIP pass records for missing unreleased humans at deadline, consumes no inventory, and returns stable readiness;
-- owner/search-path/direct-grant boundaries and data-preserving finalizer rollback are present;
-- Vercel deployment `dpl_DRaxAj1Eta65Ty9RGjxkousPug2Q` compiled, completed TypeScript, generated all pages, and reached READY.
+- `20260803233057 remote_schema`
+- `20260803235116 movie_buff_join_room_rpc_hardening`
 
-Still UNKNOWN: SQL parse/apply, pgTAP, persona/adversarial execution, real concurrency, privacy, exact-once consumption, rollback rehearsal, and combined MOV-16/MOV-17 runtime compatibility.
+None of the current MOV-15 through MOV-19 lane migrations is hosted. `finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)` is absent from the hosted database.
 
-Classification: **WAITING_FOR_LOCAL_EVIDENCE / not accepted.**
+## MOV-15
 
-### MOV-17 — functional source present; synchronized execution pending
+Exact SHA: `cf95ade4f050a70f73077561ea95fbb0c0d82b6a`
 
-At exact SHA `e40f639…`:
+### PASS — narrow source/preview scope
 
-- durable canonical phase, route, participant-seat, selector, board-selection, playback, answer, results, reconnect, Buster, and blocked/terminal source contracts are present;
-- `vip_lock -> board_select` fails closed unless the MOV-16 finalizer returns `advanceReady = true`;
-- the prior `system` participant-controller contradiction is repaired: abandoned seats remain original-human controlled until safe-boundary Buster activation, while system remains a non-seat actor;
-- the exact-SHA three-client evidence wrapper verifies local targets, consent, checkout SHA, hashes, exit status, and test-profile restoration;
-- the Buster correction rollback is self-contained and preserves durable data;
-- Vercel deployment `dpl_GekqaYCKWYFS77QH2Mw6Gh5VrDvF` compiled, completed TypeScript, generated all pages, and reached READY.
+- strict-three public admission and canonical compatibility source are present;
+- waiting-room uniqueness, advisory locking, ordinary row waits, and no `SKIP LOCKED` divergence are represented in source;
+- browser two-player/timer start authority is removed;
+- exact-SHA evidence wrapper source binds checkout and child expectations;
+- the recorded Vercel preview compiled, completed TypeScript, generated pages, and reached READY for this SHA.
 
-Still UNKNOWN: SQL parse/apply, pgTAP, Node tests, exact-SHA three-client journey, synchronized timestamps, reconnect/Buster runtime, browser behavior, rollback rehearsal, and combined MOV-15/MOV-16/MOV-17 execution.
+### UNKNOWN
 
-Classification: **WAITING_FOR_LOCAL_EVIDENCE / not accepted.**
+- migration apply and pgTAP;
+- Node/race harness execution;
+- repeated simultaneous three-player convergence;
+- external row-lock contention;
+- browser behavior;
+- containment and rollback rehearsal;
+- combined MOV-15/MOV-17 start compatibility.
 
-### MOV-18 — isolated executable evidence passes
+Relay: `WAITING_FOR_LOCAL_EVIDENCE`.
 
-At exact SHA `6bd236…`, GitHub Actions run `30923902972`, job `92041382445`, independently verified:
+## MOV-16
+
+Exact SHA: `95c292ead66fc83cf13d7154bd3cf691610f549d`
+
+### PASS — narrow source contract
+
+The required service-only function now exists in PR #6 source:
+
+`finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)`
+
+Its migration source:
+
+- binds the exact persisted deadline;
+- uses the same round advisory-lock namespace as the VIP window;
+- creates deterministic explicit no-VIP pass records only for missing unreleased required humans at or after deadline;
+- consumes no inventory;
+- returns `advanceReady=false` before deadline when incomplete and `advanceReady=true` only after all required records exist;
+- owns no shared phase transition;
+- is SECURITY DEFINER, owned by `postgres`, fixed to `search_path=pg_catalog`, and directly executable only by `service_role`;
+- has a data-preserving function-only rollback.
+
+The recorded Vercel preview compiled, completed TypeScript, generated pages, and reached READY for this SHA.
+
+### UNKNOWN
+
+- GitHub Actions at this exact SHA;
+- SQL parse/apply and pgTAP;
+- persona/adversarial execution;
+- concurrent finalization and contradictory-deadline behavior against a real database;
+- privacy and exact-once inventory consumption;
+- rollback rehearsal;
+- combined MOV-16/MOV-17 runtime behavior.
+
+Relay: `WAITING_FOR_LOCAL_EVIDENCE`.
+
+## MOV-17
+
+Exact SHA: `e9984841e5e0e323feaf835e4ddc0fc1ccf4d3a1`
+
+### PASS — repository/static/build scope
+
+GitHub Actions run `30969424653`, job `92190331697` completed successfully at the exact SHA and proved:
 
 - exact branch/SHA and clean checkout;
-- exact pair `@rive-app/react-webgl2@4.30.0` and `@rive-app/webgl2@2.39.1`;
-- lock deep-equality to integration after removing only the approved Rive declaration/nodes;
-- `npm ci`;
-- 13/13 focused tests;
-- `tsc --noEmit`;
-- production Next build with localhost-only placeholders and 14/14 pages;
-- artifact `8898290290`, digest `sha256:4bca98b5ca8b9868f7bb0d19769f0d33dc86b160a81bc712aea2b87e5a0e5b28`.
+- committed-lock install;
+- proof/wrapper syntax;
+- focused MOV-17 repository contract tests;
+- TypeScript;
+- localhost-placeholder production build;
+- final clean checkout and artifact upload.
 
-The visual boundary remains passive by source: no phase, selector, tile, playback, VIP, score, penalty, or hosted-state mutation authority. Missing assets, renderer errors, and reduced motion select static presentation.
+The current source requires the MOV-16 finalizer and fails closed on missing or contradictory finalization. Because PR #6 now contains the exact signature, MOV-16/MOV-17 **source-contract compatibility is PASS** at the reviewed lane heads.
 
-Still UNKNOWN: production `.riv` assets, verified artboard/state-machine names, real load/parse/init, WebGL context loss, rendered browser behavior, hydration, responsive/accessibility/modal-focus proof, reconnect integration, and rollback rehearsal.
+### FAIL — disposable local database rehearsal
 
-Classification: **READY_FOR_REVIEW for isolated scope / not accepted.**
+GitHub Actions run `30969424659`, job `92190331772` failed in the checked-in disposable local Supabase wrapper step at this exact SHA. The source checkout remained clean and evidence artifact `8915979775` was uploaded with digest `sha256:8e9c3f7cc1382c7b48d59d4f90484340eaeac366a3b9828001f52aeb803a5ca7`.
 
-### MOV-19 — validation records refreshed; release remains blocked
+The workflow failure is a FAIL for the attempted local database evidence gate. The exact SQL/test failure cause remains UNKNOWN until the uploaded evidence is independently classified.
 
-MOV-19 preserves source-versus-runtime proof scopes and has now independently re-reviewed each current functional SHA. No MOV-19 local Node, pgTAP, race, browser, Supabase, or integrated-SHA PASS is claimed.
+### UNKNOWN
 
-Classification: **AGENT_WORKING / overall NO-GO.**
+- successful migration apply and pgTAP;
+- rollback and forward-after-rollback rehearsal;
+- actual phase, tile, playback, answer, reconnect, abandonment, and Buster races;
+- three-client synchronization;
+- combined MOV-15/MOV-16/MOV-17 execution;
+- browser behavior;
+- hosted and production state.
 
-## Narrow PASS
+Relay: `CHANGES_REQUESTED` until the failed local database gate is explained and rerun successfully.
 
-- integration and all five lane branches exist;
-- all functional PRs remain draft against the correct integration target;
-- MOV-15 exact-SHA compile/TypeScript/build and repaired evidence binding;
-- MOV-16 exact-SHA compile/TypeScript/build and static finalizer boundary;
-- MOV-17 exact-SHA compile/TypeScript/build and corrected non-seat system/Buster boundary;
-- MOV-18 exact-SHA Actions dependency/test/TypeScript/build/artifact evidence;
-- hosted hardened `join_movie_buff_room(text)` metadata;
-- hosted service-role CRUD continuity;
-- actual Figma write capability verified by reversible probe;
-- MOV-19 evidence proof-scope and hosted-security observations.
+## MOV-18
 
-## FAIL
+Exact SHA: `e335a07eed20c97bc2487962ad0cf67c4f9dcc03`
 
-- hosted six-table RLS/grant posture;
-- hosted anonymous critical RPC execution and mutable search paths;
-- current integration branch does not contain the functional lane implementations;
-- no one exact integrated SHA reconciles PR #3, PR #5, and MOV-15 through MOV-18;
-- no executed database proof establishes matchmaking, VIP, phase, board, playback, answer, reconnect, Buster, or rollback behavior;
-- hosted post-remediation state remains absent.
+### PASS — repository/static/build scope
 
-## UNKNOWN
+The PR records successful exact-SHA GitHub Actions evidence for:
 
-- MOV-15 migration, races, contention, containment, and rollback execution;
-- MOV-16 SQL/persona/concurrency/privacy/exact-once/finalizer behavior;
-- MOV-17 synchronized three-client journey, reconnect, Buster, no-human closure, and rollback;
-- MOV-18 real production asset/rendering/accessibility behavior;
-- cross-lane migration order and function-overwrite compatibility;
-- one integrated lint, TypeScript, focused-test, pgTAP, production-build, browser, and diff-check result;
-- staging/production deployed SHA and post-remediation database state;
-- rollback after real state writes.
+- exact branch/SHA and clean checkout;
+- synchronized `@rive-app/react-webgl2@4.30.0` and `@rive-app/webgl2@2.39.1` dependency boundary;
+- committed-lock install;
+- focused visual-authority tests;
+- TypeScript and localhost-placeholder production build;
+- artifact upload.
+
+### UNKNOWN
+
+- production `.riv` assets and verified artboard/state-machine names;
+- actual load, parse, initialization, and WebGL context-loss behavior;
+- rendered fallback and reduced-motion behavior;
+- hydration, responsive, keyboard, screen-reader, and modal-focus proof;
+- reconnect and synchronized-journey composition;
+- Figma parity;
+- rollback rehearsal;
+- hosted and production state.
+
+Relay: `READY_FOR_REVIEW` for the isolated scope only.
+
+## MOV-19
+
+Exact pre-refresh SHA: `9a00afcca8310fe849ec60eb0818e9d6a85b54e3`
+
+### PASS — exact-SHA repository validation scope
+
+GitHub Actions run `30968167375`, job `92186561717` completed successfully and proved:
+
+- exact branch/SHA and clean checkout;
+- validator self-guards;
+- repository-static collector execution with deterministic accepted exit semantics;
+- evidence-integrity proof scopes;
+- TypeScript;
+- localhost-placeholder production build;
+- final clean checkout;
+- artifact `8915532575`, digest `sha256:d29f6f9c0365cd5c1a8fc11e1ff15b6ac26f0e87a9b5ec67065d725c4a711246`.
+
+This document refresh creates a later MOV-19 SHA. Exact-SHA workflow evidence for that later SHA remains UNKNOWN until its automatically triggered workflow completes and is recorded.
+
+### FAIL
+
+- overall release acceptance;
+- hosted six-table RLS and grants;
+- hosted critical RPC execution/search-path posture;
+- MOV-17 disposable database evidence gate;
+- integrated-candidate existence.
+
+Relay: `AGENT_WORKING`.
 
 ## GO exit contract
 
-GO requires, on one exact integrated SHA:
+GO requires all of the following on one immutable integrated SHA:
 
-1. independently reviewed integration diff preserving PR #3 visuals and PR #5 authorization hardening;
-2. successful lint, TypeScript, focused tests, pgTAP, production build, and diff check;
-3. repeated fresh three-player matchmaking races, lock contention, and complete negative cases;
-4. executed VIP ownership/privacy/deadline/finalizer/duplicate/reconnect/exactly-once personas;
-5. three clients agreeing through intro, VIP, board, atomic selection, transition, shared playback, answer/results, rotation, leave/reconnect, Buster, and no-human closure;
-6. actual Rive load/failure, reduced-motion, hydration, accessibility, modal-focus, and responsive proof;
-7. staging ledger/object hashes/owners/search paths/grants/RLS/policies/service-role proof;
-8. tested rollback/containment with explicit authority and data-loss classification;
-9. production identity and exact deployed SHA before any production-ready claim.
+1. reviewed integration diff preserving PR #3 rich visuals and PR #5 security hardening;
+2. exact-SHA clean-checkout lint, TypeScript, focused tests, pgTAP, production build, and diff check;
+3. fresh repeated matchmaking, VIP, phase, board, playback, answer, reconnect, Buster, duplicate, stale-client, cross-room, and no-human race evidence;
+4. three isolated clients agreeing on canonical phases, timestamps, tiles, media, answers, results, selector rotation, leave/reconnect, and Buster substitution;
+5. rendered browser, native media, Rive failure, reduced-motion, hydration, responsive, keyboard, screen-reader, and modal-focus evidence;
+6. staging target identity plus exact migration ledger, object definitions/hashes, owners, fixed search paths, direct/effective ACLs, RLS/policies, service-role continuity, and negative personas;
+7. tested rollback/containment with exact artifacts, authority, stop conditions, and data-loss classification;
+8. exact deployed staging and production SHAs and post-change evidence;
+9. independent MOV-19 GO recommendation;
+10. explicit human ARM authorization before any production merge, migration, deployment, or target mutation.
 
 ## Safety statement
 
-No merge, deployment initiated by MOV-19, production alias change, destructive reset, paid resource, secret disclosure, force-push, hosted/production Supabase mutation, or hosted resource deletion was performed.
+No merge, deployment, hosted mutation, production mutation, secret disclosure, paid-resource creation, force-push, hosted deletion, or production traffic was performed by this validation update.
