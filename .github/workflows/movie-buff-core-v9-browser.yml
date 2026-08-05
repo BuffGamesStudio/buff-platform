@@ -1,0 +1,88 @@
+name: Movie Buff core v9 exact three-browser laboratory
+
+on:
+  push:
+    branches: [validation/movie-buff-core-v9-browser]
+    paths:
+      - ".github/workflows/movie-buff-core-v9-browser.yml"
+      - "scripts/movie-buff-core-v9-three-browser.sh"
+      - "scripts/movie-buff-core-v6-three-browser.mjs"
+      - "scripts/movie-buff-core-v6-local-users.mjs"
+      - "scripts/generated/movie-buff-launch-bootstrap.sql"
+      - "src/app/games/movie-buff/lobby/**"
+      - "src/app/sign-in/**"
+      - "src/components/AuthFormCard.tsx"
+      - "src/lib/auth/auth.ts"
+      - "supabase/**"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-core-v9-browser
+  COMPOSITION_SHA: e80f12b078cae64a65a61670458941e6bec15d70
+  COMPOSITION_TREE: 3bd6662685418f84bf2192928a5a13f63c3c7544
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-three-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Bind exact identity and parse wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          git merge-base --is-ancestor "${COMPOSITION_SHA}" HEAD
+          test "$(git rev-parse "${COMPOSITION_SHA}^{tree}")" = "${COMPOSITION_TREE}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          bash -n scripts/movie-buff-core-v9-three-browser.sh
+          node --check scripts/movie-buff-core-v6-three-browser.mjs
+          node --check scripts/movie-buff-core-v6-local-users.mjs
+      - name: Install committed lock
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute exact seeded three-browser laboratory
+        shell: bash
+        run: |
+          set +e
+          bash scripts/movie-buff-core-v9-three-browser.sh \
+            "${GITHUB_SHA}" \
+            "${COMPOSITION_SHA}" \
+            "${COMPOSITION_TREE}" \
+            "${RUNNER_TEMP}/movie-buff-core-v9-browser-evidence" \
+            "${RUNNER_TEMP}/movie-buff-core-v9-browser-users.json" \
+            "${RUNNER_TEMP}/movie-buff-core-v9-browser-playwright" \
+            "${RUNNER_TEMP}/movie-buff-core-v9-browser-stack"
+          exit $?
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-core-v9-browser-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-core-v9-browser-evidence
+          if-no-files-found: error
+          retention-days: 7
+      - if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
