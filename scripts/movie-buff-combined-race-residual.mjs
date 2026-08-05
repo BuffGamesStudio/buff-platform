@@ -50,14 +50,11 @@ const clients = users.map(() =>
     auth: { autoRefreshToken: false, persistSession: false },
   }),
 );
-const admin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
 const sessions = [];
 const ownedRooms = new Set();
 
 const evidence = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   classification: "UNKNOWN",
   sourceSha: checkoutSha,
   target: "disposable-localhost",
@@ -150,6 +147,13 @@ function createContext() {
   return { roomId, matchId, roundId, playerIds };
 }
 
+function cleanupContext(context) {
+  if (!context || !ownedRooms.has(context.roomId)) return;
+  ownerSql(`delete from public.game_rooms where id=${q(context.roomId)}::uuid;`);
+  ownedRooms.delete(context.roomId);
+  evidence.cleanup.push({ roomId: context.roomId, classification: "PASS" });
+}
+
 function phaseState(matchId) {
   return JSON.parse(
     ownerSql(`
@@ -179,14 +183,16 @@ function expirePhase(matchId) {
   `);
 }
 function expireVipWindow(matchId, roundId) {
+  const openedAt = new Date(Date.now() - 2000).toISOString();
   const deadline = new Date(Date.now() - 1000).toISOString();
   ownerSql(`
     update public.movie_buff_vip_round_windows
-    set deadline_at=${q(deadline)}::timestamptz,
+    set opened_at=${q(openedAt)}::timestamptz,
+        deadline_at=${q(deadline)}::timestamptz,
         updated_at=clock_timestamp()
     where round_id=${q(roundId)}::uuid;
     update public.movie_buff_match_phase_state
-    set phase_started_at=${q(new Date(Date.now() - 2000).toISOString())}::timestamptz,
+    set phase_started_at=${q(openedAt)}::timestamptz,
         phase_ends_at=${q(deadline)}::timestamptz
     where match_id=${q(matchId)}::uuid;
   `);
@@ -216,8 +222,9 @@ async function runPhaseAndVipRace() {
     "private VIP deadline finalization",
     "exactly-once vip_lock to board_select transition",
   ];
+  let context = null;
   try {
-    const context = createContext();
+    context = createContext();
     const initial = await view(0, context.roomId);
     assert.equal(initial.phase, "round_intro");
     expirePhase(context.matchId);
@@ -305,6 +312,16 @@ async function runPhaseAndVipRace() {
     });
   } catch (error) {
     recordMissing(names, error);
+  } finally {
+    try {
+      cleanupContext(context);
+    } catch (error) {
+      evidence.cleanup.push({
+        roomId: context?.roomId ?? null,
+        classification: "FAIL",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
 
@@ -314,8 +331,9 @@ async function runExpiryAndBusterRace() {
     "Buster inactivity during VIP",
     "Buster activation only at board-safe boundary",
   ];
+  let context = null;
   try {
-    const context = createContext();
+    context = createContext();
     const initial = await view(1, context.roomId);
     expirePhase(context.matchId);
     const intro = await rpc(1, "advance_movie_buff_match_phase", {
@@ -425,6 +443,16 @@ async function runExpiryAndBusterRace() {
     });
   } catch (error) {
     recordMissing(names, error);
+  } finally {
+    try {
+      cleanupContext(context);
+    } catch (error) {
+      evidence.cleanup.push({
+        roomId: context?.roomId ?? null,
+        classification: "FAIL",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
 
