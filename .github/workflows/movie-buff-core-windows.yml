@@ -29,7 +29,7 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 35
     env:
-      EXPECTED_SHA: ${{ github.sha }}
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Check out exact SHA
@@ -49,7 +49,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:GITHUB_REF_NAME -ne $env:EXPECTED_BRANCH) { throw "Wrong branch: $env:GITHUB_REF_NAME" }
+          $actualBranch = if ($env:GITHUB_HEAD_REF) { $env:GITHUB_HEAD_REF } else { $env:GITHUB_REF_NAME }
+          if ($actualBranch -ne $env:EXPECTED_BRANCH) { throw "Wrong branch: $actualBranch" }
+          if ((git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'Wrong checked-out SHA' }
           git merge-base --is-ancestor $env:RAW_COMPOSITION_SHA HEAD
           if ($LASTEXITCODE -ne 0) { throw 'Raw composition is not an ancestor' }
           $tree = (git rev-parse 'HEAD^{tree}').Trim()
