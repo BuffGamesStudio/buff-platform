@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      EXPECTED_SHA: ${{ github.sha }}
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
       SUPABASE_SERVICE_ROLE_KEY: local-placeholder
@@ -72,7 +72,8 @@ jobs:
           set -euo pipefail
           evidence_dir="${RUNNER_TEMP}/movie-buff-core-source-evidence"
           mkdir -p "${evidence_dir}"
-          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          actual_branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${actual_branch}" = "${EXPECTED_BRANCH}"
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
           test "$(git remote get-url origin)" = "${EXPECTED_REMOTE}"
           git merge-base --is-ancestor "${RAW_COMPOSITION_SHA}" HEAD
@@ -147,13 +148,14 @@ jobs:
           set -euo pipefail
           evidence_dir="${EVIDENCE_DIR:-${RUNNER_TEMP}/movie-buff-core-source-evidence}"
           mkdir -p "${evidence_dir}"
+          actual_branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           git diff --check
           test -z "$(git status --porcelain)"
           {
             echo "lane=movie-buff-core-v1"
             echo "repository=${EXPECTED_REPOSITORY}"
             echo "remote=$(git remote get-url origin)"
-            echo "source_branch=${GITHUB_REF_NAME}"
+            echo "source_branch=${actual_branch}"
             echo "source_sha=$(git rev-parse HEAD)"
             echo "source_tree=$(git rev-parse HEAD^{tree})"
             echo "raw_composition_sha=${RAW_COMPOSITION_SHA}"
