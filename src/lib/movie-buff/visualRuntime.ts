@@ -10,6 +10,8 @@ export type MovieBuffCanonicalVisualSourcePhase =
   | "abandoned"
   | "blocked";
 
+export type MovieBuffTransitionPresentation = "curtain" | "film_slate";
+
 export type MovieBuffVisualPhase =
   | "loading"
   | "round_intro"
@@ -28,6 +30,7 @@ export type MovieBuffVisualPhase =
 export type MovieBuffCanonicalVisualSource = {
   phase: MovieBuffCanonicalVisualSourcePhase | (string & {});
   selectedTileId: string | null;
+  transitionPresentation: MovieBuffTransitionPresentation | null;
 };
 
 export type MovieBuffVisualPhaseMapping = {
@@ -72,6 +75,10 @@ function invalidVisualPhase(reason: string): MovieBuffVisualPhaseMapping {
 export function mapMovieBuffAuthoritativePhaseToVisualPhase(
   source: MovieBuffCanonicalVisualSource,
 ): MovieBuffVisualPhaseMapping {
+  if (source.phase !== "transition" && source.transitionPresentation !== null) {
+    return invalidVisualPhase("TRANSITION_PRESENTATION_OUTSIDE_TRANSITION");
+  }
+
   switch (source.phase) {
     case "round_intro":
       return { phase: "round_intro", valid: true, reason: null };
@@ -86,7 +93,17 @@ export function mapMovieBuffAuthoritativePhaseToVisualPhase(
       if (source.selectedTileId === null) {
         return invalidVisualPhase("TRANSITION_MISSING_SELECTED_TILE");
       }
-      return { phase: "film_slate_transition", valid: true, reason: null };
+      if (source.transitionPresentation === null) {
+        return invalidVisualPhase("TRANSITION_PRESENTATION_MISSING");
+      }
+      return {
+        phase:
+          source.transitionPresentation === "curtain"
+            ? "curtain_transition"
+            : "film_slate_transition",
+        valid: true,
+        reason: null,
+      };
     case "playback":
       return { phase: "playback", valid: true, reason: null };
     case "answer":
