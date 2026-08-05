@@ -24,8 +24,8 @@ permissions:
 
 env:
   EXPECTED_BRANCH: validation/movie-buff-core-v2
-  RAW_COMPOSITION_SHA: bcaa2c5a15ea74b0b2ad7de56b411405310f1dd1
-  RAW_COMPOSITION_TREE: 877b971b07fa1b509979c6dc1c7bd171850eaae3
+  RAW_COMPOSITION_SHA: 186a4cc1c5995fd07b374392528d8c5424db8f02
+  RAW_COMPOSITION_TREE: 02a579e275d4efeaa7bf0f077cab2e686cc5e448
 
 jobs:
   windows-command-lab:
