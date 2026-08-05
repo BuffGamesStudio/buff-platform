@@ -30,12 +30,12 @@ env:
   EXPECTED_BRANCH: validation/movie-buff-core-v2
   EXPECTED_REPOSITORY: BuffGamesStudio/buff-platform
   EXPECTED_REMOTE: https://github.com/BuffGamesStudio/buff-platform
-  RAW_COMPOSITION_SHA: 1825e452fa5e3caa24f5a99ac27e974d14b3ab66
-  RAW_COMPOSITION_TREE: 75d61e32ab0aceeff142ce76e9328d9eed7f2888
+  RAW_COMPOSITION_SHA: bcaa2c5a15ea74b0b2ad7de56b411405310f1dd1
+  RAW_COMPOSITION_TREE: 877b971b07fa1b509979c6dc1c7bd171850eaae3
   MOV15_SHA: 4906147038a5a2deda5c13fdafc6f07b66ae100b
   MOV15_TREE: aab4b0256683ec77a4d9e3373fd84f60ba682e88
-  MOV16_SHA: 95c292ead66fc83cf13d7154bd3cf691610f549d
-  MOV16_TREE: 04267651da0b9caa741d95bcea01a096b5086a31
+  MOV16_SHA: 8c28d2ba24283f3529dc52aef1c335ab58d99edb
+  MOV16_TREE: 73bffa36d16bf784c905444751e5bc5740a2aa07
   MOV17_SHA: 6d7e9aabe5b07796a3a17fdf6c11df091dd1f978
   MOV17_TREE: 8264d2e30b0c75a8bebaa1ad938df6a635f7d991
   ENCODING_SHA: bf5e6d6f251f6840d17eed2fc68e0d580295437f
@@ -79,6 +79,11 @@ jobs:
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
           test "$(git remote get-url origin)" = "${EXPECTED_REMOTE}"
           git merge-base --is-ancestor "${RAW_COMPOSITION_SHA}" HEAD
+          test "$(git rev-parse "${RAW_COMPOSITION_SHA}^{tree}")" = "${RAW_COMPOSITION_TREE}"
+          test "$(git rev-parse "${MOV15_SHA}^{tree}")" = "${MOV15_TREE}"
+          test "$(git rev-parse "${MOV16_SHA}^{tree}")" = "${MOV16_TREE}"
+          test "$(git rev-parse "${MOV17_SHA}^{tree}")" = "${MOV17_TREE}"
+          test "$(git rev-parse "${ENCODING_SHA}^{tree}")" = "${ENCODING_TREE}"
           test -z "$(git status --porcelain)"
           git diff --name-only "${RAW_COMPOSITION_SHA}"..HEAD > "${evidence_dir}/validation-owned-paths.txt"
           while IFS= read -r file; do
