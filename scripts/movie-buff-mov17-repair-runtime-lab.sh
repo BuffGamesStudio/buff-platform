@@ -97,13 +97,39 @@ PY
   code=$?; record_exit user-shape "$code"
   if [[ "$code" -ne 0 ]]; then fail_step user-shape; return; fi
 
+  local diagnostic_runner="${RUNNER_TEMP:-/tmp}/movie-buff-mov17-repair-runtime-diagnostic.mjs"
+  python3 - "$SOURCE_ROOT/scripts/movie-buff-mov17-repair-runtime.mjs" "$diagnostic_runner" <<'PY_DIAGNOSTIC'
+import pathlib,sys
+source=pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+source=source.replace(
+  'const sessions = [];\nconst evidence = {',
+  'const sessions = [];\nlet activeStage = "authentication";\nconst evidence = {',
+  1,
+)
+source=source.replace(
+  '  await runBusterBoundaryRace();\n  await runLeaveConcurrency();\n  await runNoHumanCancellation();',
+  '  activeStage = "buster-boundary";\n  await runBusterBoundaryRace();\n  activeStage = "leave-concurrency";\n  await runLeaveConcurrency();\n  activeStage = "no-human-cancellation";\n  await runNoHumanCancellation();',
+  1,
+)
+old_catch = '  record("runtime laboratory", "FAIL", {\n    error: error instanceof Error\n      ? { name: error.name, message: error.message, stack: error.stack }\n      : { message: String(error) },\n  });'
+new_catch = '  const structuredError = error instanceof Error\n    ? { name: error.name, message: error.message, stack: error.stack }\n    : error && typeof error === "object"\n      ? { ...error, message: error.message ?? JSON.stringify(error) }\n      : { message: String(error) };\n  record("runtime laboratory", "FAIL", { stage: activeStage, error: structuredError });'
+if old_catch not in source:
+  raise SystemExit('diagnostic catch anchor not found')
+source=source.replace(old_catch,new_catch,1)
+pathlib.Path(sys.argv[2]).write_text(source,encoding='utf-8')
+PY_DIAGNOSTIC
+  node --check "$diagnostic_runner" >"$RAW_DIR/diagnostic-parse.stdout.log" 2>"$RAW_DIR/diagnostic-parse.stderr.log"
+  code=$?; record_exit diagnostic-parse "$code"
+  if [[ "$code" -ne 0 ]]; then fail_step diagnostic-parse; return; fi
+
   (
     cd "$SOURCE_ROOT"
     MOVIE_BUFF_EXPECTED_GIT_SHA="$EXPECTED_SHA" \
     MOVIE_BUFF_TEST_USERS="$test_users" \
     MOVIE_BUFF_EVIDENCE_OUTPUT="$EVIDENCE_DIR/runtime.json" \
-      node scripts/movie-buff-mov17-repair-runtime.mjs
+      node "$diagnostic_runner"
   ) >"$RAW_DIR/runtime.stdout.log" 2>"$RAW_DIR/runtime.stderr.log"
+  rm -f "$diagnostic_runner"
   code=$?; record_exit runtime "$code"
   if [[ "$code" -ne 0 ]]; then fail_step runtime; return; fi
 }
