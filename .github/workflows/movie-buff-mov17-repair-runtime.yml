@@ -1,0 +1,93 @@
+name: MOV-17 repair exact runtime matrix
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-mov17-repair-runtime-20260805
+    paths:
+      - .github/workflows/movie-buff-mov17-repair-runtime.yml
+      - scripts/movie-buff-mov17-repair-runtime.mjs
+      - scripts/movie-buff-mov17-repair-runtime-lab.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-mov17-repair-runtime-20260805
+  COMPOSITION_SHA: 659eb5508ad8b160faa22feb677203b86b63b6de
+  COMPOSITION_TREE: a34b4ccd9434d4eb001b19af189012a14a215d80
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind exact composition and controller-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          git merge-base --is-ancestor "${COMPOSITION_SHA}" HEAD
+          test "$(git rev-parse "${COMPOSITION_SHA}^{tree}")" = "${COMPOSITION_TREE}"
+          mapfile -t changed < <(git diff --name-only "${COMPOSITION_SHA}" HEAD | sort)
+          test "${#changed[@]}" -eq 3
+          test "${changed[0]}" = ".github/workflows/movie-buff-mov17-repair-runtime.yml"
+          test "${changed[1]}" = "scripts/movie-buff-mov17-repair-runtime-lab.sh"
+          test "${changed[2]}" = "scripts/movie-buff-mov17-repair-runtime.mjs"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          bash -n scripts/movie-buff-mov17-repair-runtime-lab.sh
+          node --check scripts/movie-buff-mov17-repair-runtime.mjs
+          docker --version
+          psql --version
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Execute exact disposable runtime matrix
+        shell: bash
+        run: |
+          bash scripts/movie-buff-mov17-repair-runtime-lab.sh \
+            "${GITHUB_SHA}" \
+            "${COMPOSITION_SHA}" \
+            "${COMPOSITION_TREE}" \
+            "${RUNNER_TEMP}/mov17-repair-runtime" \
+            "${RUNNER_TEMP}/mov17-repair-runtime-stack" \
+            "${RUNNER_TEMP}/mov17-repair-runtime-users.json"
+
+      - name: Upload exact runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov17-repair-runtime-${{ github.sha }}
+          path: ${{ runner.temp }}/mov17-repair-runtime
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
