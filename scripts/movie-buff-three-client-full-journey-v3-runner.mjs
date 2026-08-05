@@ -63,17 +63,6 @@ transformed = transformed.replace(chromiumLaunch, chromeLaunch);
 assert.equal(transformed.split(chromiumLaunch).length - 1, 0);
 assert.equal(transformed.split(chromeLaunch).length - 1, 1);
 
-const browserEvidenceAnchor = "  browserProcessCount: 3,\n";
-assert.equal(
-  transformed.split(browserEvidenceAnchor).length - 1,
-  1,
-  "expected one browser evidence anchor",
-);
-transformed = transformed.replace(
-  browserEvidenceAnchor,
-  '  browserChannel: "chrome",\n  browserProcessCount: 3,\n',
-);
-
 const processCheckAnchor = 'pass("three-independent-chromium-processes");';
 assert.equal(
   transformed.split(processCheckAnchor).length - 1,
@@ -82,7 +71,7 @@ assert.equal(
 );
 transformed = transformed.replace(
   processCheckAnchor,
-  'pass("three-independent-chrome-processes");',
+  'pass("three-independent-chrome-processes", { channel: "chrome" });',
 );
 
 const transformedPath = path.join(
