@@ -16,6 +16,20 @@ const runtimeMediaRouteSource = await readFile(
   ),
   "utf8",
 );
+const autoplayPolicySource = await readFile(
+  new URL(
+    "../src/components/movie-buff/MovieBuffMediaAutoplayPolicy.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const movieBuffLayoutSource = await readFile(
+  new URL(
+    "../src/app/games/movie-buff/layout.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 test("round media resolves the authoritative asset and redirects GET playback", () => {
   assert.match(routeSource, /getRoundGeneratedClip\(roundId\)/);
@@ -54,7 +68,7 @@ test("late-generated runtime media has a guarded production route", () => {
   assert.match(runtimeMediaRouteSource, /runtime-generated/);
   assert.match(runtimeMediaRouteSource, /resolveRuntimeMediaPath/);
   assert.match(runtimeMediaRouteSource, /relativePath\.startsWith\("\.\."\)/);
-  assert.match(runtimeMediaRouteSource, /!\/\^\[A-Za-z0-9\._-\]\+\$\//);
+  assert.match(runtimeMediaRouteSource, /segment === "\.\."/);
   assert.match(runtimeMediaRouteSource, /stats\.isFile\(\)/);
 });
 
@@ -67,4 +81,18 @@ test("runtime media route supports native browser range playback", () => {
   assert.match(runtimeMediaRouteSource, /createReadStream/);
   assert.match(runtimeMediaRouteSource, /Readable\.toWeb/);
   assert.match(runtimeMediaRouteSource, /export async function HEAD/);
+});
+
+test("Movie Buff applies browser-safe muted autoplay without phase authority", () => {
+  assert.match(movieBuffLayoutSource, /MovieBuffMediaAutoplayPolicy/);
+  assert.match(autoplayPolicySource, /media\.defaultMuted = true/);
+  assert.match(autoplayPolicySource, /media\.muted = true/);
+  assert.match(autoplayPolicySource, /MutationObserver/);
+  assert.match(autoplayPolicySource, /media\.play\(\)/);
+  assert.match(autoplayPolicySource, /Enable clip sound/);
+  assert.match(autoplayPolicySource, /aria-pressed/);
+  assert.doesNotMatch(
+    autoplayPolicySource,
+    /advanceMovieBuff|selectMovieBuff|submitMovieBuff|phaseVersion/,
+  );
 });

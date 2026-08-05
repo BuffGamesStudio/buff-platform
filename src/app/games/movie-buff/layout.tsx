@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { MovieBuffAuthoritativeNavigation } from "@/components/movie-buff/MovieBuffAuthoritativeNavigation";
+import { MovieBuffMediaAutoplayPolicy } from "@/components/movie-buff/MovieBuffMediaAutoplayPolicy";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default function MovieBuffLayout({
           {buildIdentity}
         </div>
       ) : null}
+      <MovieBuffMediaAutoplayPolicy />
       {children}
     </MovieBuffAuthoritativeNavigation>
   );
