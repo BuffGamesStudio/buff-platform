@@ -3,7 +3,7 @@ name: Movie Buff exact composition laboratories
 on:
   push:
     branches:
-      - validation/movie-buff-exact-mov15-mov16-mov17-pr12-20260805-v2
+      - validation/movie-buff-exact-mov15-mov16-mov17-pr12-20260805-v3
     paths:
       - ".github/workflows/movie-buff-exact-composition-labs.yml"
       - "scripts/movie-buff-exact-local-users.mjs"
@@ -14,8 +14,8 @@ permissions:
   contents: read
 
 env:
-  EXPECTED_BRANCH: validation/movie-buff-exact-mov15-mov16-mov17-pr12-20260805-v2
-  COMPOSITION_SHA: b4f8e2196a8a0423e7340ac97bd5592d58a966db
+  EXPECTED_BRANCH: validation/movie-buff-exact-mov15-mov16-mov17-pr12-20260805-v3
+  COMPOSITION_SHA: 54a5afa2cb0212806bb81042001fb382a43aa77c
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
 
@@ -41,7 +41,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           test "$(git rev-parse HEAD^1)" = "${COMPOSITION_SHA}"
           git merge-base --is-ancestor 0ecf8de86d2ea1a28c1496ed044a5092a7d3ffcb "${COMPOSITION_SHA}"
-          git merge-base --is-ancestor 95c292ead66fc83cf13d7154bd3cf691610f549d "${COMPOSITION_SHA}"
+          git merge-base --is-ancestor d50a2417b95b6a37548bba914584cef309d707a9 "${COMPOSITION_SHA}"
           git merge-base --is-ancestor 6d7e9aabe5b07796a3a17fdf6c11df091dd1f978 "${COMPOSITION_SHA}"
           git merge-base --is-ancestor bf5e6d6f251f6840d17eed2fc68e0d580295437f "${COMPOSITION_SHA}"
           test -z "$(git status --porcelain)"
