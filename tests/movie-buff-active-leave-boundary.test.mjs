@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 const migration = fs.readFileSync(
@@ -22,6 +23,24 @@ const authorization = fs.readFileSync(
   "src/lib/server/movieBuffPhaseRouteAuthorization.ts",
   "utf8",
 );
+
+test("database migrations contain no UTF-8 byte-order marks", () => {
+  const migrationDirectory = "supabase/migrations";
+  const bomFiles = fs
+    .readdirSync(migrationDirectory)
+    .filter((fileName) => fileName.endsWith(".sql"))
+    .filter((fileName) => {
+      const bytes = fs.readFileSync(path.join(migrationDirectory, fileName));
+      return bytes.length >= 3 && bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]));
+    })
+    .sort();
+
+  assert.deepEqual(
+    bomFiles,
+    [],
+    `UTF-8 BOM blocks Supabase migration parsing: ${bomFiles.join(", ")}`,
+  );
+});
 
 test("VIP or intro abandonment becomes Buster atomically on board entry", () => {
   assert.match(migration, /movie_buff_activate_busters_on_phase_boundary/);
