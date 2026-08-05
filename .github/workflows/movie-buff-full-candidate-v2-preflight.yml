@@ -27,8 +27,6 @@ jobs:
     timeout-minutes: 120
     env:
       EXPECTED_SHA: ${{ github.sha }}
-      SOURCE_EVIDENCE: ${{ runner.temp }}/movie-buff-full-candidate-v2-source
-      DATABASE_EVIDENCE: ${{ runner.temp }}/movie-buff-full-candidate-v2-database
 
     steps:
       - name: Check out exact candidate
@@ -53,6 +51,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          SOURCE_EVIDENCE="${RUNNER_TEMP}/movie-buff-full-candidate-v2-source"
+          DATABASE_EVIDENCE="${RUNNER_TEMP}/movie-buff-full-candidate-v2-database"
+          echo "SOURCE_EVIDENCE=${SOURCE_EVIDENCE}" >> "${GITHUB_ENV}"
+          echo "DATABASE_EVIDENCE=${DATABASE_EVIDENCE}" >> "${GITHUB_ENV}"
           mkdir -p "${SOURCE_EVIDENCE}" "${DATABASE_EVIDENCE}"
           test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
@@ -151,8 +153,8 @@ jobs:
         with:
           name: movie-buff-full-candidate-v2-${{ env.EXPECTED_SHA }}
           path: |
-            ${{ env.SOURCE_EVIDENCE }}
-            ${{ env.DATABASE_EVIDENCE }}
+            ${{ runner.temp }}/movie-buff-full-candidate-v2-source
+            ${{ runner.temp }}/movie-buff-full-candidate-v2-database
           if-no-files-found: error
           retention-days: 14
 
