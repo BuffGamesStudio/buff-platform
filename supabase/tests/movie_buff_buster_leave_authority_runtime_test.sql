@@ -457,7 +457,9 @@ begin
     '20000000-0000-4000-8000-000000000001'
   );
   update public.movie_buff_active_leave_quotes
-  set expires_at = pg_catalog.clock_timestamp() - interval '1 second'
+  set
+    created_at = pg_catalog.clock_timestamp() - interval '2 seconds',
+    expires_at = pg_catalog.clock_timestamp() - interval '1 second'
   where quote_token = (v_expired_quote ->> 'quoteToken')::uuid;
 
   begin
