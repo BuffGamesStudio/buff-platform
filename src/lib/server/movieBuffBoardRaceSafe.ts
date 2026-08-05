@@ -12,10 +12,12 @@ function isBoardCreationRace(error: unknown): boolean {
     details?: unknown;
   };
   const text = `${String(candidate.message ?? "")} ${String(candidate.details ?? "")}`;
-  return (
-    candidate.code === "23505" &&
-    /movie_buff_boards_room_id_key|movie_buff_boards.*room_id/i.test(text)
-  );
+  const namesExactRoomConstraint = /movie_buff_boards_room_id_key/i.test(text);
+  const identifiesUniqueViolation =
+    candidate.code === "23505" ||
+    /duplicate key value violates unique constraint/i.test(text);
+
+  return namesExactRoomConstraint && identifiesUniqueViolation;
 }
 
 async function waitForCompletedBoard(roomId: string): Promise<void> {
