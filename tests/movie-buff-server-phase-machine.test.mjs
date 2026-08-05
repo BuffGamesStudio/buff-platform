@@ -45,16 +45,24 @@ test("navigation changes only when canonical route differs", () => {
 });
 
 test("contract forbids browser, local timer, and animation authority", () => {
-  assert.match(contract, /browser may render timers, animations, and routes, but it may not create, extend, skip, or advance a phase/i);
-  assert.match(contract, /Animation completion callbacks cannot advance the match/i);
-  assert.match(contract, /Normal-path controls named `Start Round`/i);
+  assert.match(contract, /Clients derive time from server `now\(\)`/i);
+  assert.match(contract, /Normal-path `Start Round`/i);
+  assert.match(contract, /Animation callbacks never advance state/i);
+  assert.match(
+    contract,
+    /the browser may not invent a value or continue with preview data/i,
+  );
 });
 
 test("contract defines human, Buster, and system authority", () => {
   assert.match(contract, /Lobby membership is not active-match authority/i);
   assert.match(contract, /Buster is not a fake user profile/i);
-  assert.match(contract, /The `system` is not a seat or player/i);
-  assert.match(contract, /`room_players\.left_at is null` alone is not an active-human predicate/i);
+  assert.match(contract, /The `system` is a trusted non-seat actor/i);
+  assert.match(
+    contract,
+    /must never appear as a participant-seat controller value/i,
+  );
+  assert.match(contract, /`room_players\.left_at is null` alone is not sufficient/i);
 });
 
 test("contract defines VIP auto-pass and active leave authority", () => {
