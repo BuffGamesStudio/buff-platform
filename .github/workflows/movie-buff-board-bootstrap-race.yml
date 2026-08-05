@@ -1,0 +1,143 @@
+name: MOV-17 race-safe board bootstrap evidence
+
+on:
+  push:
+    branches: [copilot/MOV-17-board-bootstrap-race]
+    paths:
+      - ".github/workflows/movie-buff-board-bootstrap-race.yml"
+      - "src/app/api/movie-buff/match/view/route.ts"
+      - "src/lib/server/movieBuffBoardRaceSafe.ts"
+      - "tests/movie-buff-board-bootstrap-race.test.mjs"
+  pull_request:
+    branches: [integration/movie-buff]
+    paths:
+      - ".github/workflows/movie-buff-board-bootstrap-race.yml"
+      - "src/app/api/movie-buff/match/view/route.ts"
+      - "src/lib/server/movieBuffBoardRaceSafe.ts"
+      - "tests/movie-buff-board-bootstrap-race.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_BRANCH: copilot/MOV-17-board-bootstrap-race
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Bind exact source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          git merge-base --is-ancestor 6d7e9aabe5b07796a3a17fdf6c11df091dd1f978 HEAD
+          test -z "$(git status --porcelain)"
+          node --version
+          npm --version
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run board-bootstrap race contract
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-board-bootstrap-race
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          node --test tests/movie-buff-board-bootstrap-race.test.mjs \
+            2>&1 | tee "${EVIDENCE_DIR}/board-bootstrap-race.tap"
+
+      - name: Run MOV-17 repository contracts
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-board-bootstrap-race
+        run: |
+          set -euo pipefail
+          node --test \
+            tests/movie-buff-server-phase-machine.test.mjs \
+            tests/movie-buff-authoritative-phase-runtime.test.mjs \
+            tests/movie-buff-buster-safe-boundary.test.mjs \
+            tests/movie-buff-phase-tile-mutation-guard.test.mjs \
+            tests/movie-buff-match-start-handoff.test.mjs \
+            2>&1 | tee "${EVIDENCE_DIR}/mov17-contracts.tap"
+
+      - name: Run TypeScript
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-board-bootstrap-race
+        run: |
+          set -euo pipefail
+          npx --no-install tsc --noEmit 2>&1 | tee "${EVIDENCE_DIR}/typescript.txt"
+
+      - name: Run localhost-placeholder production build
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-board-bootstrap-race
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-build-publishable-key
+          SUPABASE_SERVICE_ROLE_KEY: local-build-service-role-key
+        run: |
+          set -euo pipefail
+          npm run build 2>&1 | tee "${EVIDENCE_DIR}/build.txt"
+
+      - name: Verify clean postflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Write exact-SHA metadata and hashes
+        if: always()
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-board-bootstrap-race
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          {
+            echo "classification=${{ job.status == 'success' && 'PASS' || 'FAIL' }}"
+            echo "lane=MOV-17-board-bootstrap-race"
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "mov17_parent=6d7e9aabe5b07796a3a17fdf6c11df091dd1f978"
+            echo "database_behavior=UNKNOWN"
+            echo "browser_behavior=UNKNOWN"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${EVIDENCE_DIR}/metadata.txt"
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+              | sort -z | xargs -0 sha256sum > sha256.txt
+            sha256sum -c sha256.txt
+          )
+
+      - name: Upload exact-SHA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-board-bootstrap-race-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/movie-buff-board-bootstrap-race
+          if-no-files-found: error
+          retention-days: 7
