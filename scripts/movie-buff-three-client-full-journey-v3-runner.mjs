@@ -74,6 +74,89 @@ transformed = transformed.replace(
   'pass("three-independent-chrome-processes", { channel: "chrome" });',
 );
 
+const consoleEvidenceAnchor = `  consoleErrors: [],
+  failedResponses: [],`;
+const consoleEvidenceReplacement = `  consoleErrors: [],
+  expectedOfflineConsoleErrors: [],
+  failedResponses: [],`;
+assert.equal(
+  transformed.split(consoleEvidenceAnchor).length - 1,
+  1,
+  "expected one console evidence anchor",
+);
+transformed = transformed.replace(
+  consoleEvidenceAnchor,
+  consoleEvidenceReplacement,
+);
+
+const consoleObserverAnchor = `  page.on("console", (message) => {
+    if (message.type() === "error") evidence.consoleErrors.push({ player: index + 1, message: redact(message.text()) });
+  });`;
+const consoleObserverReplacement = `  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    const text = redact(message.text());
+    if (offlineExercise[index] && text.includes("ERR_INTERNET_DISCONNECTED")) {
+      evidence.expectedOfflineConsoleErrors.push({ player: index + 1, message: text });
+      return;
+    }
+    evidence.consoleErrors.push({ player: index + 1, message: text });
+  });`;
+assert.equal(
+  transformed.split(consoleObserverAnchor).length - 1,
+  1,
+  "expected one console observer anchor",
+);
+transformed = transformed.replace(
+  consoleObserverAnchor,
+  consoleObserverReplacement,
+);
+
+const historyAnchor = `  await pages[1].goBack({ waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => null);
+  await pages[1].waitForURL(/\\/games\\/movie-buff\\/play\\?/, { timeout: 60_000 });
+  const backView = await getView(1, roomId);
+  assert.equal(backView.phase, "answer");
+  await pages[1].goForward({ waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => null);
+  await pages[1].waitForURL(/\\/games\\/movie-buff\\/play\\?/, { timeout: 60_000 });
+  const forwardView = await getView(1, roomId);
+  assert.equal(forwardView.phase, "answer");
+  pass("browser-back-forward-reconciles-to-authoritative-phase", { backVersion: backView.phaseVersion, forwardVersion: forwardView.phaseVersion });`;
+const historyReplacement = `  await pages[1].goBack({ waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => null);
+  const backUrl = new URL(pages[1].url());
+  assert.ok(backUrl.pathname.startsWith("/games/movie-buff/"), \`Back escaped Movie Buff: \${backUrl.pathname}\`);
+  const backView = await getView(1, roomId);
+  assert.equal(backView.phase, "answer");
+  await pages[1].goForward({ waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => null);
+  await pages[1].waitForURL(/\\/games\\/movie-buff\\/play\\?/, { timeout: 60_000 });
+  const forwardView = await getView(1, roomId);
+  assert.equal(forwardView.phase, "answer");
+  pass("browser-back-forward-preserves-authoritative-phase", {
+    backPath: backUrl.pathname,
+    forwardPath: new URL(pages[1].url()).pathname,
+    backVersion: backView.phaseVersion,
+    forwardVersion: forwardView.phaseVersion,
+  });`;
+assert.equal(
+  transformed.split(historyAnchor).length - 1,
+  1,
+  "expected one browser history anchor",
+);
+transformed = transformed.replace(historyAnchor, historyReplacement);
+
+const finalEvidenceAnchor = `    expectedOfflineRequestFailures: evidence.failedRequests.filter((request) => request.expectedOfflineExercise).length,
+    expectedNavigationAborts: evidence.failedRequests.filter((request) => request.errorText === "net::ERR_ABORTED").length,`;
+const finalEvidenceReplacement = `    expectedOfflineRequestFailures: evidence.failedRequests.filter((request) => request.expectedOfflineExercise).length,
+    expectedOfflineConsoleErrors: evidence.expectedOfflineConsoleErrors.length,
+    expectedNavigationAborts: evidence.failedRequests.filter((request) => request.errorText === "net::ERR_ABORTED").length,`;
+assert.equal(
+  transformed.split(finalEvidenceAnchor).length - 1,
+  1,
+  "expected one final evidence detail anchor",
+);
+transformed = transformed.replace(
+  finalEvidenceAnchor,
+  finalEvidenceReplacement,
+);
+
 const transformedPath = path.join(
   runnerTemp,
   `movie-buff-three-client-full-journey-v4-${process.pid}.mjs`,
