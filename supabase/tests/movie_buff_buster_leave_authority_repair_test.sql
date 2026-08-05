@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap;
-select plan(18);
+select plan(25);
 
 select has_table(
   'public',
@@ -153,6 +153,75 @@ select is(
   ),
   0,
   'migration seeds no unapproved active penalty policy'
+);
+
+select is(
+  (
+    select r.rolname
+    from pg_catalog.pg_proc as p
+    join pg_catalog.pg_roles as r on r.oid = p.proowner
+    where p.oid =
+      'public.movie_buff_phase_release_vip_participant(uuid,uuid,uuid,text)'::regprocedure
+  ),
+  'postgres',
+  'release adapter is owned by postgres'
+);
+select is(
+  (
+    select p.proconfig
+    from pg_catalog.pg_proc as p
+    where p.oid =
+      'public.movie_buff_phase_release_vip_participant(uuid,uuid,uuid,text)'::regprocedure
+  ),
+  array['search_path=pg_catalog']::text[],
+  'release adapter fixes search_path to pg_catalog'
+);
+select ok(
+  pg_catalog.position(
+    'when ''disconnect_grace_expired'' then ''reconnect_grace_expired'''
+    in pg_catalog.lower(
+      pg_catalog.pg_get_functiondef(
+        'public.movie_buff_phase_release_vip_participant(uuid,uuid,uuid,text)'::regprocedure
+      )
+    )
+  ) > 0,
+  'disconnect expiry is canonicalized to the existing MOV-16 reason'
+);
+select ok(
+  pg_catalog.position(
+    'release_movie_buff_vip_required_player'
+    in pg_catalog.pg_get_functiondef(
+      'public.movie_buff_phase_release_vip_participant(uuid,uuid,uuid,text)'::regprocedure
+    )
+  ) > 0,
+  'adapter still delegates to MOV-16 release authority'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.movie_buff_phase_release_vip_participant(uuid,uuid,uuid,text)',
+    'EXECUTE'
+  ),
+  'authenticated cannot call the internal release adapter'
+);
+select ok(
+  has_function_privilege(
+    'service_role',
+    'public.movie_buff_phase_release_vip_participant(uuid,uuid,uuid,text)',
+    'EXECUTE'
+  ),
+  'service role retains internal release-adapter continuity'
+);
+select ok(
+  pg_catalog.position(
+    'already released with a different reason'
+    in pg_catalog.lower(
+      pg_catalog.pg_get_functiondef(
+        'public.release_movie_buff_vip_required_player(uuid,uuid,uuid,text)'::regprocedure
+      )
+    )
+  ) > 0,
+  'MOV-16 still rejects unrelated contradictory release reasons'
 );
 
 select * from finish();

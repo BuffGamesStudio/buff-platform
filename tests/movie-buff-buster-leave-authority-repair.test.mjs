@@ -6,8 +6,20 @@ const migration = fs.readFileSync(
   "supabase/migrations/20260805194500_movie_buff_buster_leave_authority_repair.sql",
   "utf8",
 );
+const alignmentMigration = fs.readFileSync(
+  "supabase/migrations/20260804083710_movie_buff_disconnect_release_reason_alignment.sql",
+  "utf8",
+);
 const rollback = fs.readFileSync(
   "supabase/rollbacks/20260805194500_movie_buff_buster_leave_authority_repair.rollback.sql",
+  "utf8",
+);
+const alignmentRollback = fs.readFileSync(
+  "supabase/rollbacks/20260804083710_movie_buff_disconnect_release_reason_alignment.rollback.sql",
+  "utf8",
+);
+const vipReleaseHardening = fs.readFileSync(
+  "supabase/migrations/20260804073200_movie_buff_vip_snapshot_release_hardening.sql",
   "utf8",
 );
 const quoteRoute = fs.readFileSync(
@@ -76,6 +88,36 @@ test("penalties use one immutable ledger row and one score mutation", () => {
   assert.match(migration, /Contradictory duplicate Movie Buff abandonment penalty/);
   assert.match(migration, /left_at = coalesce\(left_at, v_now\)/);
   assert.match(migration, /participant_abandoned/);
+});
+
+test("disconnect expiry uses one canonical MOV-16 release reason", () => {
+  assert.match(
+    alignmentMigration,
+    /when 'disconnect_grace_expired' then 'reconnect_grace_expired'/,
+  );
+  assert.match(
+    alignmentMigration,
+    /release_movie_buff_vip_required_player\(\$1,\$2,\$3,\$4\)/,
+  );
+  assert.match(alignmentMigration, /set search_path = pg_catalog/);
+  assert.match(alignmentMigration, /owner to postgres/);
+  assert.match(alignmentMigration, /to service_role/);
+  assert.doesNotMatch(
+    alignmentMigration,
+    /when 'voluntary_active_leave'/,
+  );
+  assert.match(
+    vipReleaseHardening,
+    /already released with a different reason/,
+  );
+  assert.match(
+    alignmentRollback,
+    /preserves the adapter/i,
+  );
+  assert.doesNotMatch(
+    alignmentRollback,
+    /drop function|create or replace function|delete from|truncate/i,
+  );
 });
 
 test("browser routes preserve authenticated replay after membership is left", () => {
