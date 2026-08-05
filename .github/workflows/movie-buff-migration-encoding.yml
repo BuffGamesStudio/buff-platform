@@ -1,0 +1,223 @@
+name: Movie Buff migration encoding evidence
+
+on:
+  push:
+    branches:
+      - copilot/MOV-14-migration-encoding
+    paths:
+      - ".github/workflows/movie-buff-migration-encoding.yml"
+      - "scripts/movie-buff-migration-encoding-check.mjs"
+      - "scripts/movie-buff-migration-bom-only-check.mjs"
+      - "tests/movie-buff-migration-encoding.test.mjs"
+      - "supabase/**/*.sql"
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - ".github/workflows/movie-buff-migration-encoding.yml"
+      - "scripts/movie-buff-migration-encoding-check.mjs"
+      - "scripts/movie-buff-migration-bom-only-check.mjs"
+      - "tests/movie-buff-migration-encoding.test.mjs"
+      - "supabase/**/*.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-encoding:
+    name: Linux migration byte validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_BRANCH: copilot/MOV-14-migration-encoding
+      BASELINE_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
+
+    steps:
+      - name: Check out exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify isolated exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test -z "$(git status --porcelain)"
+          node --version
+
+      - name: Run validator self-tests
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/migration-encoding-linux
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          node --test tests/movie-buff-migration-encoding.test.mjs \
+            2>&1 | tee "${EVIDENCE_DIR}/tests.tap"
+
+      - name: Scan repository SQL bytes
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/migration-encoding-linux
+          MOVIE_BUFF_MIGRATION_ENCODING_OUTPUT: ${{ runner.temp }}/migration-encoding-linux/report.json
+        run: |
+          set -euo pipefail
+          node scripts/movie-buff-migration-encoding-check.mjs \
+            supabase/migrations supabase/rollbacks supabase/tests \
+            > "${EVIDENCE_DIR}/scan.stdout.txt"
+
+      - name: Prove migration edits remove only the leading BOM
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/migration-encoding-linux
+          MOVIE_BUFF_BOM_ONLY_OUTPUT: ${{ runner.temp }}/migration-encoding-linux/bom-only-report.json
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "${BASELINE_SHA}"
+          node scripts/movie-buff-migration-bom-only-check.mjs "${BASELINE_SHA}" \
+            > "${EVIDENCE_DIR}/bom-only.stdout.txt"
+
+      - name: Verify clean checkout and write metadata
+        if: always()
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/migration-encoding-linux
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          git diff --check
+          test -z "$(git status --porcelain)"
+          {
+            echo "lane=MOV-14-integration-support"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "baseline_sha=${BASELINE_SHA}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "node_version=$(node --version)"
+            echo "target_kind=repository-byte-validation"
+            echo "hosted_state=UNKNOWN"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${EVIDENCE_DIR}/metadata.txt"
+          find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            > "${EVIDENCE_DIR}/sha256.txt"
+
+      - name: Upload Linux encoding evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-encoding-linux-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/migration-encoding-linux
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-encoding:
+    name: Windows migration byte validation
+    runs-on: windows-2025
+    timeout-minutes: 10
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_BRANCH: copilot/MOV-14-migration-encoding
+      BASELINE_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
+
+    steps:
+      - name: Check out exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify isolated exact checkout
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $resolvedRef = if ($env:GITHUB_HEAD_REF) { $env:GITHUB_HEAD_REF } else { $env:GITHUB_REF_NAME }
+          if ($resolvedRef -ne $env:EXPECTED_BRANCH) { throw "Branch mismatch: $resolvedRef" }
+          if ((git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'SHA mismatch' }
+          if (git status --porcelain) { throw 'Checkout is not clean' }
+          node --version
+          $PSVersionTable | Out-String
+
+      - name: Run validator self-tests and scan
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'migration-encoding-windows'
+          New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
+          node --test tests/movie-buff-migration-encoding.test.mjs `
+            1> (Join-Path $evidenceRoot 'tests.tap') `
+            2> (Join-Path $evidenceRoot 'tests.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "Encoding self-tests failed: $LASTEXITCODE" }
+          $env:MOVIE_BUFF_MIGRATION_ENCODING_OUTPUT = Join-Path $evidenceRoot 'report.json'
+          node scripts/movie-buff-migration-encoding-check.mjs `
+            supabase/migrations supabase/rollbacks supabase/tests `
+            1> (Join-Path $evidenceRoot 'scan.stdout.txt') `
+            2> (Join-Path $evidenceRoot 'scan.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "Encoding scan failed: $LASTEXITCODE" }
+
+      - name: Prove migration edits remove only the leading BOM
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'migration-encoding-windows'
+          git fetch --no-tags --depth=1 origin $env:BASELINE_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Baseline fetch failed: $LASTEXITCODE" }
+          $env:MOVIE_BUFF_BOM_ONLY_OUTPUT = Join-Path $evidenceRoot 'bom-only-report.json'
+          node scripts/movie-buff-migration-bom-only-check.mjs $env:BASELINE_SHA `
+            1> (Join-Path $evidenceRoot 'bom-only.stdout.txt') `
+            2> (Join-Path $evidenceRoot 'bom-only.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "BOM-only proof failed: $LASTEXITCODE" }
+
+      - name: Verify clean checkout and write metadata
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'migration-encoding-windows'
+          New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
+          if (git status --porcelain) { throw 'Checkout is not clean after validation' }
+          @(
+            'lane=MOV-14-integration-support'
+            "source_sha=$((git rev-parse HEAD).Trim())"
+            "baseline_sha=$env:BASELINE_SHA"
+            "runner_os=$env:RUNNER_OS"
+            "powershell_version=$($PSVersionTable.PSVersion)"
+            "node_version=$((node --version).Trim())"
+            'target_kind=repository-byte-validation'
+            'hosted_state=UNKNOWN'
+            "generated_at=$([DateTime]::UtcNow.ToString('o'))"
+          ) | Set-Content -LiteralPath (Join-Path $evidenceRoot 'metadata.txt') -Encoding utf8
+          Get-ChildItem -LiteralPath $evidenceRoot -File |
+            Where-Object Name -ne 'sha256.csv' |
+            Get-FileHash -Algorithm SHA256 |
+            Select-Object Path, Hash |
+            Export-Csv -LiteralPath (Join-Path $evidenceRoot 'sha256.csv') -NoTypeInformation
+
+      - name: Upload Windows encoding evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-encoding-windows-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}\migration-encoding-windows
+          if-no-files-found: error
+          retention-days: 7
