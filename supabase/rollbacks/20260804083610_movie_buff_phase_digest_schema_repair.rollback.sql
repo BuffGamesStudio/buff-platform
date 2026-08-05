@@ -1,5 +1,6 @@
--- Fail-closed containment rollback. Do not restore the broken public.digest
--- reference. Remove browser execution while keeping service-role diagnostics.
+-- Fail-closed containment rollback. Do not restore the invalid historical
+-- digest reference. Remove browser execution while keeping service-role
+-- diagnostics available.
 
 revoke execute on function public.select_movie_buff_match_tile(uuid,uuid,bigint,text)
   from authenticated;
