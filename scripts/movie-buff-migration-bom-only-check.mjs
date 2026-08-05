@@ -4,6 +4,7 @@ import path from "node:path";
 
 const baselineRef = process.argv[2];
 const requestedPaths = process.argv.slice(3);
+const currentRef = process.env.MOVIE_BUFF_CURRENT_REF?.trim() || "HEAD";
 const outputPath = process.env.MOVIE_BUFF_BOM_ONLY_OUTPUT
   ? path.resolve(process.env.MOVIE_BUFF_BOM_ONLY_OUTPUT)
   : null;
@@ -56,7 +57,7 @@ const results = filePaths.map((filePath) => {
     throw new Error(`Refusing path outside repository: ${filePath}`);
   }
   const baselineBytes = gitShow(baselineRef, filePath);
-  const currentBytes = fs.readFileSync(absolutePath);
+  const currentBytes = gitShow(currentRef, filePath);
   const baselineHadBom = hasUtf8Bom(baselineBytes);
   const expectedBytes = baselineHadBom ? baselineBytes.subarray(3) : baselineBytes;
   const currentHasBom = hasUtf8Bom(currentBytes);
@@ -79,6 +80,7 @@ const report = {
   schemaVersion: 1,
   classification: failures.length ? "FAIL" : "PASS",
   baselineRef,
+  currentRef,
   fileCount: results.length,
   failureCount: failures.length,
   results,
