@@ -62,6 +62,11 @@ try {
     'package-lock.json',
     'supabase/migrations/20260804083500_movie_buff_reconnect_buster_boundary_repair.sql',
     'supabase/rollbacks/20260804083500_movie_buff_reconnect_buster_boundary_repair.rollback.sql',
+    'supabase/migrations/20260804083600_movie_buff_match_start_handoff.sql',
+    'supabase/rollbacks/20260804083600_movie_buff_match_start_handoff.rollback.sql',
+    'supabase/tests/movie_buff_match_start_handoff_test.sql',
+    'supabase/tests/movie_buff_match_start_handoff_rollback_test.sql',
+    'tests/movie-buff-match-start-handoff.test.mjs',
     'scripts/movie-buff-reconnect-race-proof.mjs'
   )) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
@@ -78,7 +83,7 @@ try {
   }
 
   @(
-    "lane=MOV-17-validation-twin-v2"
+    "lane=MOV-17"
     "source_sha=$actualSha"
     "powershell_version=$($PSVersionTable.PSVersion)"
     "node_version=$((node --version).Trim())"
@@ -87,6 +92,7 @@ try {
     "target_kind=repository-static-and-localhost-placeholder-build"
     "database_behavior=UNKNOWN"
     "browser_behavior=UNKNOWN"
+    "physical_windows_equivalence=UNKNOWN"
     "generated_at=$([DateTime]::UtcNow.ToString('o'))"
   ) | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'metadata.txt') -Encoding utf8
 
@@ -102,7 +108,8 @@ try {
       tests/movie-buff-server-phase-machine.test.mjs `
       tests/movie-buff-authoritative-phase-runtime.test.mjs `
       tests/movie-buff-buster-safe-boundary.test.mjs `
-      tests/movie-buff-phase-tile-mutation-guard.test.mjs
+      tests/movie-buff-phase-tile-mutation-guard.test.mjs `
+      tests/movie-buff-match-start-handoff.test.mjs
   }
   Invoke-Captured 'typescript' { npx --no-install tsc --noEmit }
 
