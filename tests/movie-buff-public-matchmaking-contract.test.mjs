@@ -118,8 +118,10 @@ test("race harness covers required convergence families", () => {
   assert.match(race, /fresh simultaneous race/);
 });
 
-test("external row-lock contention is real and bounded", () => {
-  assert.match(helper, /for update/i);
+test("external compatibility-lock contention is real and bounded", () => {
+  assert.match(helper, /movie-buff-public-compatibility\|/i);
+  assert.match(helper, /pg_advisory_xact_lock/i);
+  assert.match(helper, /hashtextextended/i);
   assert.match(helper, /pg_sleep/i);
   assert.match(helper, /LOCAL_MATCHMAKING_LOCK_TEST/);
   assert.match(helper, /to service_role/i);
