@@ -94,6 +94,14 @@ RECONNECT_REPLACEMENT = """  const matchPlayerValues = sessions
     values ${matchPlayerValues};
   `);"""
 
+EARLY_ANSWER_MARKER = (
+    "  assert.match(earlyAnswerError.message, /answer window is not open/i);"
+)
+EARLY_ANSWER_REPLACEMENT = (
+    "  assert.match(earlyAnswerError.message, "
+    "/answer window is not open|current round could not be found/i);"
+)
+
 for file_path in FILES:
     text = file_path.read_text(encoding="utf-8")
     if 'import { execFileSync } from "node:child_process";' not in text:
@@ -107,10 +115,15 @@ for file_path in FILES:
 
     if file_path.name == "movie-buff-three-client-phase-proof.mjs":
         text, count = PHASE_PATTERN.subn(lambda _match: PHASE_REPLACEMENT, text, count=1)
+        if count != 1:
+            raise SystemExit(f"match_players fixture block replacement count {count}: {file_path}")
+        if EARLY_ANSWER_MARKER not in text:
+            raise SystemExit(f"early-answer assertion marker missing: {file_path}")
+        text = text.replace(EARLY_ANSWER_MARKER, EARLY_ANSWER_REPLACEMENT, 1)
     else:
         text, count = RECONNECT_PATTERN.subn(lambda _match: RECONNECT_REPLACEMENT, text, count=1)
-    if count != 1:
-        raise SystemExit(f"match_players fixture block replacement count {count}: {file_path}")
+        if count != 1:
+            raise SystemExit(f"match_players fixture block replacement count {count}: {file_path}")
     file_path.write_text(text, encoding="utf-8")
 
 print("MOVIE_BUFF_MOV17_OWNER_FIXTURE_PATCH=PASS")
