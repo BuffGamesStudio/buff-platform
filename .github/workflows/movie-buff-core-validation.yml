@@ -1,11 +1,13 @@
-name: Movie Buff core source validation
+name: Movie Buff core v2 source validation
 
 on:
   push:
     branches:
-      - validation/movie-buff-core-v1
+      - validation/movie-buff-core-v2
     paths:
       - ".github/workflows/movie-buff-core-validation.yml"
+      - ".github/workflows/movie-buff-core-windows.yml"
+      - ".github/workflows/movie-buff-core-database.yml"
       - "scripts/movie-buff-core-validation-guard.mjs"
       - "scripts/movie-buff-core-windows-digital-twin.ps1"
       - "scripts/movie-buff-core-local-supabase-lab.sh"
@@ -25,13 +27,13 @@ permissions:
   contents: read
 
 env:
-  EXPECTED_BRANCH: validation/movie-buff-core-v1
+  EXPECTED_BRANCH: validation/movie-buff-core-v2
   EXPECTED_REPOSITORY: BuffGamesStudio/buff-platform
   EXPECTED_REMOTE: https://github.com/BuffGamesStudio/buff-platform
-  RAW_COMPOSITION_SHA: b4f8e2196a8a0423e7340ac97bd5592d58a966db
-  RAW_COMPOSITION_TREE: 68715cde77454c8c1057f9480373208cec88ba32
-  MOV15_SHA: 0ecf8de86d2ea1a28c1496ed044a5092a7d3ffcb
-  MOV15_TREE: bd9e34f67d011c5a8adfe17f7c8c75dadfbb8182
+  RAW_COMPOSITION_SHA: 1825e452fa5e3caa24f5a99ac27e974d14b3ab66
+  RAW_COMPOSITION_TREE: 75d61e32ab0aceeff142ce76e9328d9eed7f2888
+  MOV15_SHA: 4906147038a5a2deda5c13fdafc6f07b66ae100b
+  MOV15_TREE: 38efa7f253931eae9f16d7d92d2236a3a1621296
   MOV16_SHA: 95c292ead66fc83cf13d7154bd3cf691610f549d
   MOV16_TREE: 04267651da0b9caa741d95bcea01a096b5086a31
   MOV17_SHA: 6d7e9aabe5b07796a3a17fdf6c11df091dd1f978
@@ -150,7 +152,7 @@ jobs:
           git diff --check
           test -z "$(git status --porcelain)"
           {
-            echo "lane=movie-buff-core-v1"
+            echo "lane=movie-buff-core-v2"
             echo "repository=${EXPECTED_REPOSITORY}"
             echo "remote=$(git remote get-url origin)"
             echo "source_branch=${GITHUB_REF_NAME}"
@@ -188,7 +190,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: movie-buff-core-source-${{ env.EXPECTED_SHA }}
+          name: movie-buff-core-v2-source-${{ env.EXPECTED_SHA }}
           path: ${{ runner.temp }}/movie-buff-core-source-evidence
           if-no-files-found: error
           retention-days: 7
