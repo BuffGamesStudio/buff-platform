@@ -5,6 +5,7 @@ on:
     branches: [validation/MOV-15-19-integrated-twin-v3]
     paths:
       - ".github/workflows/movie-buff-three-client-full-journey-v9.yml"
+      - "scripts/movie-buff-three-client-full-journey-v3-runner.mjs"
       - "src/app/api/movie-buff/round-media/[roundId]/route.ts"
       - "tests/movie-buff-round-media-route.test.mjs"
   workflow_dispatch:
@@ -17,7 +18,7 @@ env:
   PARENT_SHA: 20854c69e48b192f18cdfd6830f5d9ae54fc070a
   V2_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
   MOVIE_BUFF_V2_HARNESS_BLOB: 3b08204937f26af9287f303906509dc057b399dc
-  MOVIE_BUFF_WRAPPER_BLOB: 5a7bb9da3a578e76a3f23879e80988201808f75b
+  MOVIE_BUFF_WRAPPER_BLOB: da1e3c6d1252d43168a1a5d09c0a56c12492cd79
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
 
@@ -91,6 +92,13 @@ jobs:
               'node scripts/movie-buff-three-client-full-journey-v2.mjs >"${raw}/three-client-browser-v2.log" 2>&1',
               'node scripts/movie-buff-three-client-full-journey-v3-runner.mjs >"${raw}/three-client-browser-v2.log" 2>&1',
           )
+          chrome_install_anchor = 'npx playwright install --with-deps chromium'
+          if execute.count(chrome_install_anchor) != 1:
+              raise SystemExit('expected exactly one bundled Chromium install anchor')
+          execute = execute.replace(
+              chrome_install_anchor,
+              'npx playwright install --with-deps chrome',
+          )
           old_shape = '\n'.join([
               'allowed={"next-env.d.ts",fixture}',
               'unexpected=[]',
@@ -130,6 +138,7 @@ jobs:
           required = [
               '--untracked-files=all',
               'movie-buff-three-client-full-journey-v3-runner.mjs',
+              'npx playwright install --with-deps chrome',
               'allowed_prefixes=("public/media/movie-buff/runtime-generated/",)',
               'rm -rf public/media/movie-buff/runtime-generated',
           ]

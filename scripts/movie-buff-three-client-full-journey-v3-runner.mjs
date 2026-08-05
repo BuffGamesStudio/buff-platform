@@ -55,6 +55,25 @@ transformed = transformed.replaceAll(legacyBoardRoute, canonicalBoardRoute);
 assert.equal(transformed.split(legacyBoardRoute).length - 1, 0);
 assert.equal(transformed.split(canonicalBoardRoute).length - 1, 2);
 
+const chromiumLaunch = "chromium.launch({ headless: true })";
+const chromeLaunch = 'chromium.launch({ headless: true, channel: "chrome" })';
+const chromiumLaunchCount = transformed.split(chromiumLaunch).length - 1;
+assert.equal(chromiumLaunchCount, 1, "expected one reviewed Chromium launch anchor");
+transformed = transformed.replace(chromiumLaunch, chromeLaunch);
+assert.equal(transformed.split(chromiumLaunch).length - 1, 0);
+assert.equal(transformed.split(chromeLaunch).length - 1, 1);
+
+const browserEvidenceAnchor = "  browserProcessCount: 3,\n";
+assert.equal(
+  transformed.split(browserEvidenceAnchor).length - 1,
+  1,
+  "expected one browser evidence anchor",
+);
+transformed = transformed.replace(
+  browserEvidenceAnchor,
+  '  browserChannel: "chrome",\n  browserProcessCount: 3,\n',
+);
+
 const transformedPath = path.join(
   runnerTemp,
   `movie-buff-three-client-full-journey-v4-${process.pid}.mjs`,
