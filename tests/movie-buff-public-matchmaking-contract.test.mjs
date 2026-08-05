@@ -140,5 +140,5 @@ test("pgTAP covers ACL, ownership, fixed paths, and no SKIP LOCKED", () => {
   assert.match(pgtap, /join pg_catalog\.pg_roles as r on r\.oid = p\.proowner/);
   assert.match(pgtap, /r\.rolname = 'postgres'/);
   assert.match(pgtap, /search_path=pg_catalog/);
-  assert.match(pgtap, /skip locked/i);
+  assert.match(pgtap, /skip\[\[:space:\]\]\+locked/i);
 });
