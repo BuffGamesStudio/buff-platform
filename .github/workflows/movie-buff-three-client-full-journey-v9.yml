@@ -21,7 +21,7 @@ env:
   MOVIE_BUFF_V2_HARNESS_BLOB: 3b08204937f26af9287f303906509dc057b399dc
   MOVIE_BUFF_WRAPPER_BLOB: a122126fd25af225217139cb1997c58045df117f
   MOVIE_BUFF_V3_RUNNER_BLOB: a122126fd25af225217139cb1997c58045df117f
-  MOVIE_BUFF_V5_WRAPPER_BLOB: 775d5ae6673a8105e6c57b2646f7545331b2ec4c
+  MOVIE_BUFF_V5_WRAPPER_BLOB: f8ae1ea534ed53494ed567642ca7ad657813048b
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
 
@@ -100,10 +100,7 @@ jobs:
           chrome_install_anchor = 'npx playwright install --with-deps chromium'
           if execute.count(chrome_install_anchor) != 1:
               raise SystemExit('expected exactly one bundled Chromium install anchor')
-          execute = execute.replace(
-              chrome_install_anchor,
-              'npx playwright install --with-deps chrome',
-          )
+          execute = execute.replace(chrome_install_anchor, 'npx playwright install --with-deps chrome')
           old_shape = '\n'.join([
               'allowed={"next-env.d.ts",fixture}',
               'unexpected=[]',
