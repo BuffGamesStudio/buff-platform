@@ -6,6 +6,7 @@ on:
       - validation/movie-buff-core-v6
     paths:
       - ".github/workflows/movie-buff-core-v6-current2-validation.yml"
+      - "scripts/movie-buff-core-v6-guard.mjs"
       - "scripts/movie-buff-core-v6-source-v3.sh"
       - "scripts/movie-buff-core-v6-windows-v3.ps1"
       - "scripts/movie-buff-core-v6-db-v3.sh"
