@@ -129,14 +129,16 @@ test("external row-lock contention is real and bounded", () => {
 });
 
 test("rollback packet is non-destructive containment", () => {
-  assert.match(rollback, /allow_public_matchmaking_rollback/);
-  assert.match(rollback, /contained pending restoration/i);
+  assert.match(rollback, /movie_buff\.allow_matchmaking_containment/);
+  assert.match(rollback, /containment blocked/i);
+  assert.match(rollback, /preserving schema/i);
   assert.doesNotMatch(rollback, /drop table|delete from|truncate/i);
 });
 
 test("pgTAP covers ACL, ownership, fixed paths, and no SKIP LOCKED", () => {
   assert.match(pgtap, /has_function_privilege/);
-  assert.match(pgtap, /proowner::regrole::text/);
+  assert.match(pgtap, /join pg_catalog\.pg_roles as r on r\.oid = p\.proowner/);
+  assert.match(pgtap, /r\.rolname = 'postgres'/);
   assert.match(pgtap, /search_path=pg_catalog/);
   assert.match(pgtap, /skip locked/i);
 });
