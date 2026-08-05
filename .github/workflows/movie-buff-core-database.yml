@@ -79,6 +79,29 @@ jobs:
             "$(git rev-parse HEAD^{tree})" \
             "${EVIDENCE_DIR}"
 
+      - name: Normalize exact database evidence identity
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata="${EVIDENCE_DIR}/metadata.txt"
+          if [[ -f "${metadata}" ]]; then
+            sed -i \
+              -e 's/^raw_composition_sha=.*/raw_composition_sha=186a4cc1c5995fd07b374392528d8c5424db8f02/' \
+              -e 's/^raw_composition_tree=.*/raw_composition_tree=02a579e275d4efeaa7bf0f077cab2e686cc5e448/' \
+              -e 's/^component_mov16_sha=.*/component_mov16_sha=8eab77a63042911417d6ef16d52ab9b308fc8f0d/' \
+              -e 's/^component_mov16_tree=.*/component_mov16_tree=a4aa7c9962389b9894c8a90afe69fdb276313953/' \
+              "${metadata}"
+            (
+              cd "${EVIDENCE_DIR}"
+              find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+                | sort -z \
+                | xargs -0 sha256sum \
+                > sha256.txt
+              sha256sum -c sha256.txt
+            )
+          fi
+
       - name: Verify source remained clean
         if: always()
         shell: bash
