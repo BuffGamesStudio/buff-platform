@@ -1,0 +1,70 @@
+name: Movie Buff core v4 Windows command laboratory
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-core-v4-current-mov16
+    paths:
+      - ".github/workflows/movie-buff-core-validation.yml"
+      - ".github/workflows/movie-buff-core-windows.yml"
+      - ".github/workflows/movie-buff-core-database.yml"
+      - "scripts/movie-buff-core-validation-guard.mjs"
+      - "scripts/movie-buff-core-windows-digital-twin.ps1"
+      - "scripts/movie-buff-core-local-supabase-lab.sh"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-core-v4-current-mov16
+  RAW_COMPOSITION_SHA: c963961c16d56a173f2c7556f2e53b819641efe3
+
+jobs:
+  windows-command-lab:
+    name: Windows PowerShell digital twin and negative paths
+    runs-on: windows-2025
+    timeout-minutes: 35
+    env:
+      EXPECTED_SHA: ${{ github.sha }}
+
+    steps:
+      - name: Check out exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Execute checked-in Windows wrapper
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REF_NAME -ne $env:EXPECTED_BRANCH) { throw "Wrong branch: $env:GITHUB_REF_NAME" }
+          git merge-base --is-ancestor $env:RAW_COMPOSITION_SHA HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Raw composition is not an ancestor' }
+          $tree = (git rev-parse 'HEAD^{tree}').Trim()
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'movie-buff-core-windows-evidence'
+          ./scripts/movie-buff-core-windows-digital-twin.ps1 `
+            -ExpectedSha $env:EXPECTED_SHA `
+            -ExpectedTree $tree `
+            -ExpectedBranch $env:EXPECTED_BRANCH `
+            -EvidenceRoot $evidenceRoot
+
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-core-v4-windows-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}\movie-buff-core-windows-evidence
+          if-no-files-found: error
+          retention-days: 7
