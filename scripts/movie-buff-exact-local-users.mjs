@@ -1,3 +1,4 @@
+// Validation-only local identity fixture. Never targets hosted Supabase.
 import fs from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 
