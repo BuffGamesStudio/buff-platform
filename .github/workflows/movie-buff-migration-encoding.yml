@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/movie-buff-migration-encoding.yml"
       - "scripts/movie-buff-migration-encoding-check.mjs"
+      - "scripts/movie-buff-migration-bom-only-check.mjs"
       - "tests/movie-buff-migration-encoding.test.mjs"
       - "supabase/**/*.sql"
   pull_request:
@@ -15,6 +16,7 @@ on:
     paths:
       - ".github/workflows/movie-buff-migration-encoding.yml"
       - "scripts/movie-buff-migration-encoding-check.mjs"
+      - "scripts/movie-buff-migration-bom-only-check.mjs"
       - "tests/movie-buff-migration-encoding.test.mjs"
       - "supabase/**/*.sql"
   workflow_dispatch:
@@ -30,6 +32,7 @@ jobs:
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       EXPECTED_BRANCH: copilot/MOV-14-migration-encoding
+      BASELINE_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
 
     steps:
       - name: Check out exact SHA
@@ -75,6 +78,17 @@ jobs:
             supabase/migrations supabase/rollbacks supabase/tests \
             > "${EVIDENCE_DIR}/scan.stdout.txt"
 
+      - name: Prove migration edits remove only the leading BOM
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/migration-encoding-linux
+          MOVIE_BUFF_BOM_ONLY_OUTPUT: ${{ runner.temp }}/migration-encoding-linux/bom-only-report.json
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "${BASELINE_SHA}"
+          node scripts/movie-buff-migration-bom-only-check.mjs "${BASELINE_SHA}" \
+            > "${EVIDENCE_DIR}/bom-only.stdout.txt"
+
       - name: Verify clean checkout and write metadata
         if: always()
         shell: bash
@@ -88,6 +102,7 @@ jobs:
           {
             echo "lane=MOV-14-integration-support"
             echo "source_sha=$(git rev-parse HEAD)"
+            echo "baseline_sha=${BASELINE_SHA}"
             echo "runner_os=${RUNNER_OS}"
             echo "node_version=$(node --version)"
             echo "target_kind=repository-byte-validation"
@@ -115,6 +130,7 @@ jobs:
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       EXPECTED_BRANCH: copilot/MOV-14-migration-encoding
+      BASELINE_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
 
     steps:
       - name: Check out exact SHA
@@ -157,6 +173,19 @@ jobs:
             2> (Join-Path $evidenceRoot 'scan.stderr.txt')
           if ($LASTEXITCODE -ne 0) { throw "Encoding scan failed: $LASTEXITCODE" }
 
+      - name: Prove migration edits remove only the leading BOM
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'migration-encoding-windows'
+          git fetch --no-tags --depth=1 origin $env:BASELINE_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Baseline fetch failed: $LASTEXITCODE" }
+          $env:MOVIE_BUFF_BOM_ONLY_OUTPUT = Join-Path $evidenceRoot 'bom-only-report.json'
+          node scripts/movie-buff-migration-bom-only-check.mjs $env:BASELINE_SHA `
+            1> (Join-Path $evidenceRoot 'bom-only.stdout.txt') `
+            2> (Join-Path $evidenceRoot 'bom-only.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "BOM-only proof failed: $LASTEXITCODE" }
+
       - name: Verify clean checkout and write metadata
         if: always()
         shell: pwsh
@@ -170,6 +199,7 @@ jobs:
           @(
             'lane=MOV-14-integration-support'
             "source_sha=$((git rev-parse HEAD).Trim())"
+            "baseline_sha=$env:BASELINE_SHA"
             "runner_os=$env:RUNNER_OS"
             "powershell_version=$($PSVersionTable.PSVersion)"
             "node_version=$((node --version).Trim())"
