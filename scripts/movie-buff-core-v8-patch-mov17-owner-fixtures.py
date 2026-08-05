@@ -114,3 +114,4 @@ for file_path in FILES:
     file_path.write_text(text, encoding="utf-8")
 
 print("MOVIE_BUFF_MOV17_OWNER_FIXTURE_PATCH=PASS")
+# The repository ignores workflow parse-check bytecode under scripts/__pycache__.
