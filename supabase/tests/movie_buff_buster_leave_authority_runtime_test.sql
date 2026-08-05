@@ -199,6 +199,51 @@ values
     pg_catalog.clock_timestamp()
   );
 
+-- Establish a genuine MOV-16 VIP window before either participant leaves. The
+-- active-leave trigger must release the departing required human, while the
+-- remaining human records an explicit no-VIP lock before board entry.
+insert into public.movie_buff_vip_round_windows (
+  round_id,
+  match_id,
+  room_id,
+  round_number,
+  opens_at,
+  deadline_at,
+  status,
+  original_required_player_count
+)
+select
+  state.round_id,
+  state.match_id,
+  state.room_id,
+  state.round_number,
+  state.phase_started_at,
+  state.phase_ends_at,
+  'open',
+  2
+from public.movie_buff_match_phase_state as state
+where state.match_id = '30000000-0000-4000-8000-000000000001';
+
+insert into public.movie_buff_vip_round_required_players (
+  round_id,
+  match_id,
+  room_id,
+  player_id
+)
+values
+  (
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000001'
+  ),
+  (
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000002'
+  );
+
 do $$
 declare
   v_quote_one jsonb;
@@ -210,6 +255,7 @@ declare
   v_count integer;
   v_score integer;
   v_controller text;
+  v_released_at timestamptz;
 begin
   perform pg_catalog.set_config(
     'request.jwt.claims',
@@ -321,6 +367,36 @@ begin
   if v_controller <> 'human' then
     raise exception 'Buster became active inside vip_lock';
   end if;
+
+  select required.released_at
+  into v_released_at
+  from public.movie_buff_vip_round_required_players as required
+  where required.round_id = '40000000-0000-4000-8000-000000000001'
+    and required.player_id = '10000000-0000-4000-8000-000000000001';
+  if v_released_at is null then
+    raise exception 'active leave did not release the departing VIP participant';
+  end if;
+
+  insert into public.movie_buff_vip_round_locks (
+    room_id,
+    match_id,
+    round_id,
+    player_id,
+    vip_id,
+    inventory_id,
+    idempotency_key,
+    locked_at
+  )
+  values (
+    '20000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000002',
+    null,
+    null,
+    'runtime-no-vip-two',
+    pg_catalog.clock_timestamp()
+  );
 
   update public.movie_buff_match_phase_state
   set
