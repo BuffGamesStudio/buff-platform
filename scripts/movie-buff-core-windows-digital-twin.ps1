@@ -106,12 +106,12 @@ try {
     "source_branch=$actualBranch"
     "source_sha=$actualSha"
     "source_tree=$actualTree"
-    'raw_composition_sha=bcaa2c5a15ea74b0b2ad7de56b411405310f1dd1'
-    'raw_composition_tree=877b971b07fa1b509979c6dc1c7bd171850eaae3'
+    'raw_composition_sha=186a4cc1c5995fd07b374392528d8c5424db8f02'
+    'raw_composition_tree=02a579e275d4efeaa7bf0f077cab2e686cc5e448'
     'component_mov15_sha=4906147038a5a2deda5c13fdafc6f07b66ae100b'
     'component_mov15_tree=aab4b0256683ec77a4d9e3373fd84f60ba682e88'
-    'component_mov16_sha=8c28d2ba24283f3529dc52aef1c335ab58d99edb'
-    'component_mov16_tree=73bffa36d16bf784c905444751e5bc5740a2aa07'
+    'component_mov16_sha=8eab77a63042911417d6ef16d52ab9b308fc8f0d'
+    'component_mov16_tree=a4aa7c9962389b9894c8a90afe69fdb276313953'
     'component_mov17_sha=6d7e9aabe5b07796a3a17fdf6c11df091dd1f978'
     'component_mov17_tree=8264d2e30b0c75a8bebaa1ad938df6a635f7d991'
     'component_encoding_sha=bf5e6d6f251f6840d17eed2fc68e0d580295437f'
