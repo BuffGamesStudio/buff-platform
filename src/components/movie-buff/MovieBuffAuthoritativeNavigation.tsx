@@ -179,6 +179,7 @@ export function MovieBuffAuthoritativeNavigation({
 
     try {
       await confirmMovieBuffActiveLeave(
+        roomId,
         leaveQuote.quoteToken,
         leaveIdempotencyKey.current,
       );

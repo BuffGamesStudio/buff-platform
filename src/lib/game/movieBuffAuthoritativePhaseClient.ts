@@ -50,35 +50,36 @@ export type MovieBuffAuthoritativePhaseView = {
 };
 
 export type MovieBuffActiveLeaveQuote = {
+  quoteId: string;
   quoteToken: string;
   matchId: string;
   roomId: string;
-  roundId: string;
   seatIndex: number;
   phase: MovieBuffCanonicalPhase;
   phaseVersion: number;
   policyVersion: string;
   penaltyPoints: number;
+  quotedAt: string;
   expiresAt: string;
-  serverNow: string;
+  roundId?: string;
+  serverNow?: string;
 };
 
 export type MovieBuffActiveLeaveResult = {
   confirmed: true;
-  quoteToken: string;
-  matchId: string;
   roomId: string;
+  matchId: string;
   seatIndex: number;
   participantState: "abandoned";
-  controllerType: "human" | "buster";
   policyVersion: string;
-  penaltyPoints: number;
-  scoreBefore: number;
-  scoreAfter: number;
-  ledgerId: string;
-  phase: MovieBuffCanonicalPhase;
-  phaseVersion: number;
-  serverNow: string;
+  configuredPenaltyPoints: number;
+  roomScoreBefore: number;
+  roomScoreAfter: number;
+  matchScoreBefore: number;
+  matchScoreAfter: number;
+  remainingHumans: number;
+  matchAbandoned: boolean;
+  confirmedAt: string;
 };
 
 async function postAuthoritativePhase<T>(
@@ -177,14 +178,16 @@ export async function getMovieBuffActiveLeaveQuote(roomId: string) {
 }
 
 export async function confirmMovieBuffActiveLeave(
+  roomId: string,
   quoteToken: string,
   idempotencyKey: string,
 ) {
   const response = await postAuthoritativePhase<{
-    result: MovieBuffActiveLeaveResult;
+    confirmation: MovieBuffActiveLeaveResult;
   }>("/api/movie-buff/match/leave/confirm", {
+    roomId,
     quoteToken,
     idempotencyKey,
   });
-  return response.result;
+  return response.confirmation;
 }
