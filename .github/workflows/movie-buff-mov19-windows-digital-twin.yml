@@ -22,7 +22,6 @@ jobs:
     timeout-minutes: 25
     env:
       EXPECTED_SHA: ${{ github.sha }}
-      EVIDENCE_ROOT: ${{ runner.temp }}\mov19-windows-evidence
 
     steps:
       - name: Check out exact SHA
@@ -51,15 +50,16 @@ jobs:
       - name: Execute checked-in PowerShell wrapper
         shell: pwsh
         run: |
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'mov19-windows-evidence'
           ./scripts/movie-buff-mov19-windows-digital-twin.ps1 `
             -ExpectedSha $env:EXPECTED_SHA `
-            -EvidenceRoot $env:EVIDENCE_ROOT
+            -EvidenceRoot $evidenceRoot
 
       - name: Upload Windows evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mov19-windows-digital-twin-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_ROOT }}
+          path: ${{ runner.temp }}\mov19-windows-evidence
           if-no-files-found: error
           retention-days: 7
