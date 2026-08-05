@@ -18,7 +18,8 @@ const REQUIRED = [
 ];
 
 function run(command, args = []) {
-  return execFileSync(command, args, { encoding: "utf8" }).trim();
+  const executable = process.platform === "win32" && command === "npm" ? "npm.cmd" : command;
+  return execFileSync(executable, args, { encoding: "utf8" }).trim();
 }
 
 function fail(code, details = {}) {
