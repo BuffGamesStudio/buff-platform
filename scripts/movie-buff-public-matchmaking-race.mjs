@@ -323,11 +323,13 @@ try {
   await deleteOwnedRoom(duplicateRooms[0].id);
 
   const lockRoom = await findRoom(clients[0]);
-  const holdPromise = admin.rpc("movie_buff_test_hold_waiting_room_lock", {
-    p_room_id: lockRoom.id,
-    p_hold_milliseconds: lockHoldMs,
-    p_confirmation: "LOCAL_MATCHMAKING_LOCK_TEST",
-  });
+  const holdPromise = admin
+    .rpc("movie_buff_test_hold_waiting_room_lock", {
+      p_room_id: lockRoom.id,
+      p_hold_milliseconds: lockHoldMs,
+      p_confirmation: "LOCAL_MATCHMAKING_LOCK_TEST",
+    })
+    .then((result) => result);
   await new Promise((resolve) => setTimeout(resolve, 250));
   const contentionStartedAt = Date.now();
   const contendedJoin = await findRoom(clients[1]);
@@ -335,7 +337,7 @@ try {
   const holdResult = await holdPromise;
   if (holdResult.error) {
     throw new Error(
-      `local row-lock helper failed; apply scripts/movie-buff-public-matchmaking-race-helper.sql first: ${holdResult.error.message}`,
+      `local compatibility-lock helper failed; apply scripts/movie-buff-public-matchmaking-race-helper.sql first: ${holdResult.error.message}`,
     );
   }
   assert.equal(contendedJoin.id, lockRoom.id);
@@ -343,7 +345,7 @@ try {
     contentionElapsedMs >= lockHoldMs - 400,
     `contended join returned too early (${contentionElapsedMs}ms)`,
   );
-  record("external row lock waits and converges", {
+  record("external compatibility lock waits and converges", {
     roomId: lockRoom.id,
     lockHoldMs,
     contentionElapsedMs,
