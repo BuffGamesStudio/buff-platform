@@ -10,8 +10,9 @@ on:
     paths:
       - ".github/workflows/movie-buff-full-database-composition.yml"
       - "scripts/movie-buff-full-database-composition-proof.sh"
-      - "scripts/movie-buff-concurrency-replay-proof.sh"
-      - "scripts/movie-buff-concurrency-replay-proof-v2.sh"
+      - "scripts/movie-buff-concurrency-replay-proof*.sh"
+      - "scripts/movie-buff-vip-authority-adversarial-v3-wrapper.sh"
+      - "scripts/movie-buff-core-v12-three-browser-convergence-v2-wrapper.sh"
       - "scripts/validation-bin/pg_dump"
       - "supabase/migrations/**"
       - "supabase/rollbacks/**"
@@ -69,7 +70,10 @@ jobs:
             .github/workflows/movie-buff-full-database-composition.yml \
             scripts/movie-buff-concurrency-replay-proof.sh \
             scripts/movie-buff-concurrency-replay-proof-v2.sh \
+            scripts/movie-buff-concurrency-replay-proof-v3.sh \
+            scripts/movie-buff-core-v12-three-browser-convergence-v2-wrapper.sh \
             scripts/movie-buff-full-database-composition-proof.sh \
+            scripts/movie-buff-vip-authority-adversarial-v3-wrapper.sh \
             scripts/validation-bin/pg_dump \
             supabase/tests/movie_buff_security_validation_test.sql | sort)"
           test "$(git rev-parse HEAD:supabase/tests/movie_buff_security_validation_test.sql)" = "${MOV19_TEST_BLOB}"
@@ -152,17 +156,22 @@ jobs:
             .github/workflows/movie-buff-full-database-composition.yml \
             scripts/movie-buff-concurrency-replay-proof.sh \
             scripts/movie-buff-concurrency-replay-proof-v2.sh \
+            scripts/movie-buff-concurrency-replay-proof-v3.sh \
+            scripts/movie-buff-core-v12-three-browser-convergence-v2-wrapper.sh \
             scripts/movie-buff-full-database-composition-proof.sh \
+            scripts/movie-buff-vip-authority-adversarial-v3-wrapper.sh \
             scripts/validation-bin/pg_dump \
             supabase/tests/movie_buff_security_validation_test.sql | sort)"
           test "$(git rev-parse HEAD:supabase/tests/movie_buff_security_validation_test.sql)" = "${MOV19_TEST_BLOB}"
           test "$(supabase --version)" = "2.111.0"
           test ! -f supabase/.temp/project-ref
           test -z "$(git status --porcelain)"
-          bash -n scripts/movie-buff-concurrency-replay-proof-v2.sh
+          bash -n scripts/movie-buff-concurrency-replay-proof-v3.sh
+          bash -n scripts/movie-buff-vip-authority-adversarial-v3-wrapper.sh
+          bash -n scripts/movie-buff-core-v12-three-browser-convergence-v2-wrapper.sh
           node --check scripts/movie-buff-public-matchmaking-race.mjs
           node --check scripts/movie-buff-vip-authority-adversarial-v2.mjs
-          node --check scripts/movie-buff-core-v12-three-browser-lab.mjs
+          node --check scripts/movie-buff-core-v12-three-browser-convergence.mjs
           node --test tests/movie-buff-board-bootstrap-race.test.mjs
 
       - name: Install committed dependency graph
@@ -172,7 +181,7 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          bash scripts/movie-buff-concurrency-replay-proof-v2.sh \
+          bash scripts/movie-buff-concurrency-replay-proof-v3.sh \
             "${EXPECTED_SHA}" \
             "${EVIDENCE_DIR}"
 
