@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap;
-select plan(46);
+select plan(50);
 
 select has_table('public','movie_buff_match_phase_state','canonical phase state exists');
 select has_table('public','movie_buff_match_participant_seats','stable participant seats exist');
@@ -51,6 +51,23 @@ select is((select proowner::regrole::text from pg_proc where oid='public.advance
 select is((select coalesce(proconfig,array[]::text[]) @> array['search_path=pg_catalog'] from pg_proc where oid='public.advance_movie_buff_match_phase(uuid,bigint)'::regprocedure),true,'phase advance has fixed search path');
 select is((select coalesce(proconfig,array[]::text[]) @> array['search_path=pg_catalog'] from pg_proc where oid='public.select_movie_buff_match_tile(uuid,uuid,bigint,text)'::regprocedure),true,'tile selection has fixed search path');
 select is((select coalesce(proconfig,array[]::text[]) @> array['search_path=pg_catalog'] from pg_proc where oid='public.get_movie_buff_match_phase_view(uuid)'::regprocedure),true,'phase view has fixed search path');
+
+select ok(
+  position('reconnect_deadline_at <= v_now' in pg_get_functiondef('public.touch_movie_buff_match_participant(uuid)'::regprocedure)) > 0,
+  'presence touch refuses reconnect grace at or after the deadline'
+);
+select ok(
+  position('''resumeAllowed'', false' in pg_get_functiondef('public.touch_movie_buff_match_participant(uuid)'::regprocedure)) > 0,
+  'presence touch returns an explicit fail-closed resume result'
+);
+select ok(
+  position('v_state.phase <> ''board_select''' in pg_get_functiondef('public.movie_buff_activate_ready_busters(uuid)'::regprocedure)) > 0,
+  'Buster activation is limited to board_select'
+);
+select ok(
+  position('''vip_lock''' in pg_get_functiondef('public.movie_buff_activate_ready_busters(uuid)'::regprocedure)) = 0,
+  'Buster activation does not occur during the private VIP window'
+);
 
 select has_trigger('public','answers','movie_buff_answers_require_authoritative_phase','answer phase guard trigger exists');
 select is((select count(*)::integer from public.movie_buff_match_phase_state),0,'migration creates no synthetic phase rows');
