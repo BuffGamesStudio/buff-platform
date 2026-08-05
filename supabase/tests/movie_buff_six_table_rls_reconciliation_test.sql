@@ -157,7 +157,7 @@ select ok(
     join pg_catalog.pg_class as relation
       on relation.oid = target.table_oid
     cross join lateral pg_catalog.aclexplode(
-      pg_catalog.coalesce(
+      coalesce(
         relation.relacl,
         pg_catalog.acldefault('r', relation.relowner)
       )
