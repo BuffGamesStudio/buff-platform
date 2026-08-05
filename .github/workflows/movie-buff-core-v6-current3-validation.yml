@@ -1,0 +1,118 @@
+name: Movie Buff core v6 current3 exact validation laboratories
+
+on:
+  push:
+    branches: [validation/movie-buff-core-v6]
+    paths:
+      - ".github/workflows/movie-buff-core-v6-current3-validation.yml"
+      - "scripts/movie-buff-core-v6-source-v4.sh"
+      - "scripts/movie-buff-core-v6-windows-v4.ps1"
+      - "scripts/movie-buff-core-v6-db-v4.sh"
+      - "scripts/movie-buff-core-v6-guard.mjs"
+      - "scripts/movie-buff-core-v6-source-v3.sh"
+      - "scripts/movie-buff-core-v6-windows-v3.ps1"
+      - "scripts/movie-buff-core-v6-db-v3.sh"
+      - "supabase/**"
+      - "tests/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-core-v6
+  RAW_COMPOSITION_SHA: 88ea15071e5d8393adf54a947fef4afe6ac86630
+  RAW_COMPOSITION_TREE: 538590b96a4ce45f7ebe5f1220dd4db682bc8003
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  source-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      EXPECTED_SHA: ${{ github.sha }}
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+      MOVIE_BUFF_APP_URL: http://127.0.0.1:3000
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ env.EXPECTED_SHA }}", fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - name: Verify and parse source wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          git merge-base --is-ancestor "${RAW_COMPOSITION_SHA}" HEAD
+          test "$(git rev-parse "${RAW_COMPOSITION_SHA}^{tree}")" = "${RAW_COMPOSITION_TREE}"
+          test -z "$(git status --porcelain)"
+          bash -n scripts/movie-buff-core-v6-source-v4.sh
+      - name: Execute source wrapper
+        shell: bash
+        run: bash scripts/movie-buff-core-v6-source-v4.sh "${EXPECTED_SHA}" "$(git rev-parse HEAD^{tree})" "${RUNNER_TEMP}/movie-buff-core-v6-current3-source"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: "movie-buff-core-v6-current3-source-${{ env.EXPECTED_SHA }}", path: "${{ runner.temp }}/movie-buff-core-v6-current3-source", if-no-files-found: error, retention-days: 7}
+
+  windows-command-shell:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      EXPECTED_SHA: ${{ github.sha }}
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+      MOVIE_BUFF_APP_URL: http://127.0.0.1:3000
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ env.EXPECTED_SHA }}", fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - name: Parse Windows wrapper
+        shell: pwsh
+        run: |
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path ./scripts/movie-buff-core-v6-windows-v4.ps1),[ref]$null,[ref]$errors)|Out-Null
+          if($errors.Count -ne 0){$errors|Format-List|Out-String|Write-Error}
+      - name: Execute Windows wrapper
+        shell: pwsh
+        run: ./scripts/movie-buff-core-v6-windows-v4.ps1 -ExpectedSha $env:EXPECTED_SHA -ExpectedTree ((git rev-parse 'HEAD^{tree}').Trim()) -EvidenceRoot (Join-Path $env:RUNNER_TEMP 'movie-buff-core-v6-current3-windows')
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: "movie-buff-core-v6-current3-windows-${{ env.EXPECTED_SHA }}", path: "${{ runner.temp }}\\movie-buff-core-v6-current3-windows", if-no-files-found: error, retention-days: 7}
+
+  disposable-database:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env: {EXPECTED_SHA: "${{ github.sha }}"}
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ env.EXPECTED_SHA }}", fetch-depth: 0, persist-credentials: false}
+      - uses: supabase/setup-cli@v1
+        with: {version: 2.111.0}
+      - name: Verify and parse database wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          git merge-base --is-ancestor "${RAW_COMPOSITION_SHA}" HEAD
+          test "$(git rev-parse "${RAW_COMPOSITION_SHA}^{tree}")" = "${RAW_COMPOSITION_TREE}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = 2.111.0
+          bash -n scripts/movie-buff-core-v6-db-v4.sh
+          docker --version; psql --version; python3 --version
+      - name: Execute database wrapper
+        shell: bash
+        run: bash scripts/movie-buff-core-v6-db-v4.sh "${EXPECTED_SHA}" "$(git rev-parse HEAD^{tree})" "${RUNNER_TEMP}/movie-buff-core-v6-current3-db"
+      - if: always()
+        shell: bash
+        run: git diff --check && test -z "$(git status --porcelain)"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: "movie-buff-core-v6-current3-database-${{ env.EXPECTED_SHA }}", path: "${{ runner.temp }}/movie-buff-core-v6-current3-db", if-no-files-found: error, retention-days: 7}

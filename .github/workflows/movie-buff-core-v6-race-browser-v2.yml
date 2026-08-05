@@ -1,0 +1,107 @@
+name: Movie Buff core v6 race and browser laboratories v2
+
+on:
+  push:
+    branches: [validation/movie-buff-core-v6]
+    paths:
+      - ".github/workflows/movie-buff-core-v6-race-browser-v2.yml"
+      - "scripts/movie-buff-core-v6-race-browser-v2.sh"
+      - "scripts/movie-buff-core-v6-race-browser.sh"
+      - "scripts/movie-buff-core-v6-local-users.mjs"
+      - "scripts/movie-buff-core-v6-three-browser.mjs"
+      - "scripts/movie-buff-public-matchmaking-evidence-runner.mjs"
+      - "scripts/movie-buff-public-matchmaking-race.mjs"
+      - "scripts/movie-buff-public-matchmaking-race-helper.sql"
+      - "scripts/movie-buff-vip-authority-adversarial.mjs"
+      - "scripts/movie-buff-vip-finalize-adversarial.mjs"
+      - "scripts/movie-buff-three-client-phase-evidence-runner.mjs"
+      - "scripts/movie-buff-three-client-phase-proof.mjs"
+      - "scripts/movie-buff-reconnect-race-proof.mjs"
+      - "src/**"
+      - "supabase/**"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-core-v6
+  RAW_COMPOSITION_SHA: 88ea15071e5d8393adf54a947fef4afe6ac86630
+  RAW_COMPOSITION_TREE: 538590b96a4ce45f7ebe5f1220dd4db682bc8003
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-races:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env: {EXPECTED_SHA: "${{ github.sha }}"}
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ env.EXPECTED_SHA }}", fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: supabase/setup-cli@v1
+        with: {version: 2.111.0}
+      - name: Verify identity and parse race wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          git merge-base --is-ancestor "${RAW_COMPOSITION_SHA}" HEAD
+          test "$(git rev-parse "${RAW_COMPOSITION_SHA}^{tree}")" = "${RAW_COMPOSITION_TREE}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = 2.111.0
+          bash -n scripts/movie-buff-core-v6-race-browser-v2.sh
+          node --check scripts/movie-buff-core-v6-local-users.mjs
+          node --check scripts/movie-buff-core-v6-three-browser.mjs
+          docker --version; psql --version; python3 --version
+      - name: Execute race wrapper
+        shell: bash
+        run: bash scripts/movie-buff-core-v6-race-browser-v2.sh race "${EXPECTED_SHA}" "$(git rev-parse HEAD^{tree})" "${RUNNER_TEMP}/movie-buff-core-v6-race-v2"
+      - if: always()
+        shell: bash
+        run: git diff --check && test -z "$(git status --porcelain)"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: "movie-buff-core-v6-race-v2-${{ env.EXPECTED_SHA }}", path: "${{ runner.temp }}/movie-buff-core-v6-race-v2", if-no-files-found: error, retention-days: 7}
+
+  exact-three-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    env: {EXPECTED_SHA: "${{ github.sha }}"}
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ env.EXPECTED_SHA }}", fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: supabase/setup-cli@v1
+        with: {version: 2.111.0}
+      - name: Verify identity and parse browser wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          git merge-base --is-ancestor "${RAW_COMPOSITION_SHA}" HEAD
+          test "$(git rev-parse "${RAW_COMPOSITION_SHA}^{tree}")" = "${RAW_COMPOSITION_TREE}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = 2.111.0
+          bash -n scripts/movie-buff-core-v6-race-browser-v2.sh
+          node --check scripts/movie-buff-core-v6-local-users.mjs
+          node --check scripts/movie-buff-core-v6-three-browser.mjs
+          docker --version; python3 --version
+      - name: Execute browser wrapper
+        shell: bash
+        run: bash scripts/movie-buff-core-v6-race-browser-v2.sh browser "${EXPECTED_SHA}" "$(git rev-parse HEAD^{tree})" "${RUNNER_TEMP}/movie-buff-core-v6-browser-v2"
+      - if: always()
+        shell: bash
+        run: git diff --check && test -z "$(git status --porcelain)"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: "movie-buff-core-v6-browser-v2-${{ env.EXPECTED_SHA }}", path: "${{ runner.temp }}/movie-buff-core-v6-browser-v2", if-no-files-found: error, retention-days: 7}
