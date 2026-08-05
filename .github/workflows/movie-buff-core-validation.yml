@@ -50,7 +50,6 @@ jobs:
     timeout-minutes: 30
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-core-source-evidence
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
       SUPABASE_SERVICE_ROLE_KEY: local-placeholder
@@ -74,6 +73,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          EVIDENCE_DIR="${RUNNER_TEMP}/movie-buff-core-source-evidence"
           resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           test "${resolved_ref}" = "${EXPECTED_BRANCH}"
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
@@ -81,6 +81,7 @@ jobs:
           test -z "$(git status --porcelain)"
           test "$(git rev-parse HEAD^1)" = "${RAW_COMPOSITION_SHA}"
           mkdir -p "${EVIDENCE_DIR}"
+          echo "EVIDENCE_DIR=${EVIDENCE_DIR}" >> "$GITHUB_ENV"
           echo "MOVIE_BUFF_EXPECTED_REPOSITORY=${EXPECTED_REPOSITORY}" >> "$GITHUB_ENV"
           echo "MOVIE_BUFF_EXPECTED_REMOTE=${EXPECTED_REMOTE}" >> "$GITHUB_ENV"
           echo "MOVIE_BUFF_EXPECTED_BRANCH=${EXPECTED_BRANCH}" >> "$GITHUB_ENV"
@@ -92,10 +93,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/movie-buff-core-validation-guard.mjs \
-            2>&1 | tee "${EVIDENCE_DIR}/guard-actual.json"
-          node scripts/movie-buff-core-validation-guard.mjs --self-test \
-            2>&1 | tee "${EVIDENCE_DIR}/guard-negative-paths.json"
+          node scripts/movie-buff-core-validation-guard.mjs 2>&1 | tee "${EVIDENCE_DIR}/guard-actual.json"
+          node scripts/movie-buff-core-validation-guard.mjs --self-test 2>&1 | tee "${EVIDENCE_DIR}/guard-negative-paths.json"
 
       - name: Install committed lock
         run: npm ci --ignore-scripts --no-audit --no-fund
@@ -125,12 +124,9 @@ jobs:
           MOVIE_BUFF_BOM_ONLY_OUTPUT: ${{ runner.temp }}/movie-buff-core-source-evidence/bom-only-report.json
         run: |
           set -euo pipefail
-          node scripts/movie-buff-migration-encoding-check.mjs \
-            supabase/migrations supabase/rollbacks supabase/tests \
-            > "${EVIDENCE_DIR}/encoding.stdout.txt"
+          node scripts/movie-buff-migration-encoding-check.mjs supabase/migrations supabase/rollbacks supabase/tests > "${EVIDENCE_DIR}/encoding.stdout.txt"
           git fetch --no-tags --depth=1 origin "${INTEGRATION_SHA}"
-          node scripts/movie-buff-migration-bom-only-check.mjs "${INTEGRATION_SHA}" \
-            > "${EVIDENCE_DIR}/bom-only.stdout.txt"
+          node scripts/movie-buff-migration-bom-only-check.mjs "${INTEGRATION_SHA}" > "${EVIDENCE_DIR}/bom-only.stdout.txt"
 
       - name: Run TypeScript and localhost-placeholder build
         shell: bash
@@ -144,6 +140,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          EVIDENCE_DIR="${EVIDENCE_DIR:-${RUNNER_TEMP}/movie-buff-core-source-evidence}"
           mkdir -p "${EVIDENCE_DIR}"
           git diff --check
           test -z "$(git status --porcelain)"
@@ -176,18 +173,14 @@ jobs:
             echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
             echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } > "${EVIDENCE_DIR}/metadata.txt"
-          (
-            cd "${EVIDENCE_DIR}"
-            find . -maxdepth 1 -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt
-            sha256sum -c sha256.txt
-          )
+          (cd "${EVIDENCE_DIR}" && find . -maxdepth 1 -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt && sha256sum -c sha256.txt)
 
       - name: Upload source evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: movie-buff-core-source-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_DIR }}
+          path: ${{ runner.temp }}/movie-buff-core-source-evidence
           if-no-files-found: error
           retention-days: 7
 
@@ -197,7 +190,6 @@ jobs:
     timeout-minutes: 35
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EVIDENCE_DIR: ${{ runner.temp }}\movie-buff-core-windows-evidence
 
     steps:
       - name: Check out exact candidate SHA
@@ -218,18 +210,19 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $tree = (git rev-parse 'HEAD^{tree}').Trim()
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'movie-buff-core-windows-evidence'
           ./scripts/movie-buff-core-windows-digital-twin.ps1 `
             -ExpectedSha $env:EXPECTED_SHA `
             -ExpectedTree $tree `
             -ExpectedBranch $env:EXPECTED_BRANCH `
-            -EvidenceRoot $env:EVIDENCE_DIR
+            -EvidenceRoot $evidenceRoot
 
       - name: Upload Windows evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: movie-buff-core-windows-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_DIR }}
+          path: ${{ runner.temp }}\movie-buff-core-windows-evidence
           if-no-files-found: error
           retention-days: 7
 
@@ -239,7 +232,6 @@ jobs:
     timeout-minutes: 55
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-core-db-evidence
 
     steps:
       - name: Check out exact candidate SHA
@@ -253,6 +245,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          EVIDENCE_DIR="${RUNNER_TEMP}/movie-buff-core-db-evidence"
           test "${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}" = "${EXPECTED_BRANCH}"
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
           test "$(git rev-parse HEAD^1)" = "${RAW_COMPOSITION_SHA}"
@@ -260,6 +253,7 @@ jobs:
           test -z "$(git status --porcelain)"
           test ! -f supabase/.temp/project-ref
           mkdir -p "${EVIDENCE_DIR}"
+          echo "EVIDENCE_DIR=${EVIDENCE_DIR}" >> "$GITHUB_ENV"
           docker --version
           psql --version
           python3 --version
@@ -275,10 +269,7 @@ jobs:
           set -euo pipefail
           test "$(supabase --version)" = "2.111.0"
           bash -n scripts/movie-buff-core-local-supabase-lab.sh
-          bash scripts/movie-buff-core-local-supabase-lab.sh \
-            "${EXPECTED_SHA}" \
-            "$(git rev-parse HEAD^{tree})" \
-            "${EVIDENCE_DIR}"
+          bash scripts/movie-buff-core-local-supabase-lab.sh "${EXPECTED_SHA}" "$(git rev-parse HEAD^{tree})" "${EVIDENCE_DIR}"
 
       - name: Verify source remained clean
         if: always()
@@ -293,6 +284,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: movie-buff-core-database-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_DIR }}
+          path: ${{ runner.temp }}/movie-buff-core-db-evidence
           if-no-files-found: error
           retention-days: 7
