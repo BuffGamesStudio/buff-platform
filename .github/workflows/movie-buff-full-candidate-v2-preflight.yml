@@ -1,0 +1,164 @@
+name: Movie Buff full candidate v2 preflight
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-full-candidate-v2-staging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-full-candidate-v2-staging
+  RECONCILIATION_PARENT: 93eeafc36851628b419ab0d883013fae2637fea7
+  SECURITY_SOURCE: c950a2fea5c9846789542c001e4d76cff0f192bf
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+  NEXT_TELEMETRY_DISABLED: "1"
+  NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+  SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+
+jobs:
+  exact-source-build-database:
+    name: Exact source, build, security, rollback and reapply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      EXPECTED_SHA: ${{ github.sha }}
+      SOURCE_EVIDENCE: ${{ runner.temp }}/movie-buff-full-candidate-v2-source
+      DATABASE_EVIDENCE: ${{ runner.temp }}/movie-buff-full-candidate-v2-database
+
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind exact candidate and security blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${SOURCE_EVIDENCE}" "${DATABASE_EVIDENCE}"
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          git merge-base --is-ancestor "${RECONCILIATION_PARENT}" HEAD
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          test "$(git rev-parse HEAD:supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql)" = "$(git rev-parse ${SECURITY_SOURCE}:supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql)"
+          test "$(git rev-parse HEAD:supabase/migrations/20260805160000_movie_buff_six_table_rls_reconciliation.sql)" = "$(git rev-parse ${SECURITY_SOURCE}:supabase/migrations/20260805160000_movie_buff_six_table_rls_reconciliation.sql)"
+          test "$(git rev-parse HEAD:supabase/migrations/20260805161000_public_rls_auto_enable_acl_lockdown.sql)" = "$(git rev-parse ${SECURITY_SOURCE}:supabase/migrations/20260805161000_public_rls_auto_enable_acl_lockdown.sql)"
+          test "$(git rev-parse HEAD:supabase/tests/movie_buff_current_security_finalizer_test.sql)" = "$(git rev-parse ${SECURITY_SOURCE}:supabase/tests/movie_buff_current_security_finalizer_test.sql)"
+          test "$(git rev-parse HEAD:supabase/tests/movie_buff_current_security_finalizer_rollback_test.sql)" = "$(git rev-parse ${SECURITY_SOURCE}:supabase/tests/movie_buff_current_security_finalizer_rollback_test.sql)"
+          bash -n scripts/movie-buff-current-security-finalizer-evidence.sh
+          node --check tests/movie-buff-current-security-finalizer.test.mjs
+          docker --version
+          psql --version
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run candidate repository contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test tests/movie-buff-*.test.mjs \
+            2>&1 | tee "${SOURCE_EVIDENCE}/repository-contracts.tap"
+
+      - name: Run TypeScript and production build
+        shell: bash
+        run: |
+          set -o pipefail
+          npx --no-install tsc --noEmit \
+            2>&1 | tee "${SOURCE_EVIDENCE}/typescript.txt"
+          npm run build \
+            2>&1 | tee "${SOURCE_EVIDENCE}/build.txt"
+
+      - name: Create exact migration and rollback manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${SOURCE_EVIDENCE}/migration-rollback-manifest.tsv" <<'PY'
+          import hashlib,pathlib,subprocess,sys
+          out=pathlib.Path(sys.argv[1])
+          root=pathlib.Path.cwd()
+          sha=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()
+          rows=['candidate_sha\tcandidate_tree\tkind\tpath\tbytes\tsha256']
+          for folder,kind in [('supabase/migrations','migration'),('supabase/rollbacks','rollback')]:
+              for path in sorted((root/folder).glob('*.sql')):
+                  data=path.read_bytes()
+                  rows.append(f'{sha}\t{tree}\t{kind}\t{path.relative_to(root).as_posix()}\t{len(data)}\t{hashlib.sha256(data).hexdigest()}')
+          out.write_text('\n'.join(rows)+'\n',encoding='utf-8')
+          PY
+
+      - name: Run clean disposable database security proof
+        shell: bash
+        run: |
+          bash scripts/movie-buff-current-security-finalizer-evidence.sh \
+            "${EXPECTED_SHA}" "${DATABASE_EVIDENCE}"
+
+      - name: Finalize exact source evidence
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "${SOURCE_EVIDENCE}"
+          classification=PASS
+          git diff --check >"${SOURCE_EVIDENCE}/git-diff-check.txt" 2>&1 || classification=FAIL
+          test -z "$(git status --porcelain)" || classification=FAIL
+          {
+            echo "lane=movie-buff-full-candidate-v2-preflight"
+            echo "classification=${classification}"
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "source_branch=${GITHUB_REF_NAME}"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "reconciliation_parent=${RECONCILIATION_PARENT}"
+            echo "security_source=${SECURITY_SOURCE}"
+            echo "target=disposable-unlinked-localhost"
+            echo "hosted_staging=UNTOUCHED"
+            echo "production=UNTOUCHED"
+            echo "workflow_run_id=${GITHUB_RUN_ID}"
+            echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"${SOURCE_EVIDENCE}/metadata.txt"
+          (
+            cd "${SOURCE_EVIDENCE}" || exit 1
+            find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt
+            sha256sum -c sha256.txt
+          ) || classification=FAIL
+          test "${classification}" = PASS
+
+      - name: Upload exact candidate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-full-candidate-v2-${{ env.EXPECTED_SHA }}
+          path: |
+            ${{ env.SOURCE_EVIDENCE }}
+            ${{ env.DATABASE_EVIDENCE }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
