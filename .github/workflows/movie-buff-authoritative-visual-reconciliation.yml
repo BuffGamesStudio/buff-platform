@@ -1,0 +1,127 @@
+name: Movie Buff authoritative visual reconciliation
+
+on:
+  push:
+    branches:
+      - work/movie-buff-authoritative-visual-reconciliation-20260805
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_NOT_TRACK: "1"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  validate:
+    name: Validate passive visuals at exact SHA
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_SHA: ${{ github.sha }}
+      EXPECTED_BRANCH: work/movie-buff-authoritative-visual-reconciliation-20260805
+      MOV17_SHA: b6aa1b5bd8cf18770db0cac7bf3630a09a7d86b1
+      MOV18_SHA: e335a07eed20c97bc2487962ad0cf67c4f9dcc03
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+
+    steps:
+      - name: Check out exact visual candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Bind exact source and lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "EVIDENCE_DIR=${RUNNER_TEMP}/movie-buff-authoritative-visual" >> "${GITHUB_ENV}"
+          mkdir -p "${RUNNER_TEMP}/movie-buff-authoritative-visual"
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test -z "$(git status --porcelain)"
+          git merge-base --is-ancestor "${MOV17_SHA}" HEAD
+          git merge-base --is-ancestor "${MOV18_SHA}" HEAD
+          node --check tests/movie-buff-authoritative-visual-reconciliation.test.mjs
+          node --check tests/movie-buff-visual-runtime.test.mjs
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run visual authority contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test \
+            tests/movie-buff-authoritative-visual-reconciliation.test.mjs \
+            tests/movie-buff-visual-runtime.test.mjs \
+            2>&1 | tee "${EVIDENCE_DIR}/contracts.tap"
+
+      - name: Run TypeScript and production build
+        shell: bash
+        run: |
+          set -o pipefail
+          npx --no-install tsc --noEmit \
+            2>&1 | tee "${EVIDENCE_DIR}/typescript.txt"
+          npm run build \
+            2>&1 | tee "${EVIDENCE_DIR}/build.txt"
+
+      - name: Finalize exact-SHA evidence
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          classification=PASS
+          git diff --check >"${EVIDENCE_DIR}/git-diff-check.txt" 2>&1 \
+            || classification=FAIL
+          test -z "$(git status --porcelain)" || classification=FAIL
+          {
+            echo "lane=Movie-Buff-authoritative-visual-reconciliation"
+            echo "classification=${classification}"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "source_ref=${GITHUB_REF_NAME}"
+            echo "mov17_authority_ancestor=${MOV17_SHA}"
+            echo "mov18_visual_ancestor=${MOV18_SHA}"
+            echo "composition_commit=e2c98ed0ae2be4ec162296db2cbacba3939423e2"
+            echo "browser_behavior=UNKNOWN"
+            echo "three_client_behavior=UNKNOWN"
+            echo "hosted_state=UNKNOWN"
+            echo "production_state=UNTOUCHED"
+            echo "workflow_run_id=${GITHUB_RUN_ID}"
+            echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"${EVIDENCE_DIR}/metadata.txt"
+          (
+            cd "${EVIDENCE_DIR}" || exit 1
+            find . -type f ! -name sha256.txt -print0 \
+              | sort -z | xargs -0 sha256sum >sha256.txt
+            sha256sum -c sha256.txt
+          )
+          test "${classification}" = PASS
+
+      - name: Upload exact-SHA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-authoritative-visual-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/movie-buff-authoritative-visual
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
