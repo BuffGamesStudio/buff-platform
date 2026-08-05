@@ -21,7 +21,8 @@ permissions:
 
 env:
   EXPECTED_BRANCH: validation/movie-buff-core-v1
-  RAW_COMPOSITION_SHA: b4f8e2196a8a0423e7340ac97bd5592d58a966db
+  RAW_COMPOSITION_SHA: d809cad0ca45a590bc94960a2702e5bde92189f3
+  RAW_COMPOSITION_TREE: 75d61e32ab0aceeff142ce76e9328d9eed7f2888
 
 jobs:
   windows-command-lab:
@@ -52,8 +53,9 @@ jobs:
           $actualBranch = if ($env:GITHUB_HEAD_REF) { $env:GITHUB_HEAD_REF } else { $env:GITHUB_REF_NAME }
           if ($actualBranch -ne $env:EXPECTED_BRANCH) { throw "Wrong branch: $actualBranch" }
           if ((git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'Wrong checked-out SHA' }
-          git merge-base --is-ancestor $env:RAW_COMPOSITION_SHA HEAD
-          if ($LASTEXITCODE -ne 0) { throw 'Raw composition is not an ancestor' }
+          if ((git rev-parse "$env:RAW_COMPOSITION_SHA`^{tree}").Trim() -ne $env:RAW_COMPOSITION_TREE) {
+            throw 'Raw composition tree mismatch'
+          }
           $tree = (git rev-parse 'HEAD^{tree}').Trim()
           $evidenceRoot = Join-Path $env:RUNNER_TEMP 'movie-buff-core-windows-evidence'
           ./scripts/movie-buff-core-windows-digital-twin.ps1 `
