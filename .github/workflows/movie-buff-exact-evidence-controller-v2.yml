@@ -1,0 +1,626 @@
+name: Movie Buff exact-target evidence controller v2
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-exact-evidence-controller-20260805
+    paths:
+      - ".github/workflows/movie-buff-exact-evidence-controller-v2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_SHA: 5600b37cee9def5ad0121b8db5d147703a7b40ae
+  COMPOSITION_SHA: b4f8e2196a8a0423e7340ac97bd5592d58a966db
+  INTEGRATION_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
+  CONTROLLER_BRANCH: validation/movie-buff-exact-evidence-controller-20260805
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  linux-static:
+    name: Exact target Linux repository and encoding
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify target provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
+          test "$(git rev-parse HEAD^)" = "${COMPOSITION_SHA}"
+          git merge-base --is-ancestor 0ecf8de86d2ea1a28c1496ed044a5092a7d3ffcb "${COMPOSITION_SHA}"
+          git merge-base --is-ancestor 95c292ead66fc83cf13d7154bd3cf691610f549d "${COMPOSITION_SHA}"
+          git merge-base --is-ancestor 6d7e9aabe5b07796a3a17fdf6c11df091dd1f978 "${COMPOSITION_SHA}"
+          git merge-base --is-ancestor bf5e6d6f251f6840d17eed2fc68e0d580295437f "${COMPOSITION_SHA}"
+          test -z "$(git status --porcelain)"
+      - name: Install committed dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run all lane-owned repository contracts
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-exact-linux-static
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          node --check scripts/movie-buff-public-matchmaking-race.mjs
+          node --check scripts/movie-buff-vip-authority-adversarial.mjs
+          node --check scripts/movie-buff-vip-authority-personas.mjs
+          node --check scripts/movie-buff-vip-finalize-adversarial.mjs
+          node --check scripts/movie-buff-three-client-phase-proof.mjs
+          node --check scripts/movie-buff-reconnect-race-proof.mjs
+          node --check scripts/movie-buff-three-client-phase-evidence-runner.mjs
+          node --test \
+            tests/movie-buff-public-matchmaking-contract.test.mjs \
+            tests/movie-buff-public-matchmaking-handoff.test.mjs \
+            tests/movie-buff-vip-authority.test.mjs \
+            tests/movie-buff-vip-finalize-contract.test.mjs \
+            tests/movie-buff-vip-phase-policy.test.mjs \
+            tests/movie-buff-server-phase-machine.test.mjs \
+            tests/movie-buff-authoritative-phase-runtime.test.mjs \
+            tests/movie-buff-buster-safe-boundary.test.mjs \
+            tests/movie-buff-phase-tile-mutation-guard.test.mjs \
+            tests/movie-buff-match-start-handoff.test.mjs \
+            2>&1 | tee "${EVIDENCE_DIR}/repository-contracts.tap"
+      - name: Run TypeScript and production build
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-exact-linux-static
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-build-publishable-key
+          SUPABASE_SERVICE_ROLE_KEY: local-build-service-role-key
+        run: |
+          set -euo pipefail
+          npx --no-install tsc --noEmit 2>&1 | tee "${EVIDENCE_DIR}/typescript.txt"
+          npm run build 2>&1 | tee "${EVIDENCE_DIR}/build.txt"
+      - name: Run exact migration-byte proofs
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-exact-linux-static
+          MOVIE_BUFF_MIGRATION_ENCODING_OUTPUT: ${{ runner.temp }}/movie-buff-exact-linux-static/encoding-report.json
+          MOVIE_BUFF_BOM_ONLY_OUTPUT: ${{ runner.temp }}/movie-buff-exact-linux-static/bom-only-report.json
+        run: |
+          set -euo pipefail
+          node --test tests/movie-buff-migration-encoding.test.mjs 2>&1 | tee "${EVIDENCE_DIR}/encoding-tests.tap"
+          node scripts/movie-buff-migration-encoding-check.mjs \
+            supabase/migrations supabase/rollbacks supabase/tests \
+            > "${EVIDENCE_DIR}/encoding-scan.txt"
+          node scripts/movie-buff-migration-bom-only-check.mjs "${INTEGRATION_SHA}" \
+            > "${EVIDENCE_DIR}/bom-only.txt"
+      - name: Verify clean postflight and upload metadata
+        if: always()
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-exact-linux-static
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          git diff --check
+          test -z "$(git status --porcelain)"
+          {
+            echo "classification=exact-target-repository-build-and-byte-proof"
+            echo "target_sha=${TARGET_SHA}"
+            echo "composition_sha=${COMPOSITION_SHA}"
+            echo "controller_sha=${GITHUB_SHA}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "database_behavior=UNKNOWN"
+            echo "browser_behavior=UNKNOWN"
+            echo "hosted_behavior=UNKNOWN"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${EVIDENCE_DIR}/metadata.txt"
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -maxdepth 1 -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt
+            sha256sum -c sha256.txt
+          )
+      - name: Upload Linux exact-target evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-exact-linux-${{ env.TARGET_SHA }}
+          path: ${{ runner.temp }}/movie-buff-exact-linux-static
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-static:
+    name: Exact target Windows command-shell twin
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - name: Check out exact target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify target provenance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git rev-parse HEAD).Trim() -ne $env:TARGET_SHA) { throw 'target SHA mismatch' }
+          if ((git rev-parse HEAD^).Trim() -ne $env:COMPOSITION_SHA) { throw 'composition parent mismatch' }
+          if (git status --porcelain) { throw 'checkout is not clean' }
+          $PSVersionTable | Out-String
+          node --version
+          npm --version
+      - name: Install committed dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run combined repository contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'movie-buff-exact-windows-static'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          node --test `
+            tests/movie-buff-public-matchmaking-contract.test.mjs `
+            tests/movie-buff-public-matchmaking-handoff.test.mjs `
+            tests/movie-buff-vip-authority.test.mjs `
+            tests/movie-buff-vip-finalize-contract.test.mjs `
+            tests/movie-buff-vip-phase-policy.test.mjs `
+            tests/movie-buff-server-phase-machine.test.mjs `
+            tests/movie-buff-authoritative-phase-runtime.test.mjs `
+            tests/movie-buff-buster-safe-boundary.test.mjs `
+            tests/movie-buff-phase-tile-mutation-guard.test.mjs `
+            tests/movie-buff-match-start-handoff.test.mjs `
+            1> (Join-Path $root 'repository-contracts.tap') `
+            2> (Join-Path $root 'repository-contracts.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "repository contracts failed: $LASTEXITCODE" }
+      - name: Run TypeScript and production build
+        shell: pwsh
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-build-publishable-key
+          SUPABASE_SERVICE_ROLE_KEY: local-build-service-role-key
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'movie-buff-exact-windows-static'
+          npx --no-install tsc --noEmit `
+            1> (Join-Path $root 'typescript.txt') `
+            2> (Join-Path $root 'typescript.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "TypeScript failed: $LASTEXITCODE" }
+          npm run build `
+            1> (Join-Path $root 'build.txt') `
+            2> (Join-Path $root 'build.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "build failed: $LASTEXITCODE" }
+      - name: Run Windows migration-byte proofs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'movie-buff-exact-windows-static'
+          $env:MOVIE_BUFF_MIGRATION_ENCODING_OUTPUT = Join-Path $root 'encoding-report.json'
+          $env:MOVIE_BUFF_BOM_ONLY_OUTPUT = Join-Path $root 'bom-only-report.json'
+          node --test tests/movie-buff-migration-encoding.test.mjs `
+            1> (Join-Path $root 'encoding-tests.tap') `
+            2> (Join-Path $root 'encoding-tests.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "encoding tests failed: $LASTEXITCODE" }
+          node scripts/movie-buff-migration-encoding-check.mjs supabase/migrations supabase/rollbacks supabase/tests `
+            1> (Join-Path $root 'encoding-scan.txt') `
+            2> (Join-Path $root 'encoding-scan.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "encoding scan failed: $LASTEXITCODE" }
+          node scripts/movie-buff-migration-bom-only-check.mjs $env:INTEGRATION_SHA `
+            1> (Join-Path $root 'bom-only.txt') `
+            2> (Join-Path $root 'bom-only.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "BOM-only proof failed: $LASTEXITCODE" }
+      - name: Verify clean postflight and metadata
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'movie-buff-exact-windows-static'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
+          if (git status --porcelain) { throw 'checkout is not clean after validation' }
+          @(
+            'classification=exact-target-windows-command-shell-twin'
+            "target_sha=$env:TARGET_SHA"
+            "composition_sha=$env:COMPOSITION_SHA"
+            "controller_sha=$env:GITHUB_SHA"
+            "powershell_version=$($PSVersionTable.PSVersion)"
+            "node_version=$((node --version).Trim())"
+            'physical_windows_cursor_equivalence=UNKNOWN'
+            'database_behavior=UNKNOWN'
+            'browser_behavior=UNKNOWN'
+            'hosted_behavior=UNKNOWN'
+            "generated_at=$([DateTime]::UtcNow.ToString('o'))"
+          ) | Set-Content -LiteralPath (Join-Path $root 'metadata.txt') -Encoding utf8
+          Get-ChildItem -LiteralPath $root -File |
+            Where-Object Name -ne 'sha256.csv' |
+            Get-FileHash -Algorithm SHA256 |
+            Select-Object Path, Hash |
+            Export-Csv -LiteralPath (Join-Path $root 'sha256.csv') -NoTypeInformation
+      - name: Upload Windows exact-target evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-exact-windows-${{ env.TARGET_SHA }}
+          path: ${{ runner.temp }}\movie-buff-exact-windows-static
+          if-no-files-found: error
+          retention-days: 7
+
+  mov17-rehearsal:
+    name: Exact target MOV-17 rollback and forward rehearsal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Check out exact target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
+          test "$(git rev-parse HEAD^)" = "${COMPOSITION_SHA}"
+          test ! -f supabase/.temp/project-ref
+          test -z "$(git status --porcelain)"
+          bash -n scripts/movie-buff-mov17-local-supabase-evidence.sh
+          python3 -B scripts/movie-buff-redact-evidence-test.py
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Run lane-owned rollback rehearsal
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-exact-mov17-rehearsal
+        run: |
+          set -euo pipefail
+          bash scripts/movie-buff-mov17-local-supabase-evidence.sh "${TARGET_SHA}" "${EVIDENCE_DIR}"
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
+      - name: Upload MOV-17 rehearsal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-exact-mov17-rehearsal-${{ env.TARGET_SHA }}
+          path: ${{ runner.temp }}/movie-buff-exact-mov17-rehearsal
+          if-no-files-found: error
+          retention-days: 7
+
+  combined-database-races:
+    name: Exact target combined database and race laboratory
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - name: Check out exact target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install repository dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Run combined disposable database and races
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-exact-combined-database
+          USERS_FILE: ${{ runner.temp }}/movie-buff-exact-combined-users.json
+        run: |
+          set +e
+          set -uo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          overall=0
+          app_pid=""
+          cleanup() {
+            if [ -n "${app_pid}" ]; then kill "${app_pid}" >/dev/null 2>&1 || true; fi
+            supabase stop --no-backup > "${EVIDENCE_DIR}/supabase-stop.log" 2>&1 || true
+            rm -f "${USERS_FILE}"
+          }
+          trap cleanup EXIT
+          printf 'laboratory=combined-database-races\ntarget_sha=%s\ncomposition_sha=%s\ncontroller_sha=%s\nclassification=UNKNOWN\n' \
+            "${TARGET_SHA}" "${COMPOSITION_SHA}" "${GITHUB_SHA}" > "${EVIDENCE_DIR}/metadata.txt"
+          test "$(git rev-parse HEAD)" = "${TARGET_SHA}" || overall=1
+          test "$(git rev-parse HEAD^)" = "${COMPOSITION_SHA}" || overall=1
+          test -z "$(git status --porcelain)" || overall=1
+          node scripts/movie-buff-migration-encoding-check.mjs supabase/migrations supabase/rollbacks supabase/tests \
+            > "${EVIDENCE_DIR}/migration-encoding.log" 2>&1 || overall=1
+          supabase start > "${EVIDENCE_DIR}/supabase-start.log" 2>&1
+          start_exit=$?
+          printf '%s\n' "${start_exit}" > "${EVIDENCE_DIR}/supabase-start.exit"
+          if [ "${start_exit}" -ne 0 ]; then overall=1; fi
+          reset_exit=125
+          if [ "${start_exit}" -eq 0 ]; then
+            supabase db reset --local > "${EVIDENCE_DIR}/database-reset.log" 2>&1
+            reset_exit=$?
+          fi
+          printf '%s\n' "${reset_exit}" > "${EVIDENCE_DIR}/database-reset.exit"
+          if [ "${reset_exit}" -ne 0 ]; then overall=1; fi
+          if [ "${reset_exit}" -eq 0 ]; then
+            status_env="$(supabase status -o env 2> "${EVIDENCE_DIR}/supabase-status.error")"
+            status_exit=$?
+            printf '%s\n' "${status_exit}" > "${EVIDENCE_DIR}/supabase-status.exit"
+            if [ "${status_exit}" -ne 0 ]; then overall=1; fi
+            eval "${status_env}"
+            export NEXT_PUBLIC_SUPABASE_URL="${API_URL:-http://127.0.0.1:55321}"
+            export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+            export SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY:-${SECRET_KEY:-}}"
+            export MOVIE_BUFF_APP_URL="http://127.0.0.1:3001"
+            test -n "${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}" || overall=1
+            test -n "${SUPABASE_SERVICE_ROLE_KEY}" || overall=1
+            MOVIE_BUFF_LOCAL_USERS_OUTPUT="${USERS_FILE}" \
+            MOVIE_BUFF_LOCAL_RUN_ID="combined-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+              node scripts/movie-buff-exact-local-users.mjs \
+              > "${EVIDENCE_DIR}/local-users-setup.log" 2>&1 || overall=1
+            NEXT_PUBLIC_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL}" \
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}" \
+            SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY}" \
+              npm run dev -- --hostname 127.0.0.1 --port 3001 \
+              > "${EVIDENCE_DIR}/application.log" 2>&1 &
+            app_pid=$!
+            for attempt in $(seq 1 90); do
+              curl -fsS "${MOVIE_BUFF_APP_URL}/games/movie-buff" >/dev/null 2>&1 && break
+              sleep 1
+            done
+            curl -fsS "${MOVIE_BUFF_APP_URL}/games/movie-buff" \
+              > "${EVIDENCE_DIR}/application-health.html" 2> "${EVIDENCE_DIR}/application-health.error" || overall=1
+            for sql_file in \
+              supabase/tests/movie_buff_public_matchmaking_test.sql \
+              supabase/tests/movie_buff_vip_authority_test.sql \
+              supabase/tests/movie_buff_vip_deadline_finalize_test.sql \
+              supabase/tests/movie_buff_vip_snapshot_release_test.sql \
+              supabase/tests/movie_buff_server_phase_machine_test.sql \
+              supabase/tests/movie_buff_match_start_handoff_test.sql
+            do
+              label="$(basename "${sql_file}" .sql)"
+              supabase test db "${sql_file}" --local > "${EVIDENCE_DIR}/${label}.log" 2>&1
+              exit_code=$?
+              printf '%s\n' "${exit_code}" > "${EVIDENCE_DIR}/${label}.exit"
+              if [ "${exit_code}" -ne 0 ]; then overall=1; fi
+            done
+            if [ -n "${DB_URL:-}" ]; then
+              psql "${DB_URL}" -v ON_ERROR_STOP=1 -f scripts/movie-buff-public-matchmaking-race-helper.sql \
+                > "${EVIDENCE_DIR}/mov15-race-helper.log" 2>&1 || overall=1
+            else
+              printf 'DB_URL missing\n' > "${EVIDENCE_DIR}/mov15-race-helper.log"
+              overall=1
+            fi
+            users_json="$(cat "${USERS_FILE}")"
+            core_users="$(jq -c '.[0:3]' "${USERS_FILE}")"
+            overflow_user="$(jq -c '.[3]' "${USERS_FILE}")"
+            MOVIE_BUFF_ALLOW_LOCAL_DESTRUCTIVE_TESTS=YES_I_UNDERSTAND_LOCAL_ONLY \
+            MOVIE_BUFF_ALLOW_LOCAL_DELETIONS=YES \
+            MOVIE_BUFF_EXACT_SHA="${TARGET_SHA}" \
+            MOVIE_BUFF_EXPECTED_GIT_SHA="${TARGET_SHA}" \
+            MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-public-matchmaking-evidence-runner.mjs" \
+            MOVIE_BUFF_TEST_USERS="${core_users}" \
+            MOVIE_BUFF_OVERFLOW_TEST_USER="${overflow_user}" \
+            MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov15-public-matchmaking.json" \
+            MOVIE_BUFF_EVIDENCE_MANIFEST="${EVIDENCE_DIR}/mov15-public-matchmaking.manifest.json" \
+              node scripts/movie-buff-public-matchmaking-evidence-runner.mjs \
+              > "${EVIDENCE_DIR}/mov15-public-matchmaking.log" 2>&1
+            mov15_exit=$?
+            printf '%s\n' "${mov15_exit}" > "${EVIDENCE_DIR}/mov15-public-matchmaking.exit"
+            if [ "${mov15_exit}" -ne 0 ]; then overall=1; fi
+            MOVIE_BUFF_VIP_TEST_USERS="${users_json}" \
+            MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov16-vip-personas.json" \
+              node scripts/movie-buff-vip-authority-personas.mjs \
+              > "${EVIDENCE_DIR}/mov16-vip-personas.log" 2>&1
+            personas_exit=$?
+            printf '%s\n' "${personas_exit}" > "${EVIDENCE_DIR}/mov16-vip-personas.exit"
+            if [ "${personas_exit}" -ne 0 ]; then overall=1; fi
+            MOVIE_BUFF_ALLOW_LOCAL_DELETIONS=YES \
+            MOVIE_BUFF_EXPECTED_GIT_SHA="${TARGET_SHA}" \
+            MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-vip-authority-adversarial.mjs" \
+            MOVIE_BUFF_VIP_TEST_USERS="${users_json}" \
+            MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov16-vip-authority.json" \
+              node scripts/movie-buff-vip-authority-adversarial.mjs \
+              > "${EVIDENCE_DIR}/mov16-vip-authority.log" 2>&1
+            vip_exit=$?
+            printf '%s\n' "${vip_exit}" > "${EVIDENCE_DIR}/mov16-vip-authority.exit"
+            if [ "${vip_exit}" -ne 0 ]; then overall=1; fi
+            MOVIE_BUFF_ALLOW_LOCAL_DELETIONS=YES \
+            MOVIE_BUFF_EXPECTED_GIT_SHA="${TARGET_SHA}" \
+            MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-vip-finalize-adversarial.mjs" \
+            MOVIE_BUFF_VIP_TEST_USERS="${users_json}" \
+            MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov16-vip-finalize.json" \
+              node scripts/movie-buff-vip-finalize-adversarial.mjs \
+              > "${EVIDENCE_DIR}/mov16-vip-finalize.log" 2>&1
+            finalize_exit=$?
+            printf '%s\n' "${finalize_exit}" > "${EVIDENCE_DIR}/mov16-vip-finalize.exit"
+            if [ "${finalize_exit}" -ne 0 ]; then overall=1; fi
+            MOVIE_BUFF_ALLOW_LOCAL_PHASE_MUTATION=YES \
+            MOVIE_BUFF_EXPECTED_GIT_SHA="${TARGET_SHA}" \
+            MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-three-client-phase-evidence-runner.mjs" \
+            MOVIE_BUFF_PHASE_TEST_USERS="${core_users}" \
+            MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov17-three-client-phase.json" \
+            MOVIE_BUFF_RECONNECT_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov17-reconnect-race.json" \
+            MOVIE_BUFF_EVIDENCE_MANIFEST="${EVIDENCE_DIR}/mov17-three-client-phase.manifest.json" \
+              node scripts/movie-buff-three-client-phase-evidence-runner.mjs \
+              > "${EVIDENCE_DIR}/mov17-three-client-phase.log" 2>&1
+            mov17_exit=$?
+            printf '%s\n' "${mov17_exit}" > "${EVIDENCE_DIR}/mov17-three-client-phase.exit"
+            if [ "${mov17_exit}" -ne 0 ]; then overall=1; fi
+          fi
+          classification=PASS
+          if [ "${overall}" -ne 0 ]; then classification=FAIL; fi
+          printf '\nclassification=%s\nexit_code=%s\nfinished_at=%s\n' \
+            "${classification}" "${overall}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${EVIDENCE_DIR}/metadata.txt"
+          find "${EVIDENCE_DIR}" -type f \( -name '*.txt' -o -name '*.log' -o -name '*.json' -o -name '*.html' -o -name '*.error' \) -print0 \
+            | while IFS= read -r -d '' file; do
+                python3 -B scripts/movie-buff-redact-evidence.py "${file}" "${file}.redacted"
+                mv "${file}.redacted" "${file}"
+              done
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt
+            sha256sum -c sha256.txt
+          )
+          exit "${overall}"
+      - name: Upload combined database evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-exact-combined-database-${{ env.TARGET_SHA }}
+          path: ${{ runner.temp }}/movie-buff-exact-combined-database
+          if-no-files-found: error
+          retention-days: 7
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+  three-browser:
+    name: Exact target ephemeral three-browser laboratory
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - name: Check out exact target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install repository dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Run exact target browsers
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-exact-three-browser-v2
+          USERS_FILE: ${{ runner.temp }}/movie-buff-exact-browser-users-v2.json
+          PLAYWRIGHT_ROOT: ${{ runner.temp }}/movie-buff-playwright-v2
+        run: |
+          set +e
+          set -uo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          overall=0
+          app_pid=""
+          cleanup() {
+            if [ -n "${app_pid}" ]; then kill "${app_pid}" >/dev/null 2>&1 || true; fi
+            supabase stop --no-backup > "${EVIDENCE_DIR}/supabase-stop.log" 2>&1 || true
+            rm -f "${USERS_FILE}"
+          }
+          trap cleanup EXIT
+          printf 'laboratory=ephemeral-three-browser-v2\ntarget_sha=%s\ncomposition_sha=%s\ncontroller_sha=%s\nclassification=UNKNOWN\n' \
+            "${TARGET_SHA}" "${COMPOSITION_SHA}" "${GITHUB_SHA}" > "${EVIDENCE_DIR}/metadata.txt"
+          test "$(git rev-parse HEAD)" = "${TARGET_SHA}" || overall=1
+          test "$(git rev-parse HEAD^)" = "${COMPOSITION_SHA}" || overall=1
+          supabase start > "${EVIDENCE_DIR}/supabase-start.log" 2>&1
+          start_exit=$?
+          printf '%s\n' "${start_exit}" > "${EVIDENCE_DIR}/supabase-start.exit"
+          if [ "${start_exit}" -ne 0 ]; then overall=1; fi
+          reset_exit=125
+          if [ "${start_exit}" -eq 0 ]; then
+            supabase db reset --local > "${EVIDENCE_DIR}/database-reset.log" 2>&1
+            reset_exit=$?
+          fi
+          printf '%s\n' "${reset_exit}" > "${EVIDENCE_DIR}/database-reset.exit"
+          if [ "${reset_exit}" -ne 0 ]; then overall=1; fi
+          if [ "${reset_exit}" -eq 0 ]; then
+            status_env="$(supabase status -o env 2> "${EVIDENCE_DIR}/supabase-status.error")"
+            status_exit=$?
+            printf '%s\n' "${status_exit}" > "${EVIDENCE_DIR}/supabase-status.exit"
+            if [ "${status_exit}" -ne 0 ]; then overall=1; fi
+            eval "${status_env}"
+            export NEXT_PUBLIC_SUPABASE_URL="${API_URL:-http://127.0.0.1:55321}"
+            export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+            export SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY:-${SECRET_KEY:-}}"
+            export MOVIE_BUFF_APP_URL="http://127.0.0.1:3001"
+            MOVIE_BUFF_LOCAL_USERS_OUTPUT="${USERS_FILE}" \
+            MOVIE_BUFF_LOCAL_RUN_ID="browser-v2-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+              node scripts/movie-buff-exact-local-users.mjs \
+              > "${EVIDENCE_DIR}/local-users-setup.log" 2>&1 || overall=1
+            NEXT_PUBLIC_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL}" \
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}" \
+            SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY}" \
+              npm run dev -- --hostname 127.0.0.1 --port 3001 \
+              > "${EVIDENCE_DIR}/application.log" 2>&1 &
+            app_pid=$!
+            for attempt in $(seq 1 90); do
+              curl -fsS "${MOVIE_BUFF_APP_URL}/sign-in" >/dev/null 2>&1 && break
+              sleep 1
+            done
+            curl -fsS "${MOVIE_BUFF_APP_URL}/sign-in" > "${EVIDENCE_DIR}/application-health.html" 2> "${EVIDENCE_DIR}/application-health.error" || overall=1
+            mkdir -p "${PLAYWRIGHT_ROOT}"
+            (
+              cd "${PLAYWRIGHT_ROOT}"
+              npm init -y >/dev/null 2>&1
+              npm install --ignore-scripts playwright@1.54.2 > "${EVIDENCE_DIR}/playwright-install.log" 2>&1
+              npx playwright install --with-deps chromium > "${EVIDENCE_DIR}/playwright-browser-install.log" 2>&1
+            ) || overall=1
+            MOVIE_BUFF_EXPECTED_GIT_SHA="${TARGET_SHA}" \
+            MOVIE_BUFF_COMPOSITION_SHA="${COMPOSITION_SHA}" \
+            MOVIE_BUFF_LOCAL_USERS_OUTPUT="${USERS_FILE}" \
+            MOVIE_BUFF_EVIDENCE_DIR="${EVIDENCE_DIR}" \
+            PLAYWRIGHT_PACKAGE_ROOT="${PLAYWRIGHT_ROOT}" \
+              node scripts/movie-buff-exact-three-browser-lab.mjs \
+              > "${EVIDENCE_DIR}/three-browser.log" 2>&1
+            browser_exit=$?
+            printf '%s\n' "${browser_exit}" > "${EVIDENCE_DIR}/three-browser.exit"
+            if [ "${browser_exit}" -ne 0 ]; then overall=1; fi
+          fi
+          classification=PASS
+          if [ "${overall}" -ne 0 ]; then classification=FAIL; fi
+          printf '\nclassification=%s\nexit_code=%s\nfinished_at=%s\n' \
+            "${classification}" "${overall}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${EVIDENCE_DIR}/metadata.txt"
+          find "${EVIDENCE_DIR}" -type f \( -name '*.txt' -o -name '*.log' -o -name '*.json' -o -name '*.html' -o -name '*.error' \) -print0 \
+            | while IFS= read -r -d '' file; do
+                python3 -B scripts/movie-buff-redact-evidence.py "${file}" "${file}.redacted"
+                mv "${file}.redacted" "${file}"
+              done
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt
+            sha256sum -c sha256.txt
+          )
+          exit "${overall}"
+      - name: Upload three-browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-exact-three-browser-v2-${{ env.TARGET_SHA }}
+          path: ${{ runner.temp }}/movie-buff-exact-three-browser-v2
+          if-no-files-found: error
+          retention-days: 7
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
