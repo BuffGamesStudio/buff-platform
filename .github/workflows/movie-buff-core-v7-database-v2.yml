@@ -5,7 +5,10 @@ on:
     branches:
       - validation/movie-buff-core-v7
     paths:
+      - ".github/workflows/movie-buff-core-v7-validation.yml"
       - ".github/workflows/movie-buff-core-v7-database-v2.yml"
+      - "scripts/movie-buff-core-v7-guard.mjs"
+      - "scripts/movie-buff-core-v6-db.sh"
   workflow_dispatch:
 
 permissions:
@@ -24,13 +27,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out exact SHA
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: supabase/setup-cli@v1
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
         with:
           version: 2.111.0
 
@@ -53,7 +58,7 @@ jobs:
           git diff --name-only "${RAW_SHA}"..HEAD > "${evidence}/validation-owned-paths.txt"
           while IFS= read -r file; do
             case "${file}" in
-              .github/workflows/movie-buff-core-v7-validation.yml|.github/workflows/movie-buff-core-v7-database-v2.yml|scripts/movie-buff-core-v6-db.sh) ;;
+              .github/workflows/movie-buff-core-v7-validation.yml|.github/workflows/movie-buff-core-v7-database-v2.yml|scripts/movie-buff-core-v7-guard.mjs|scripts/movie-buff-core-v6-db.sh) ;;
               *) echo "Unexpected functional delta: ${file}"; exit 1 ;;
             esac
           done < "${evidence}/validation-owned-paths.txt"
@@ -96,6 +101,7 @@ jobs:
         if: always()
         shell: bash
         run: |
+          set -euo pipefail
           git diff --check
           test -z "$(git status --porcelain)"
 
