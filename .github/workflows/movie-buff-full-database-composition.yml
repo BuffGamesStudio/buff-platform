@@ -11,6 +11,7 @@ on:
       - ".github/workflows/movie-buff-full-database-composition.yml"
       - "scripts/movie-buff-full-database-composition-proof.sh"
       - "scripts/movie-buff-concurrency-replay-proof.sh"
+      - "scripts/movie-buff-concurrency-replay-proof-v2.sh"
       - "supabase/migrations/**"
       - "supabase/rollbacks/**"
       - "supabase/tests/**"
@@ -55,6 +56,14 @@ jobs:
         with:
           version: 2.111.0
 
+      - name: Install PostgreSQL 17 client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "${GITHUB_PATH}"
+
       - name: Bind immutable composition and validation assets
         shell: bash
         run: |
@@ -63,10 +72,16 @@ jobs:
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
           git merge-base --is-ancestor "${COMPOSITION_PARENT}" HEAD
           test "$(git rev-parse "${COMPOSITION_PARENT}^{tree}")" = "${COMPOSITION_PARENT_TREE}"
-          test "$(git diff --name-only "${COMPOSITION_PARENT}..HEAD" | sort)" = "$(printf '%s\n'             .github/workflows/movie-buff-full-database-composition.yml             scripts/movie-buff-concurrency-replay-proof.sh             scripts/movie-buff-full-database-composition-proof.sh             supabase/tests/movie_buff_security_validation_test.sql | sort)"
+          test "$(git diff --name-only "${COMPOSITION_PARENT}..HEAD" | sort)" = "$(printf '%s\n' \
+            .github/workflows/movie-buff-full-database-composition.yml \
+            scripts/movie-buff-concurrency-replay-proof.sh \
+            scripts/movie-buff-concurrency-replay-proof-v2.sh \
+            scripts/movie-buff-full-database-composition-proof.sh \
+            supabase/tests/movie_buff_security_validation_test.sql | sort)"
           test "$(git rev-parse HEAD:supabase/tests/movie_buff_security_validation_test.sql)" = "${MOV19_TEST_BLOB}"
           test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
           test "$(supabase --version)" = "2.111.0"
+          test "$(pg_dump --version | awk '{print $3}' | cut -d. -f1)" = "17"
           test ! -f supabase/.temp/project-ref
           test -z "$(git status --porcelain)"
           bash -n scripts/movie-buff-full-database-composition-proof.sh
@@ -138,12 +153,17 @@ jobs:
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
           git merge-base --is-ancestor "${COMPOSITION_PARENT}" HEAD
           test "$(git rev-parse "${COMPOSITION_PARENT}^{tree}")" = "${COMPOSITION_PARENT_TREE}"
-          test "$(git diff --name-only "${COMPOSITION_PARENT}..HEAD" | sort)" = "$(printf '%s\n'             .github/workflows/movie-buff-full-database-composition.yml             scripts/movie-buff-concurrency-replay-proof.sh             scripts/movie-buff-full-database-composition-proof.sh             supabase/tests/movie_buff_security_validation_test.sql | sort)"
+          test "$(git diff --name-only "${COMPOSITION_PARENT}..HEAD" | sort)" = "$(printf '%s\n' \
+            .github/workflows/movie-buff-full-database-composition.yml \
+            scripts/movie-buff-concurrency-replay-proof.sh \
+            scripts/movie-buff-concurrency-replay-proof-v2.sh \
+            scripts/movie-buff-full-database-composition-proof.sh \
+            supabase/tests/movie_buff_security_validation_test.sql | sort)"
           test "$(git rev-parse HEAD:supabase/tests/movie_buff_security_validation_test.sql)" = "${MOV19_TEST_BLOB}"
           test "$(supabase --version)" = "2.111.0"
           test ! -f supabase/.temp/project-ref
           test -z "$(git status --porcelain)"
-          bash -n scripts/movie-buff-concurrency-replay-proof.sh
+          bash -n scripts/movie-buff-concurrency-replay-proof-v2.sh
           node --check scripts/movie-buff-public-matchmaking-race.mjs
           node --check scripts/movie-buff-vip-authority-adversarial-v2.mjs
           node --check scripts/movie-buff-core-v12-three-browser-lab.mjs
@@ -156,7 +176,7 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          bash scripts/movie-buff-concurrency-replay-proof.sh \
+          bash scripts/movie-buff-concurrency-replay-proof-v2.sh \
             "${EXPECTED_SHA}" \
             "${EVIDENCE_DIR}"
 
