@@ -1,0 +1,176 @@
+name: Movie Buff full local database composition proof
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-db-composition-v1
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - ".github/workflows/movie-buff-full-database-composition.yml"
+      - "scripts/movie-buff-full-database-composition-proof.sh"
+      - "scripts/movie-buff-concurrency-replay-proof.sh"
+      - "supabase/migrations/**"
+      - "supabase/rollbacks/**"
+      - "supabase/tests/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-db-composition-v1
+  COMPOSITION_PARENT: 098820f667e1965699aa1e43ea7657e5304acb09
+  COMPOSITION_PARENT_TREE: 08244802457adf3a960d1ab3da8d02348f82c695
+  MOV19_TEST_BLOB: 18b65478ff920d4d7e2349f8254be99ddb760d89
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  database-composition:
+    name: Clean migrations, pgTAP, ACL/RLS, rollback, reapply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-full-db-composition
+
+    steps:
+      - name: Check out exact proof candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind immutable composition and validation assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test "$(git rev-parse HEAD^)" = "${COMPOSITION_PARENT}"
+          test "$(git rev-parse "${COMPOSITION_PARENT}^{tree}")" = "${COMPOSITION_PARENT_TREE}"
+          test "$(git rev-parse HEAD:supabase/tests/movie_buff_security_validation_test.sql)" = "${MOV19_TEST_BLOB}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test "$(supabase --version)" = "2.111.0"
+          test ! -f supabase/.temp/project-ref
+          test -z "$(git status --porcelain)"
+          bash -n scripts/movie-buff-full-database-composition-proof.sh
+          node --check scripts/movie-buff-core-v11-local-users.mjs
+          psql --version
+          pg_dump --version
+          docker --version
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Execute exact full database composition proof
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash scripts/movie-buff-full-database-composition-proof.sh \
+            "${EXPECTED_SHA}" \
+            "${EVIDENCE_DIR}"
+
+      - name: Verify clean checkout after database proof
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Upload exact-SHA database evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-full-db-composition-${{ env.EXPECTED_SHA }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+  concurrency-replay-idempotency:
+    name: MOV-15, MOV-16, MOV-17 concurrency and replay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-concurrency-proof
+
+    steps:
+      - name: Check out exact proof candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind immutable concurrency harnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test "$(git rev-parse HEAD^)" = "${COMPOSITION_PARENT}"
+          test "$(git rev-parse "${COMPOSITION_PARENT}^{tree}")" = "${COMPOSITION_PARENT_TREE}"
+          test "$(git rev-parse HEAD:supabase/tests/movie_buff_security_validation_test.sql)" = "${MOV19_TEST_BLOB}"
+          test "$(supabase --version)" = "2.111.0"
+          test ! -f supabase/.temp/project-ref
+          test -z "$(git status --porcelain)"
+          bash -n scripts/movie-buff-concurrency-replay-proof.sh
+          node --check scripts/movie-buff-public-matchmaking-race.mjs
+          node --check scripts/movie-buff-vip-authority-adversarial-v2.mjs
+          node --check scripts/movie-buff-core-v12-three-browser-lab.mjs
+          node --test tests/movie-buff-board-bootstrap-race.test.mjs
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Execute exact concurrency, replay, and idempotency proof
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash scripts/movie-buff-concurrency-replay-proof.sh \
+            "${EXPECTED_SHA}" \
+            "${EVIDENCE_DIR}"
+
+      - name: Verify clean checkout after concurrency proof
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Upload exact-SHA concurrency evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-concurrency-replay-${{ env.EXPECTED_SHA }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
