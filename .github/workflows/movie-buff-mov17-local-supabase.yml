@@ -135,10 +135,14 @@ jobs:
               )
           PY
 
-          find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0 \
-            | sort -z \
-            | xargs -0 sha256sum \
-            > "${EVIDENCE_DIR}/sha256.txt"
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > sha256.txt
+            sha256sum -c sha256.txt
+          )
 
           exit "${wrapper_exit}"
 
