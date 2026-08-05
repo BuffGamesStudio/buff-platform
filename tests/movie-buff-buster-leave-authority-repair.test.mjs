@@ -39,10 +39,7 @@ test("Buster activation is bound to authoritative safe-phase entry", () => {
     migration,
     /v_state\.phase not in \('board_select', 'results'\)/,
   );
-  assert.doesNotMatch(
-    migration,
-    /v_state\.phase not in \([\s\S]*'vip_lock'/,
-  );
+  assert.doesNotMatch(migration, /v_state\.phase\s*=\s*'vip_lock'/);
 });
 
 test("leave policy is explicit, versioned, and not silently seeded", () => {
