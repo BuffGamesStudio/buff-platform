@@ -3,7 +3,7 @@ name: MOV-17 repository validation evidence
 on:
   push:
     branches:
-      - copilot/MOV-17-shared-phase-machine
+      - validation/MOV-17-encoding-twin-v2
     paths:
       - ".github/workflows/movie-buff-mov17-validation.yml"
       - ".github/workflows/movie-buff-mov17-windows-digital-twin.yml"
@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 25
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EXPECTED_BRANCH: copilot/MOV-17-shared-phase-machine
+      EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
 
     steps:
       - name: Check out exact MOV-17 SHA
@@ -134,7 +134,7 @@ jobs:
           set -euo pipefail
           mkdir -p "${EVIDENCE_DIR}"
           {
-            echo "lane=MOV-17"
+            echo "lane=MOV-17-validation-twin-v2"
             echo "source_sha=$(git rev-parse HEAD)"
             echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
             echo "runner_os=${RUNNER_OS}"
