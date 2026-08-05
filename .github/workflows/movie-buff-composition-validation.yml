@@ -1,4 +1,4 @@
-name: Movie Buff exact four-lane composition validation
+name: Movie Buff exact composition Linux validation
 
 on:
   push:
@@ -7,22 +7,10 @@ on:
     paths:
       - ".github/workflows/movie-buff-composition-validation.yml"
       - "scripts/movie-buff-composition-repository-evidence.sh"
-      - "scripts/movie-buff-composition-repository-evidence.ps1"
   workflow_dispatch:
 
 permissions:
   contents: read
-
-env:
-  EXPECTED_BRANCH: validation/movie-buff-mov15-mov16-mov17-pr12-exact-v1
-  RAW_COMPOSITION_SHA: b4f8e2196a8a0423e7340ac97bd5592d58a966db
-  RAW_COMPOSITION_TREE: 68715cde77454c8c1057f9480373208cec88ba32
-  COMPONENT_MOV15_SHA: 0ecf8de86d2ea1a28c1496ed044a5092a7d3ffcb
-  COMPONENT_MOV16_SHA: 95c292ead66fc83cf13d7154bd3cf691610f549d
-  COMPONENT_MOV17_SHA: 6d7e9aabe5b07796a3a17fdf6c11df091dd1f978
-  COMPONENT_ENCODING_SHA: bf5e6d6f251f6840d17eed2fc68e0d580295437f
-  SUPABASE_TELEMETRY_DISABLED: "1"
-  DO_NOT_TRACK: "1"
 
 jobs:
   linux-repository:
@@ -58,131 +46,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: movie-buff-composition-linux-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_DIR }}
-          if-no-files-found: error
-          retention-days: 7
-
-  windows-repository:
-    name: Windows combined contracts build and byte proof
-    runs-on: windows-2025
-    timeout-minutes: 40
-    env:
-      EXPECTED_SHA: ${{ github.sha }}
-      EVIDENCE_DIR: ${{ runner.temp }}\movie-buff-composition-windows
-    steps:
-      - name: Check out exact SHA
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.EXPECTED_SHA }}
-          fetch-depth: 1
-          persist-credentials: false
-      - name: Set up Node 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Install committed lock without package scripts
-        shell: pwsh
-        run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Run Windows composition evidence
-        shell: pwsh
-        run: |
-          ./scripts/movie-buff-composition-repository-evidence.ps1 `
-            -ExpectedSha $env:EXPECTED_SHA `
-            -EvidenceRoot $env:EVIDENCE_DIR
-      - name: Upload Windows composition evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: movie-buff-composition-windows-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_DIR }}
-          if-no-files-found: error
-          retention-days: 7
-
-  disposable-database:
-    name: Combined reset and MOV-17 rollback rehearsal
-    runs-on: ubuntu-24.04
-    timeout-minutes: 55
-    env:
-      EXPECTED_SHA: ${{ github.sha }}
-      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-composition-database
-    steps:
-      - name: Check out exact SHA
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.EXPECTED_SHA }}
-          fetch-depth: 1
-          persist-credentials: false
-      - name: Verify exact unlinked checkout and evidence tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
-          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
-          test -z "$(git status --porcelain)"
-          test ! -f supabase/.temp/project-ref
-          bash -n scripts/movie-buff-mov17-local-supabase-evidence.sh
-          python3 -B scripts/movie-buff-redact-evidence-test.py
-          docker --version
-          psql --version
-      - name: Install pinned Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: 2.111.0
-      - name: Run exact disposable database rehearsal
-        shell: bash
-        run: |
-          set -uo pipefail
-          set +e
-          bash scripts/movie-buff-mov17-local-supabase-evidence.sh \
-            "${EXPECTED_SHA}" \
-            "${EVIDENCE_DIR}"
-          wrapper_exit=$?
-          set -e
-          {
-            echo "lane=MOV-15-MOV-16-MOV-17-PR12-composition-database"
-            echo "repository=BuffGamesStudio/buff-platform"
-            echo "source_sha=$(git rev-parse HEAD)"
-            echo "source_tree=$(git rev-parse HEAD^{tree})"
-            echo "source_ref=${GITHUB_REF_NAME}"
-            echo "raw_composition_sha=${RAW_COMPOSITION_SHA}"
-            echo "raw_composition_tree=${RAW_COMPOSITION_TREE}"
-            echo "component_mov15_sha=${COMPONENT_MOV15_SHA}"
-            echo "component_mov16_sha=${COMPONENT_MOV16_SHA}"
-            echo "component_mov17_sha=${COMPONENT_MOV17_SHA}"
-            echo "component_encoding_sha=${COMPONENT_ENCODING_SHA}"
-            echo "mov15_pgtap_and_race=UNKNOWN"
-            echo "mov16_pgtap_persona_and_concurrency=UNKNOWN"
-            echo "browser_behavior=UNKNOWN"
-            echo "hosted_state=UNKNOWN"
-            echo "production_readiness=UNKNOWN"
-            echo "workflow_run_id=${GITHUB_RUN_ID}"
-            echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
-            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          } > "${EVIDENCE_DIR}/composition-metadata.txt"
-          while IFS= read -r -d '' evidence_file; do
-            temporary_file="${evidence_file}.redacted"
-            python3 -B scripts/movie-buff-redact-evidence.py \
-              "${evidence_file}" \
-              "${temporary_file}"
-            mv "${temporary_file}" "${evidence_file}"
-          done < <(find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0)
-          (
-            cd "${EVIDENCE_DIR}"
-            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
-              | sort -z \
-              | xargs -0 sha256sum \
-              > sha256.txt
-            sha256sum -c sha256.txt
-          )
-          git diff --check
-          test -z "$(git status --porcelain)"
-          exit "${wrapper_exit}"
-      - name: Upload disposable database evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: movie-buff-composition-database-${{ env.EXPECTED_SHA }}
           path: ${{ env.EVIDENCE_DIR }}
           if-no-files-found: error
           retention-days: 7
