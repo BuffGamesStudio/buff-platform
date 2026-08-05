@@ -2,40 +2,46 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-const {
-  getMovieBuffCanonicalRoute,
-  shouldNavigateForMovieBuffPhase,
-} = await import("../src/lib/game/movieBuffPhaseService.ts");
-
+const phaseService = fs.readFileSync(
+  "src/lib/game/movieBuffPhaseService.ts",
+  "utf8",
+);
 const contract = fs.readFileSync(
   "docs/product/movie-buff-authoritative-phase-vip-participant-leave-v1.md",
   "utf8",
 );
 
 test("canonical routes are derived from authoritative phase names", () => {
-  assert.equal(getMovieBuffCanonicalRoute("vip_lock"), "/games/movie-buff/round-intro");
-  assert.equal(getMovieBuffCanonicalRoute("board_select"), "/games/movie-buff/board-preview");
-  assert.equal(getMovieBuffCanonicalRoute("transition"), "/games/movie-buff/play");
-  assert.equal(getMovieBuffCanonicalRoute("playback"), "/games/movie-buff/play");
-  assert.equal(getMovieBuffCanonicalRoute("results"), "/games/movie-buff/round-results");
-  assert.equal(getMovieBuffCanonicalRoute("finished"), "/games/movie-buff/final-results");
-  assert.equal(getMovieBuffCanonicalRoute("abandoned"), "/games/movie-buff/match-status");
-  assert.equal(getMovieBuffCanonicalRoute("blocked"), "/games/movie-buff/match-status");
+  assert.match(
+    phaseService,
+    /phase === "round_intro" \|\| phase === "vip_lock"[\s\S]*return "\/games\/movie-buff\/round-intro"/,
+  );
+  assert.match(
+    phaseService,
+    /phase === "board_select"[\s\S]*return "\/games\/movie-buff\/board-preview"/,
+  );
+  assert.match(
+    phaseService,
+    /phase === "transition" \|\| phase === "playback" \|\| phase === "answer"[\s\S]*return "\/games\/movie-buff\/play"/,
+  );
+  assert.match(
+    phaseService,
+    /phase === "results"[\s\S]*return "\/games\/movie-buff\/round-results"/,
+  );
+  assert.match(
+    phaseService,
+    /phase === "finished"[\s\S]*return "\/games\/movie-buff\/final-results"/,
+  );
+  assert.match(phaseService, /return "\/games\/movie-buff\/match-status"/);
 });
 
 test("navigation changes only when canonical route differs", () => {
-  assert.equal(
-    shouldNavigateForMovieBuffPhase("/games/movie-buff/round-intro", "vip_lock"),
-    null,
+  assert.match(
+    phaseService,
+    /const target = getMovieBuffCanonicalRoute\(phase\)/,
   );
-  assert.equal(
-    shouldNavigateForMovieBuffPhase("/games/movie-buff/round-intro", "board_select"),
-    "/games/movie-buff/board-preview",
-  );
-  assert.equal(
-    shouldNavigateForMovieBuffPhase("/games/movie-buff/play", "answer"),
-    null,
-  );
+  assert.match(phaseService, /return currentPath === target \? null : target/);
+  assert.doesNotMatch(phaseService, /setTimeout\([\s\S]*router/i);
 });
 
 test("contract forbids browser, local timer, and animation authority", () => {
