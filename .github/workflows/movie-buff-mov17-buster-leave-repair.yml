@@ -1,32 +1,9 @@
-name: MOV-17 Buster boundary and active leave repair evidence
+name: MOV-17 Buster and leave repair
 
 on:
   push:
     branches:
       - copilot/MOV-17-shared-phase-machine
-    paths:
-      - ".github/workflows/movie-buff-mov17-buster-leave-repair.yml"
-      - "scripts/movie-buff-mov17-buster-leave-evidence.sh"
-      - "src/lib/server/movieBuffPhaseRouteAuthorization.ts"
-      - "src/app/api/movie-buff/match/leave/**"
-      - "supabase/migrations/20260804083700_movie_buff_active_leave_and_buster_boundary.sql"
-      - "supabase/rollbacks/20260804083700_movie_buff_active_leave_and_buster_boundary.rollback.sql"
-      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_test.sql"
-      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_rollback_test.sql"
-      - "tests/movie-buff-active-leave-boundary.test.mjs"
-  pull_request:
-    branches:
-      - integration/movie-buff
-    paths:
-      - ".github/workflows/movie-buff-mov17-buster-leave-repair.yml"
-      - "scripts/movie-buff-mov17-buster-leave-evidence.sh"
-      - "src/lib/server/movieBuffPhaseRouteAuthorization.ts"
-      - "src/app/api/movie-buff/match/leave/**"
-      - "supabase/migrations/20260804083700_movie_buff_active_leave_and_buster_boundary.sql"
-      - "supabase/rollbacks/20260804083700_movie_buff_active_leave_and_buster_boundary.rollback.sql"
-      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_test.sql"
-      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_rollback_test.sql"
-      - "tests/movie-buff-active-leave-boundary.test.mjs"
   workflow_dispatch:
 
 permissions:
@@ -37,129 +14,123 @@ env:
   DO_NOT_TRACK: "1"
 
 jobs:
-  source-contract:
-    name: Source, route, TypeScript, and build contract
+  validate-repair:
+    name: Validate exact MOV-17 repair SHA
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 70
     env:
-      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_SHA: ${{ github.sha }}
       EXPECTED_BRANCH: copilot/MOV-17-shared-phase-machine
-      EVIDENCE_DIR: ${{ runner.temp }}/mov17-buster-leave-source
+      SOURCE_EVIDENCE: ${{ runner.temp }}/mov17-buster-leave-source
+      DATABASE_EVIDENCE: ${{ runner.temp }}/mov17-buster-leave-database
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
       SUPABASE_SERVICE_ROLE_KEY: local-placeholder
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out exact repair SHA
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.EXPECTED_SHA }}
           fetch-depth: 1
           persist-credentials: false
-      - uses: actions/setup-node@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Bind exact source
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind exact source and tools
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "${EVIDENCE_DIR}"
-          test "${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}" = "${EXPECTED_BRANCH}"
+          mkdir -p "${SOURCE_EVIDENCE}" "${DATABASE_EVIDENCE}"
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
           test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
           node --check tests/movie-buff-active-leave-boundary.test.mjs
           bash -n scripts/movie-buff-mov17-buster-leave-evidence.sh
+          docker --version
+          psql --version
+
       - name: Install committed dependency graph
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Run repair contracts
+
+      - name: Run source contract
         shell: bash
         run: |
           set -o pipefail
           node --test tests/movie-buff-active-leave-boundary.test.mjs \
-            2>&1 | tee "${EVIDENCE_DIR}/contracts.tap"
+            2>&1 | tee "${SOURCE_EVIDENCE}/contracts.tap"
+
       - name: Run TypeScript and production build
         shell: bash
         run: |
           set -o pipefail
-          npx --no-install tsc --noEmit 2>&1 | tee "${EVIDENCE_DIR}/typescript.txt"
-          npm run build 2>&1 | tee "${EVIDENCE_DIR}/build.txt"
+          npx --no-install tsc --noEmit \
+            2>&1 | tee "${SOURCE_EVIDENCE}/typescript.txt"
+          npm run build \
+            2>&1 | tee "${SOURCE_EVIDENCE}/build.txt"
+
+      - name: Run disposable database rehearsal
+        shell: bash
+        run: |
+          bash scripts/movie-buff-mov17-buster-leave-evidence.sh \
+            "${EXPECTED_SHA}" "${DATABASE_EVIDENCE}"
+
       - name: Finalize source evidence
         if: always()
         shell: bash
         run: |
           set -uo pipefail
-          mkdir -p "${EVIDENCE_DIR}"
+          mkdir -p "${SOURCE_EVIDENCE}"
           classification=PASS
-          git diff --check >"${EVIDENCE_DIR}/git-diff-check.txt" 2>&1 || classification=FAIL
+          git diff --check >"${SOURCE_EVIDENCE}/git-diff-check.txt" 2>&1 \
+            || classification=FAIL
           test -z "$(git status --porcelain)" || classification=FAIL
           {
             echo "lane=MOV-17-repair-increment-B-source"
             echo "classification=${classification}"
             echo "source_sha=$(git rev-parse HEAD)"
             echo "source_tree=$(git rev-parse HEAD^{tree})"
-            echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
-            echo "database_behavior=UNKNOWN"
+            echo "source_ref=${GITHUB_REF_NAME}"
+            echo "database_evidence=separate-directory"
             echo "combined_race_behavior=UNKNOWN"
             echo "hosted_state=UNKNOWN"
             echo "production_state=UNTOUCHED"
             echo "workflow_run_id=${GITHUB_RUN_ID}"
             echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          } >"${EVIDENCE_DIR}/metadata.txt"
-          (cd "${EVIDENCE_DIR}" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt)
+          } >"${SOURCE_EVIDENCE}/metadata.txt"
+          (
+            cd "${SOURCE_EVIDENCE}" || exit 1
+            find . -type f ! -name sha256.txt -print0 \
+              | sort -z | xargs -0 sha256sum >sha256.txt
+            sha256sum -c sha256.txt
+          )
           test "${classification}" = PASS
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload exact-SHA evidence
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: mov17-buster-leave-source-${{ env.EXPECTED_SHA }}
-          path: ${{ runner.temp }}/mov17-buster-leave-source
+          name: mov17-buster-leave-${{ env.EXPECTED_SHA }}
+          path: |
+            ${{ runner.temp }}/mov17-buster-leave-source
+            ${{ runner.temp }}/mov17-buster-leave-database
           if-no-files-found: error
           retention-days: 7
 
-  disposable-database:
-    name: Migration, pgTAP, containment rollback, and reapply
-    runs-on: ubuntu-24.04
-    timeout-minutes: 55
-    env:
-      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EXPECTED_BRANCH: copilot/MOV-17-shared-phase-machine
-      EVIDENCE_DIR: ${{ runner.temp }}/mov17-buster-leave-database
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.EXPECTED_SHA }}
-          fetch-depth: 1
-          persist-credentials: false
-      - uses: supabase/setup-cli@v1
-        with:
-          version: 2.111.0
-      - name: Bind exact source and tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "${EVIDENCE_DIR}"
-          test "${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}" = "${EXPECTED_BRANCH}"
-          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
-          test ! -f supabase/.temp/project-ref
-          test "$(supabase --version)" = "2.111.0"
-          docker --version
-          psql --version
-          bash -n scripts/movie-buff-mov17-buster-leave-evidence.sh
-      - name: Execute isolated database rehearsal
-        shell: bash
-        run: |
-          bash scripts/movie-buff-mov17-buster-leave-evidence.sh \
-            "${EXPECTED_SHA}" "${EVIDENCE_DIR}"
       - name: Verify clean postflight
         if: always()
         shell: bash
         run: |
           git diff --check
           test -z "$(git status --porcelain)"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mov17-buster-leave-database-${{ env.EXPECTED_SHA }}
-          path: ${{ runner.temp }}/mov17-buster-leave-database
-          if-no-files-found: error
-          retention-days: 7
