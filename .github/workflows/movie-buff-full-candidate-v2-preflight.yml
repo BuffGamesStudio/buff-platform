@@ -13,6 +13,7 @@ env:
   EXPECTED_BRANCH: validation/movie-buff-full-candidate-v2-staging
   RECONCILIATION_PARENT: 93eeafc36851628b419ab0d883013fae2637fea7
   SECURITY_SOURCE: c950a2fea5c9846789542c001e4d76cff0f192bf
+  RLS_CONTRACT_SOURCE: f0e2bd716b1ab43580d6d51bbc903dbcb6cd4631
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
   NEXT_TELEMETRY_DISABLED: "1"
@@ -47,7 +48,7 @@ jobs:
         with:
           version: 2.111.0
 
-      - name: Bind exact candidate and security blobs
+      - name: Bind exact candidate and owning security blobs
         shell: bash
         run: |
           set -euo pipefail
@@ -68,8 +69,12 @@ jobs:
           test "$(git rev-parse HEAD:supabase/migrations/20260805161000_public_rls_auto_enable_acl_lockdown.sql)" = "$(git rev-parse ${SECURITY_SOURCE}:supabase/migrations/20260805161000_public_rls_auto_enable_acl_lockdown.sql)"
           test "$(git rev-parse HEAD:supabase/tests/movie_buff_current_security_finalizer_test.sql)" = "$(git rev-parse ${SECURITY_SOURCE}:supabase/tests/movie_buff_current_security_finalizer_test.sql)"
           test "$(git rev-parse HEAD:supabase/tests/movie_buff_current_security_finalizer_rollback_test.sql)" = "$(git rev-parse ${SECURITY_SOURCE}:supabase/tests/movie_buff_current_security_finalizer_rollback_test.sql)"
-          bash -n scripts/movie-buff-current-security-finalizer-evidence.sh
+          test "$(git rev-parse HEAD:supabase/migrations/20260805160500_public_rls_auto_enable_event_trigger_contract.sql)" = "$(git rev-parse ${RLS_CONTRACT_SOURCE}:supabase/migrations/20260805160500_public_rls_auto_enable_event_trigger_contract.sql)"
+          test "$(git rev-parse HEAD:supabase/rollbacks/20260805160500_public_rls_auto_enable_event_trigger_contract.rollback.sql)" = "$(git rev-parse ${RLS_CONTRACT_SOURCE}:supabase/rollbacks/20260805160500_public_rls_auto_enable_event_trigger_contract.rollback.sql)"
+          test "$(git rev-parse HEAD:tests/movie-buff-rls-event-trigger-contract.test.mjs)" = "$(git rev-parse ${RLS_CONTRACT_SOURCE}:tests/movie-buff-rls-event-trigger-contract.test.mjs)"
+          bash -n scripts/movie-buff-full-candidate-v2-database-proof.sh
           node --check tests/movie-buff-current-security-finalizer.test.mjs
+          node --check tests/movie-buff-rls-event-trigger-contract.test.mjs
           docker --version
           psql --version
 
@@ -113,7 +118,7 @@ jobs:
       - name: Run clean disposable database security proof
         shell: bash
         run: |
-          bash scripts/movie-buff-current-security-finalizer-evidence.sh \
+          bash scripts/movie-buff-full-candidate-v2-database-proof.sh \
             "${EXPECTED_SHA}" "${DATABASE_EVIDENCE}"
 
       - name: Finalize exact source evidence
@@ -134,6 +139,7 @@ jobs:
             echo "source_tree=$(git rev-parse HEAD^{tree})"
             echo "reconciliation_parent=${RECONCILIATION_PARENT}"
             echo "security_source=${SECURITY_SOURCE}"
+            echo "rls_contract_source=${RLS_CONTRACT_SOURCE}"
             echo "target=disposable-unlinked-localhost"
             echo "hosted_staging=UNTOUCHED"
             echo "production=UNTOUCHED"
