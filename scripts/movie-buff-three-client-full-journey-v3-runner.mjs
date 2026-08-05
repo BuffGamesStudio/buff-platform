@@ -55,8 +55,8 @@ transformed = transformed.replaceAll(legacyBoardRoute, canonicalBoardRoute);
 assert.equal(transformed.split(legacyBoardRoute).length - 1, 0);
 assert.equal(transformed.split(canonicalBoardRoute).length - 1, 2);
 
-const chromiumLaunch = "chromium.launch({ headless: true })";
-const chromeLaunch = 'chromium.launch({ headless: true, channel: "chrome" })';
+const chromiumLaunch = 'chromium.launch({ headless: true, args: ["--autoplay-policy=no-user-gesture-required"] })';
+const chromeLaunch = 'chromium.launch({ headless: true, channel: "chrome", args: ["--autoplay-policy=no-user-gesture-required"] })';
 const chromiumLaunchCount = transformed.split(chromiumLaunch).length - 1;
 assert.equal(chromiumLaunchCount, 1, "expected one reviewed Chromium launch anchor");
 transformed = transformed.replace(chromiumLaunch, chromeLaunch);
@@ -72,6 +72,17 @@ assert.equal(
 transformed = transformed.replace(
   browserEvidenceAnchor,
   '  browserChannel: "chrome",\n  browserProcessCount: 3,\n',
+);
+
+const processCheckAnchor = 'pass("three-independent-chromium-processes");';
+assert.equal(
+  transformed.split(processCheckAnchor).length - 1,
+  1,
+  "expected one browser-process classification anchor",
+);
+transformed = transformed.replace(
+  processCheckAnchor,
+  'pass("three-independent-chrome-processes");',
 );
 
 const transformedPath = path.join(
