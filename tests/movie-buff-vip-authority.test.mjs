@@ -252,8 +252,9 @@ test("Round Intro consumes the canonical view read-only", () => {
 });
 
 test("original persona harness covers core API and reconnect behavior", () => {
-  assert.match(personaHarness, /Refusing non-local Supabase/i);
-  assert.match(personaHarness, /Refusing non-local application/i);
+  assert.match(personaHarness, /Refusing non-local \$\{label\} target/i);
+  assert.match(personaHarness, /requireLocal\(supabaseUrl, "Supabase"\)/);
+  assert.match(personaHarness, /requireLocal\(appUrl, "application"\)/);
   for (const term of [
     "unowned VIP is rejected",
     "exhausted quantity is rejected",
@@ -276,8 +277,9 @@ test("adversarial harness is exact-SHA local-only and covers repaired gaps", () 
   assert.match(adversarialHarness, /MOVIE_BUFF_ALLOW_LOCAL_DELETIONS/);
   assert.match(adversarialHarness, /git["'], \["rev-parse", "HEAD"\]/);
   assert.match(adversarialHarness, /createHash\("sha256"\)/);
-  assert.match(adversarialHarness, /Refusing non-local Supabase/i);
-  assert.match(adversarialHarness, /Refusing non-local application/i);
+  assert.match(adversarialHarness, /Refusing non-local \$\{label\} target/i);
+  assert.match(adversarialHarness, /requireLocal\(supabaseUrl, "Supabase"\)/);
+  assert.match(adversarialHarness, /requireLocal\(appUrl, "application"\)/);
   assert.match(adversarialHarness, /concurrent|Promise\.all/);
   for (const term of [
     "safe idempotent no-op",
