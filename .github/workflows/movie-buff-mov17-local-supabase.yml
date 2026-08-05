@@ -7,6 +7,8 @@ on:
     paths:
       - ".github/workflows/movie-buff-mov17-local-supabase.yml"
       - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
+      - "scripts/movie-buff-redact-evidence.py"
+      - "scripts/movie-buff-redact-evidence-test.py"
       - "supabase/config.toml"
       - "supabase/migrations/**"
       - "supabase/rollbacks/**"
@@ -18,6 +20,8 @@ on:
     paths:
       - ".github/workflows/movie-buff-mov17-local-supabase.yml"
       - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
+      - "scripts/movie-buff-redact-evidence.py"
+      - "scripts/movie-buff-redact-evidence-test.py"
       - "supabase/config.toml"
       - "supabase/migrations/**"
       - "supabase/rollbacks/**"
@@ -60,27 +64,83 @@ jobs:
           test ! -f supabase/.temp/project-ref
           docker --version
           psql --version
+          python3 --version
 
       - name: Install pinned Supabase CLI
         uses: supabase/setup-cli@v1
         with:
           version: 2.111.0
 
-      - name: Verify pinned CLI and wrapper syntax
+      - name: Verify pinned CLI, wrapper, and redaction contract
         shell: bash
         run: |
           set -euo pipefail
           test "$(supabase --version)" = "2.111.0"
           bash -n scripts/movie-buff-mov17-local-supabase-evidence.sh
+          python3 -B - <<'PY'
+          from pathlib import Path
+          for name in (
+              "scripts/movie-buff-redact-evidence.py",
+              "scripts/movie-buff-redact-evidence-test.py",
+          ):
+              compile(Path(name).read_text(encoding="utf-8"), name, "exec")
+          PY
+          python3 -B scripts/movie-buff-redact-evidence-test.py
+          test -z "$(git status --porcelain)"
 
       - name: Run disposable local database evidence wrapper
         shell: bash
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/mov17-local-supabase-evidence
         run: |
+          set -uo pipefail
+          set +e
           bash scripts/movie-buff-mov17-local-supabase-evidence.sh \
             "${EXPECTED_SHA}" \
             "${EVIDENCE_DIR}"
+          wrapper_exit=$?
+          set -e
+
+          while IFS= read -r -d '' evidence_file; do
+            temporary_file="${evidence_file}.redacted"
+            python3 -B scripts/movie-buff-redact-evidence.py \
+              "${evidence_file}" \
+              "${temporary_file}"
+            mv "${temporary_file}" "${evidence_file}"
+          done < <(find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0)
+
+          python3 -B - "${EVIDENCE_DIR}" <<'PY'
+          import importlib.util
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          script = pathlib.Path("scripts/movie-buff-redact-evidence.py")
+          spec = importlib.util.spec_from_file_location("movie_buff_redactor", script)
+          if spec is None or spec.loader is None:
+              raise SystemExit("unable to load evidence redactor")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+
+          changed = []
+          for path in sorted(root.glob("*")):
+              if not path.is_file() or path.name == "sha256.txt":
+                  continue
+              text = path.read_text(encoding="utf-8", errors="replace")
+              if module.redact_text(text) != text:
+                  changed.append(path.name)
+          if changed:
+              raise SystemExit(
+                  "evidence redaction is not idempotent for: " + ", ".join(changed)
+              )
+          PY
+
+          find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            > "${EVIDENCE_DIR}/sha256.txt"
+
+          exit "${wrapper_exit}"
 
       - name: Verify source checkout remained clean
         if: always()
