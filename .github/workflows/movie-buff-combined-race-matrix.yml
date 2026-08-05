@@ -7,6 +7,7 @@ on:
       - ".github/workflows/movie-buff-combined-race-matrix.yml"
       - "scripts/movie-buff-combined-race-matrix-lab.sh"
       - "scripts/movie-buff-combined-race-residual.mjs"
+      - "scripts/movie-buff-core-v10-patch-mov17-owner-fixtures.py"
   workflow_dispatch:
 
 permissions:
@@ -60,6 +61,7 @@ jobs:
           test ! -f supabase/.temp/project-ref
           test "$(supabase --version)" = "2.111.0"
           bash -n scripts/movie-buff-combined-race-matrix-lab.sh
+          python3 -m py_compile scripts/movie-buff-core-v10-patch-mov17-owner-fixtures.py
           node --check scripts/movie-buff-combined-race-residual.mjs
           node --check scripts/movie-buff-public-matchmaking-race.mjs
           node --check scripts/movie-buff-three-client-phase-evidence-runner.mjs
