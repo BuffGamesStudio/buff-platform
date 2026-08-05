@@ -22,9 +22,11 @@ test("match view uses the race-safe board bootstrap", () => {
   );
 });
 
-test("only the one-board-per-room conflict enters recovery", () => {
+test("only the exact one-board-per-room unique conflict enters recovery", () => {
   assert.match(wrapper, /candidate\.code === "23505"/);
+  assert.match(wrapper, /duplicate key value violates unique constraint/);
   assert.match(wrapper, /movie_buff_boards_room_id_key/);
+  assert.match(wrapper, /namesExactRoomConstraint && identifiesUniqueViolation/);
   assert.match(wrapper, /if \(!isBoardCreationRace\(error\)\) throw error/);
 });
 
