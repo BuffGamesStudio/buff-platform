@@ -1,0 +1,205 @@
+name: Movie Buff core v12 MOV-16 exact proof
+
+on:
+  push:
+    branches: [validation/movie-buff-core-v12]
+    paths:
+      - ".github/workflows/movie-buff-core-v12-mov16.yml"
+      - "src/app/api/movie-buff/match/view/route.ts"
+      - "src/lib/server/movieBuffBoardRaceSafe.ts"
+      - "tests/movie-buff-board-bootstrap-race.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-core-v12
+  CORE_SHA: 7582d07b0d8d80c8e5ecea4fedb079667a488d76
+  CORE_TREE: 44f331ac926172d9d824c9ea40e2f83301e7a0bf
+  BOARD_REPAIR_SHA: fd4c3066f8c684e6cc4f1eabff20c615cf25554d
+  MOV16_HARNESS_COMMIT: 72f4d41681605d4f865e14440c4b6a6f51fb92c5
+  MOV16_HARNESS_BLOB: 9e87dc3380d6e917f81fe0b5007acadba79d942e
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-mov16:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind exact composition and harness blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          git merge-base --is-ancestor "${CORE_SHA}" HEAD
+          test "$(git rev-parse "${CORE_SHA}^{tree}")" = "${CORE_TREE}"
+          test "$(git rev-parse HEAD:src/lib/server/movieBuffBoardRaceSafe.ts)" = "$(git rev-parse "${BOARD_REPAIR_SHA}:src/lib/server/movieBuffBoardRaceSafe.ts")"
+          test "$(git rev-parse HEAD:src/app/api/movie-buff/match/view/route.ts)" = "$(git rev-parse "${BOARD_REPAIR_SHA}:src/app/api/movie-buff/match/view/route.ts")"
+          test "$(git rev-parse HEAD:tests/movie-buff-board-bootstrap-race.test.mjs)" = "$(git rev-parse "${BOARD_REPAIR_SHA}:tests/movie-buff-board-bootstrap-race.test.mjs")"
+          test "$(git rev-parse "${MOV16_HARNESS_COMMIT}:scripts/movie-buff-vip-authority-adversarial-v2.mjs")" = "${MOV16_HARNESS_BLOB}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          node --test tests/movie-buff-board-bootstrap-race.test.mjs
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Execute composed MOV-16 adversarial proof
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-core-v12-mov16-fixed"
+          raw="${RUNNER_TEMP}/movie-buff-core-v12-mov16-fixed-raw"
+          work="${RUNNER_TEMP}/movie-buff-core-v12-mov16-fixed-stack"
+          harness="scripts/.movie-buff-core-v12-mov16-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.mjs"
+          app_pid=""
+          overall=0
+          failure_step=""
+          mkdir -p "${evidence}" "${raw}" "${work}"
+          git show "${MOV16_HARNESS_COMMIT}:scripts/movie-buff-vip-authority-adversarial-v2.mjs" >"${harness}"
+          if [ "$(git hash-object "${harness}")" != "${MOV16_HARNESS_BLOB}" ]; then overall=1; failure_step=harness-blob; fi
+          cp -a supabase "${work}/supabase"
+          python3 - "${work}/supabase/config.toml" "core-v12-mov16-fixed-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" <<'PY'
+          import pathlib,re,sys
+          p=pathlib.Path(sys.argv[1]); text=p.read_text(encoding='utf-8'); project=sys.argv[2]
+          text,n=re.subn(r'(?m)^project_id\s*=\s*"[^"]+"\s*$',f'project_id = "{project}"',text,count=1)
+          text,m=re.subn(r'(?ms)(^\[db\.seed\]\s*.*?^enabled\s*=\s*)true(\s*$)',r'\1false\2',text,count=1)
+          if n != 1 or m != 1: raise SystemExit('ephemeral config rewrite failed')
+          p.write_text(text,encoding='utf-8')
+          PY
+          config_exit=$?; echo "${config_exit}" >"${raw}/config.exit"
+          if [ "${config_exit}" -ne 0 ]; then overall=1; failure_step=config; fi
+
+          if [ "${overall}" -eq 0 ]; then
+            (cd "${work}" && supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor) >"${raw}/supabase-start.log" 2>&1
+            start_exit=$?; echo "${start_exit}" >"${raw}/supabase-start.exit"
+            if [ "${start_exit}" -ne 0 ]; then overall=1; failure_step=supabase-start; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            (cd "${work}" && supabase db reset --local) >"${raw}/database-reset.log" 2>&1
+            reset_exit=$?; echo "${reset_exit}" >"${raw}/database-reset.exit"
+            if [ "${reset_exit}" -ne 0 ]; then overall=1; failure_step=database-reset; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            status_env="$(cd "${work}" && supabase status -o env 2>"${raw}/supabase-status.error")"
+            status_exit=$?; echo "${status_exit}" >"${raw}/supabase-status.exit"
+            if [ "${status_exit}" -eq 0 ]; then
+              eval "${status_env}"
+              api_url="${API_URL:-http://127.0.0.1:54321}"
+              publishable_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+              service_key="${SECRET_KEY:-${SERVICE_ROLE_KEY:-}}"
+              database_url="${DB_URL:-}"
+              if [ -z "${publishable_key}" ] || [ -z "${service_key}" ] || [ -z "${database_url}" ]; then overall=1; failure_step=credential-shape; fi
+            else overall=1; failure_step=supabase-status; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            NEXT_PUBLIC_SUPABASE_URL="${api_url}" \
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${publishable_key}" \
+            SUPABASE_SERVICE_ROLE_KEY="${service_key}" \
+            MOVIE_BUFF_APP_URL="http://127.0.0.1:3000" \
+              npm run build >"${raw}/build.log" 2>&1
+            build_exit=$?; echo "${build_exit}" >"${raw}/build.exit"
+            if [ "${build_exit}" -ne 0 ]; then overall=1; failure_step=build; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            NEXT_PUBLIC_SUPABASE_URL="${api_url}" \
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${publishable_key}" \
+            SUPABASE_SERVICE_ROLE_KEY="${service_key}" \
+            MOVIE_BUFF_APP_URL="http://127.0.0.1:3000" \
+              npm run start -- --hostname 127.0.0.1 --port 3000 >"${raw}/application.log" 2>&1 &
+            app_pid=$!
+            app_ready=1
+            for attempt in $(seq 1 90); do
+              if curl --fail --silent --show-error http://127.0.0.1:3000/sign-in >/dev/null 2>>"${raw}/application-health.log"; then app_ready=0; break; fi
+              sleep 1
+            done
+            echo "${app_ready}" >"${raw}/application-health.exit"
+            if [ "${app_ready}" -ne 0 ]; then overall=1; failure_step=application-health; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            NEXT_PUBLIC_SUPABASE_URL="${api_url}" \
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${publishable_key}" \
+            SUPABASE_SERVICE_ROLE_KEY="${service_key}" \
+            MOVIE_BUFF_LOCAL_DATABASE_URL="${database_url}" \
+            MOVIE_BUFF_APP_URL="http://127.0.0.1:3000" \
+            MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
+            MOVIE_BUFF_LOCAL_RUN_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            MOVIE_BUFF_EVIDENCE_OUTPUT="${evidence}/mov16-adversarial.json" \
+              node "${harness}" >"${raw}/mov16.stdout.log" 2>"${raw}/mov16.stderr.log"
+            mov16_exit=$?; echo "${mov16_exit}" >"${raw}/mov16.exit"
+            if [ "${mov16_exit}" -ne 0 ]; then overall=1; failure_step=mov16; fi
+          fi
+          if [ -n "${app_pid}" ]; then kill "${app_pid}" >/dev/null 2>&1 || true; wait "${app_pid}" >/dev/null 2>&1 || true; fi
+          (cd "${work}" && supabase stop --no-backup) >"${raw}/cleanup.log" 2>&1
+          cleanup_exit=$?; echo "${cleanup_exit}" >"${raw}/cleanup.exit"
+          [ "${cleanup_exit}" -eq 0 ] || overall=1
+          rm -rf "${work}" "${harness}"
+
+          python3 - "${raw}" "${evidence}" <<'PY'
+          import pathlib,re,sys
+          raw=pathlib.Path(sys.argv[1]); out=pathlib.Path(sys.argv[2]); out.mkdir(parents=True,exist_ok=True)
+          patterns=[
+            (r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[REDACTED_JWT]'),
+            (r'postgres(?:ql)?://[^\s]+','postgresql://[REDACTED_LOCAL_DB_URL]'),
+            (r'sb_(?:secret|publishable)_[A-Za-z0-9_-]+','[REDACTED_SUPABASE_KEY]'),
+            (r'(?i)(authorization:\s*bearer\s+)[A-Za-z0-9._-]+',r'\1[REDACTED]'),
+          ]
+          for p in raw.iterdir():
+            if not p.is_file(): continue
+            text=p.read_text(encoding='utf-8',errors='replace')
+            for pattern,replacement in patterns: text=re.sub(pattern,replacement,text)
+            (out/p.name).write_text(text,encoding='utf-8')
+          PY
+          {
+            echo "classification=$([ "${overall}" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "failure_step=${failure_step}"
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "source_branch=${GITHUB_REF_NAME}"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "core_sha=${CORE_SHA}"
+            echo "core_tree=${CORE_TREE}"
+            echo "board_repair_sha=${BOARD_REPAIR_SHA}"
+            echo "mov16_harness_commit=${MOV16_HARNESS_COMMIT}"
+            echo "mov16_harness_blob=${MOV16_HARNESS_BLOB}"
+            echo "target=disposable-localhost"
+            echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"${evidence}/metadata.txt"
+          (cd "${evidence}" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt) || overall=1
+          git diff --check || overall=1
+          test -z "$(git status --porcelain)" || overall=1
+          exit "${overall}"
+
+      - name: Upload exact MOV-16 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-core-v12-mov16-fixed-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-core-v12-mov16-fixed
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify clean postflight
+        if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
