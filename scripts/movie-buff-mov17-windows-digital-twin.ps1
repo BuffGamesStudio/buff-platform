@@ -64,9 +64,15 @@ try {
     'supabase/rollbacks/20260804083500_movie_buff_reconnect_buster_boundary_repair.rollback.sql',
     'supabase/migrations/20260804083600_movie_buff_match_start_handoff.sql',
     'supabase/rollbacks/20260804083600_movie_buff_match_start_handoff.rollback.sql',
-    'supabase/tests/movie_buff_match_start_handoff_test.sql',
-    'supabase/tests/movie_buff_match_start_handoff_rollback_test.sql',
-    'tests/movie-buff-match-start-handoff.test.mjs',
+    'supabase/migrations/20260805194400_movie_buff_buster_leave_authority_preflight.sql',
+    'supabase/rollbacks/20260805194400_movie_buff_buster_leave_authority_preflight.rollback.sql',
+    'supabase/migrations/20260805194500_movie_buff_buster_leave_authority_repair.sql',
+    'supabase/rollbacks/20260805194500_movie_buff_buster_leave_authority_repair.rollback.sql',
+    'supabase/tests/movie_buff_buster_leave_authority_repair_test.sql',
+    'supabase/tests/movie_buff_buster_leave_authority_rollback_test.sql',
+    'tests/movie-buff-buster-leave-authority-repair.test.mjs',
+    'src/app/api/movie-buff/match/leave/quote/route.ts',
+    'src/app/api/movie-buff/match/leave/confirm/route.ts',
     'scripts/movie-buff-reconnect-race-proof.mjs'
   )) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
@@ -83,8 +89,9 @@ try {
   }
 
   @(
-    "lane=MOV-17"
+    "lane=MOV-17-successor"
     "source_sha=$actualSha"
+    "source_tree=$((git rev-parse HEAD^{tree}).Trim())"
     "powershell_version=$($PSVersionTable.PSVersion)"
     "node_version=$((node --version).Trim())"
     "npm_version=$((npm --version).Trim())"
@@ -93,6 +100,7 @@ try {
     "database_behavior=UNKNOWN"
     "browser_behavior=UNKNOWN"
     "physical_windows_equivalence=UNKNOWN"
+    "hosted_state=UNTOUCHED"
     "generated_at=$([DateTime]::UtcNow.ToString('o'))"
   ) | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'metadata.txt') -Encoding utf8
 
@@ -108,6 +116,7 @@ try {
       tests/movie-buff-server-phase-machine.test.mjs `
       tests/movie-buff-authoritative-phase-runtime.test.mjs `
       tests/movie-buff-buster-safe-boundary.test.mjs `
+      tests/movie-buff-buster-leave-authority-repair.test.mjs `
       tests/movie-buff-phase-tile-mutation-guard.test.mjs `
       tests/movie-buff-match-start-handoff.test.mjs
   }
