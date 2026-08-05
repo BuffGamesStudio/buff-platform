@@ -16,6 +16,10 @@ const evidencePath = path.resolve(
   process.env.MOVIE_BUFF_EVIDENCE_OUTPUT ??
     "movie-buff-three-client-phase-evidence.json",
 );
+const reconnectEvidencePath = path.resolve(
+  process.env.MOVIE_BUFF_RECONNECT_EVIDENCE_OUTPUT ??
+    `${evidencePath}.reconnect-race.json`,
+);
 const manifestPath = path.resolve(
   process.env.MOVIE_BUFF_EVIDENCE_MANIFEST ?? `${evidencePath}.manifest.json`,
 );
@@ -37,7 +41,7 @@ if (
 
 if (mutationConsent !== "YES") {
   throw new Error(
-    "Set MOVIE_BUFF_ALLOW_LOCAL_PHASE_MUTATION=YES to authorize only the disposable localhost proof and reversible test-profile display-name changes.",
+    "Set MOVIE_BUFF_ALLOW_LOCAL_PHASE_MUTATION=YES to authorize only the disposable localhost proofs and reversible test-profile display-name changes.",
   );
 }
 
@@ -74,7 +78,10 @@ const sourceFiles = [
   "supabase/migrations/20260804083200_movie_buff_buster_safe_boundary.sql",
   "supabase/migrations/20260804083300_movie_buff_phase_tile_mutation_guard.sql",
   "supabase/migrations/20260804083400_movie_buff_phase_contract_alignment.sql",
+  "supabase/migrations/20260804083500_movie_buff_reconnect_buster_boundary_repair.sql",
+  "supabase/rollbacks/20260804083500_movie_buff_reconnect_buster_boundary_repair.rollback.sql",
   "scripts/movie-buff-three-client-phase-proof.mjs",
+  "scripts/movie-buff-reconnect-race-proof.mjs",
   "scripts/movie-buff-three-client-phase-evidence-runner.mjs",
   "tests/movie-buff-server-phase-machine.test.mjs",
   "tests/movie-buff-authoritative-phase-runtime.test.mjs",
@@ -100,10 +107,10 @@ const browserClients = users.map(() =>
 );
 const profileSnapshot = [];
 let profilesRestored = false;
-let childExitCode = 1;
 let stdout = "";
 let stderr = "";
 const startedAt = new Date().toISOString();
+const childResults = [];
 
 async function snapshotProfiles() {
   const userIds = [];
@@ -155,55 +162,80 @@ async function restoreProfiles() {
   return failures;
 }
 
-try {
-  await snapshotProfiles();
-
-  const child = spawn(
-    process.execPath,
-    [path.resolve("scripts/movie-buff-three-client-phase-proof.mjs")],
-    {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        MOVIE_BUFF_EVIDENCE_OUTPUT: evidencePath,
-      },
-      stdio: ["ignore", "pipe", "pipe"],
+async function runChild(name, script, outputEnvironment) {
+  const command = [process.execPath, path.resolve(script)];
+  const child = spawn(command[0], command.slice(1), {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      ...outputEnvironment,
     },
-  );
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 
+  let childStdout = "";
+  let childStderr = "";
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => {
-    stdout += chunk;
+    childStdout += chunk;
+    stdout += `[${name}] ${chunk}`;
     process.stdout.write(chunk);
   });
   child.stderr.on("data", (chunk) => {
-    stderr += chunk;
+    childStderr += chunk;
+    stderr += `[${name}] ${chunk}`;
     process.stderr.write(chunk);
   });
 
-  childExitCode = await new Promise((resolve, reject) => {
+  const exitCode = await new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("close", (code) => resolve(code ?? 1));
   });
+  const result = {
+    name,
+    command,
+    exitCode,
+    stdoutSha256: sha256(childStdout),
+    stderrSha256: sha256(childStderr),
+  };
+  childResults.push(result);
+  return result;
+}
+
+try {
+  await snapshotProfiles();
+  await runChild(
+    "three-client-phase",
+    "scripts/movie-buff-three-client-phase-proof.mjs",
+    { MOVIE_BUFF_EVIDENCE_OUTPUT: evidencePath },
+  );
+  await runChild(
+    "reconnect-race",
+    "scripts/movie-buff-reconnect-race-proof.mjs",
+    { MOVIE_BUFF_RECONNECT_EVIDENCE_OUTPUT: reconnectEvidencePath },
+  );
 } finally {
   const restoreFailures = await restoreProfiles();
   await Promise.allSettled(browserClients.map((client) => client.auth.signOut()));
 
   const evidencePresent = fs.existsSync(evidencePath);
+  const reconnectEvidencePresent = fs.existsSync(reconnectEvidencePath);
   const evidenceBytes = evidencePresent
     ? fs.readFileSync(evidencePath)
     : Buffer.alloc(0);
+  const reconnectEvidenceBytes = reconnectEvidencePresent
+    ? fs.readFileSync(reconnectEvidencePath)
+    : Buffer.alloc(0);
+  const exitCode = childResults.some((result) => result.exitCode !== 0) ? 1 : 0;
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     lane: "MOV-17",
     exactSha,
     checkoutSha,
     command: commandLabel,
-    childCommand: [
-      process.execPath,
-      path.resolve("scripts/movie-buff-three-client-phase-proof.mjs"),
-    ],
+    childCommand: childResults[0]?.command ?? null,
+    childCommands: childResults,
     nodeVersion: process.version,
     target: {
       kind: "local",
@@ -213,12 +245,17 @@ try {
     mutationConsent,
     startedAt,
     finishedAt: new Date().toISOString(),
-    exitCode: childExitCode,
+    exitCode,
     stdoutSha256: sha256(stdout),
     stderrSha256: sha256(stderr),
     evidencePresent,
     evidencePath,
     evidenceSha256: evidencePresent ? sha256(evidenceBytes) : null,
+    reconnectEvidencePresent,
+    reconnectEvidencePath,
+    reconnectEvidenceSha256: reconnectEvidencePresent
+      ? sha256(reconnectEvidenceBytes)
+      : null,
     sourceHashes: Object.fromEntries(
       sourceFiles.map((file) => [file, fileSha256(file)]),
     ),
@@ -226,8 +263,9 @@ try {
     profilesRestored,
     profileRestoreFailures: restoreFailures,
     classification:
-      childExitCode === 0 &&
+      exitCode === 0 &&
       evidencePresent &&
+      reconnectEvidencePresent &&
       profileSnapshot.length === 3 &&
       profilesRestored
         ? "PASS"
@@ -241,10 +279,14 @@ try {
         manifestPath,
         exactSha,
         checkoutSha,
-        exitCode: childExitCode,
+        exitCode,
+        childExitCodes: Object.fromEntries(
+          childResults.map((result) => [result.name, result.exitCode]),
+        ),
         classification: manifest.classification,
         profilesRestored,
         evidenceSha256: manifest.evidenceSha256,
+        reconnectEvidenceSha256: manifest.reconnectEvidenceSha256,
       },
       null,
       2,
