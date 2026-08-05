@@ -1,0 +1,200 @@
+name: MOV-17 disposable local Supabase evidence
+
+on:
+  push:
+    branches:
+      - copilot/MOV-17-shared-phase-machine
+      - work/movie-buff-mov17-buster-leave-repair-20260805
+    paths:
+      - ".github/workflows/movie-buff-mov17-local-supabase.yml"
+      - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
+      - "scripts/movie-buff-buster-leave-local-evidence.sh"
+      - "scripts/movie-buff-redact-evidence.py"
+      - "scripts/movie-buff-redact-evidence-test.py"
+      - "supabase/config.toml"
+      - "supabase/migrations/**"
+      - "supabase/rollbacks/**"
+      - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+      - "supabase/tests/movie_buff_reconnect_buster_rollback_probe.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
+      - "supabase/tests/movie_buff_buster_leave_authority_repair_test.sql"
+      - "supabase/tests/movie_buff_buster_leave_authority_rollback_test.sql"
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - ".github/workflows/movie-buff-mov17-local-supabase.yml"
+      - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
+      - "scripts/movie-buff-buster-leave-local-evidence.sh"
+      - "scripts/movie-buff-redact-evidence.py"
+      - "scripts/movie-buff-redact-evidence-test.py"
+      - "supabase/config.toml"
+      - "supabase/migrations/**"
+      - "supabase/rollbacks/**"
+      - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+      - "supabase/tests/movie_buff_reconnect_buster_rollback_probe.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
+      - "supabase/tests/movie_buff_buster_leave_authority_repair_test.sql"
+      - "supabase/tests/movie_buff_buster_leave_authority_rollback_test.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  disposable-local-supabase:
+    name: Migration, pgTAP, rollback, and forward rehearsal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+
+    steps:
+      - name: Check out exact MOV-17 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Initialize evidence directory
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-local-supabase-evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          {
+            echo "lane=MOV-17-successor"
+            echo "source_sha=${EXPECTED_SHA}"
+            echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+            echo "preflight=UNKNOWN"
+            echo "classification=UNKNOWN"
+          } > "${EVIDENCE_DIR}/preflight.txt"
+
+      - name: Verify isolated exact checkout
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-local-supabase-evidence
+        run: |
+          set -euo pipefail
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          docker --version
+          psql --version
+          python3 --version
+          {
+            echo "lane=MOV-17-successor"
+            echo "source_sha=${EXPECTED_SHA}"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "source_ref=${resolved_ref}"
+            echo "preflight=PASS"
+            echo "classification=UNKNOWN"
+          } > "${EVIDENCE_DIR}/preflight.txt"
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Verify pinned CLI, wrapper, and redaction contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(supabase --version)" = "2.111.0"
+          bash -n scripts/movie-buff-buster-leave-local-evidence.sh
+          python3 -B - <<'PY'
+          from pathlib import Path
+          for name in (
+              "scripts/movie-buff-redact-evidence.py",
+              "scripts/movie-buff-redact-evidence-test.py",
+          ):
+              compile(Path(name).read_text(encoding="utf-8"), name, "exec")
+          PY
+          python3 -B scripts/movie-buff-redact-evidence-test.py
+          test -z "$(git status --porcelain)"
+
+      - name: Run disposable local database evidence wrapper
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-local-supabase-evidence
+        run: |
+          set -uo pipefail
+          set +e
+          bash scripts/movie-buff-buster-leave-local-evidence.sh \
+            "${EXPECTED_SHA}" \
+            "${EVIDENCE_DIR}"
+          wrapper_exit=$?
+          set -e
+
+          while IFS= read -r -d '' evidence_file; do
+            temporary_file="${evidence_file}.redacted"
+            python3 -B scripts/movie-buff-redact-evidence.py \
+              "${evidence_file}" \
+              "${temporary_file}"
+            mv "${temporary_file}" "${evidence_file}"
+          done < <(find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0)
+
+          python3 -B - "${EVIDENCE_DIR}" <<'PY'
+          import importlib.util
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          script = pathlib.Path("scripts/movie-buff-redact-evidence.py")
+          spec = importlib.util.spec_from_file_location("movie_buff_redactor", script)
+          if spec is None or spec.loader is None:
+              raise SystemExit("unable to load evidence redactor")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+
+          changed = []
+          for path in sorted(root.glob("*")):
+              if not path.is_file() or path.name == "sha256.txt":
+                  continue
+              text = path.read_text(encoding="utf-8", errors="replace")
+              if module.redact_text(text) != text:
+                  changed.append(path.name)
+          if changed:
+              raise SystemExit(
+                  "evidence redaction is not idempotent for: " + ", ".join(changed)
+              )
+          PY
+
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > sha256.txt
+            sha256sum -c sha256.txt
+          )
+
+          exit "${wrapper_exit}"
+
+      - name: Verify source checkout remained clean
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Upload exact-SHA local database evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov17-local-supabase-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/mov17-local-supabase-evidence
+          if-no-files-found: error
+          retention-days: 7
