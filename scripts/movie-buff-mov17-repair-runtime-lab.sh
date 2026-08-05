@@ -121,6 +121,11 @@ new_allowed = '  assertNoUnexpectedErrors(expiryWorkers, /abandoned|access denie
 if old_allowed not in source:
   raise SystemExit('expired-membership diagnostic anchor not found')
 source=source.replace(old_allowed,new_allowed,1)
+old_window = "      set opened_at=clock_timestamp()-interval '2 seconds', deadline_at=clock_timestamp()-interval '1 second', updated_at=clock_timestamp()"
+new_window = "      set opens_at=clock_timestamp()-interval '2 seconds', deadline_at=clock_timestamp()-interval '1 second', updated_at=clock_timestamp()"
+if old_window not in source:
+  raise SystemExit('VIP expiry fixture anchor not found')
+source=source.replace(old_window,new_window,1)
 old_catch = '  record("runtime laboratory", "FAIL", {\n    error: error instanceof Error\n      ? { name: error.name, message: error.message, stack: error.stack }\n      : { message: String(error) },\n  });'
 new_catch = '  const structuredError = error instanceof Error\n    ? { name: error.name, message: error.message, stack: error.stack }\n    : error && typeof error === "object"\n      ? { ...error, message: error.message ?? JSON.stringify(error) }\n      : { message: String(error) };\n  record("runtime laboratory", "FAIL", { stage: activeStage, error: structuredError });'
 if old_catch not in source:
@@ -163,11 +168,16 @@ patterns=[
   (r'(?i)(authorization:\s*bearer\s+)[A-Za-z0-9._-]+',r'\1[REDACTED]'),
   (r'(?i)(password["=: ]+)[^",\s]+',r'\1[REDACTED]'),
 ]
+def redact(text):
+  for pattern,replacement in patterns:
+    text=re.sub(pattern,replacement,text)
+  return text
 for item in raw.iterdir():
   if not item.is_file(): continue
-  text=item.read_text(encoding='utf-8',errors='replace')
-  for pattern,replacement in patterns: text=re.sub(pattern,replacement,text)
-  (out/item.name).write_text(text,encoding='utf-8')
+  (out/item.name).write_text(redact(item.read_text(encoding='utf-8',errors='replace')),encoding='utf-8')
+for item in list(out.iterdir()):
+  if not item.is_file(): continue
+  item.write_text(redact(item.read_text(encoding='utf-8',errors='replace')),encoding='utf-8')
 PY
 
 classification=PASS
