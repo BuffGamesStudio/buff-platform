@@ -102,6 +102,25 @@ EARLY_ANSWER_REPLACEMENT = (
     "/answer window is not open|current round could not be found/i);"
 )
 
+EXPIRED_RECONNECT_MARKER = """  const reconnectAttempt = expiredReconnectRace[0];
+  if (reconnectAttempt.status === "fulfilled") {
+    assert.equal(reconnectAttempt.value.error, null);
+    assert.notEqual(reconnectAttempt.value.data?.resumeAllowed, true);
+  }
+"""
+EXPIRED_RECONNECT_REPLACEMENT = """  const reconnectAttempt = expiredReconnectRace[0];
+  if (reconnectAttempt.status === "fulfilled") {
+    if (reconnectAttempt.value.error) {
+      assert.match(
+        reconnectAttempt.value.error.message,
+        /active movie buff room membership required/i,
+      );
+    } else {
+      assert.notEqual(reconnectAttempt.value.data?.resumeAllowed, true);
+    }
+  }
+"""
+
 for file_path in FILES:
     text = file_path.read_text(encoding="utf-8")
     if 'import { execFileSync } from "node:child_process";' not in text:
@@ -124,6 +143,13 @@ for file_path in FILES:
         text, count = RECONNECT_PATTERN.subn(lambda _match: RECONNECT_REPLACEMENT, text, count=1)
         if count != 1:
             raise SystemExit(f"match_players fixture block replacement count {count}: {file_path}")
+        if EXPIRED_RECONNECT_MARKER not in text:
+            raise SystemExit(f"expired reconnect assertion marker missing: {file_path}")
+        text = text.replace(
+            EXPIRED_RECONNECT_MARKER,
+            EXPIRED_RECONNECT_REPLACEMENT,
+            1,
+        )
     file_path.write_text(text, encoding="utf-8")
 
 print("MOVIE_BUFF_MOV17_OWNER_FIXTURE_PATCH=PASS")
