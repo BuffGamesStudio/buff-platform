@@ -44,7 +44,6 @@ jobs:
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
-      EVIDENCE_DIR: ${{ runner.temp }}/mov17-local-supabase-evidence
 
     steps:
       - name: Check out exact MOV-17 SHA
@@ -56,6 +55,8 @@ jobs:
 
       - name: Initialize evidence directory
         shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-local-supabase-evidence
         run: |
           set -euo pipefail
           mkdir -p "${EVIDENCE_DIR}"
@@ -69,6 +70,8 @@ jobs:
 
       - name: Verify isolated exact checkout
         shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-local-supabase-evidence
         run: |
           set -euo pipefail
           resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
@@ -111,6 +114,8 @@ jobs:
 
       - name: Run disposable local database evidence wrapper
         shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-local-supabase-evidence
         run: |
           set -uo pipefail
           set +e
@@ -178,6 +183,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mov17-local-supabase-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_DIR }}
+          path: ${{ runner.temp }}/mov17-local-supabase-evidence
           if-no-files-found: error
           retention-days: 7
