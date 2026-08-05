@@ -40,10 +40,7 @@ export function normalizeMovieBuffPhaseActionKey(value: unknown) {
     : null;
 }
 
-export async function requireMovieBuffPhaseMember(
-  request: Request,
-  roomId: string,
-) {
+export async function requireMovieBuffPhaseCaller(request: Request) {
   const accessToken = parseMovieBuffPhaseBearerToken(
     request.headers.get("authorization"),
   );
@@ -59,24 +56,6 @@ export async function requireMovieBuffPhaseMember(
 
   if (userError || !user || user.is_anonymous === true) {
     throw new MovieBuffPhaseRouteError("Authentication required.", 401);
-  }
-
-  const { data: membership, error: membershipError } = await supabaseAdmin
-    .from("room_players")
-    .select("player_id, left_at")
-    .eq("room_id", roomId)
-    .eq("player_id", user.id)
-    .maybeSingle();
-
-  if (membershipError) {
-    throw new MovieBuffPhaseRouteError(
-      "Unable to verify Movie Buff membership.",
-      500,
-    );
-  }
-
-  if (!membership || membership.left_at !== null) {
-    throw new MovieBuffPhaseRouteError("Room access denied.", 403);
   }
 
   if (!supabaseUrl || !supabasePublishableKey) {
@@ -103,6 +82,33 @@ export async function requireMovieBuffPhaseMember(
     accessToken,
     caller,
   };
+}
+
+export async function requireMovieBuffPhaseMember(
+  request: Request,
+  roomId: string,
+) {
+  const authenticated = await requireMovieBuffPhaseCaller(request);
+
+  const { data: membership, error: membershipError } = await supabaseAdmin
+    .from("room_players")
+    .select("player_id, left_at")
+    .eq("room_id", roomId)
+    .eq("player_id", authenticated.userId)
+    .maybeSingle();
+
+  if (membershipError) {
+    throw new MovieBuffPhaseRouteError(
+      "Unable to verify Movie Buff membership.",
+      500,
+    );
+  }
+
+  if (!membership || membership.left_at !== null) {
+    throw new MovieBuffPhaseRouteError("Room access denied.", 403);
+  }
+
+  return authenticated;
 }
 
 export function movieBuffPhaseErrorResponse(error: unknown) {
