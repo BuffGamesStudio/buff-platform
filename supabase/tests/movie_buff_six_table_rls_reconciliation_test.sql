@@ -1,5 +1,5 @@
 begin;
-
+create extension if not exists pgtap;
 select plan(25);
 
 select ok(
@@ -147,14 +147,23 @@ select ok(
   not exists (
     select 1
     from unnest(array[
-      'public.match_round_player_hints',
-      'public.match_round_player_playback',
-      'public.movie_buff_boards',
-      'public.movie_buff_board_categories',
-      'public.movie_buff_board_tiles',
-      'public.movie_buff_board_events'
-    ]) as target(table_name)
-    where has_table_privilege('public', target.table_name, 'SELECT,INSERT,UPDATE,DELETE')
+      'public.match_round_player_hints'::regclass,
+      'public.match_round_player_playback'::regclass,
+      'public.movie_buff_boards'::regclass,
+      'public.movie_buff_board_categories'::regclass,
+      'public.movie_buff_board_tiles'::regclass,
+      'public.movie_buff_board_events'::regclass
+    ]) as target(table_oid)
+    join pg_catalog.pg_class as relation
+      on relation.oid = target.table_oid
+    cross join lateral pg_catalog.aclexplode(
+      pg_catalog.coalesce(
+        relation.relacl,
+        pg_catalog.acldefault('r', relation.relowner)
+      )
+    ) as acl
+    where acl.grantee = 0
+      and acl.privilege_type in ('SELECT', 'INSERT', 'UPDATE', 'DELETE')
   ),
   'PUBLIC has no direct CRUD on the six tables'
 );
