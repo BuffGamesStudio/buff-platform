@@ -116,6 +116,11 @@ source=source.replace(
   '  activeStage = "buster-boundary";\n  await runBusterBoundaryRace();\n  activeStage = "leave-concurrency";\n  await runLeaveConcurrency();\n  activeStage = "no-human-cancellation";\n  await runNoHumanCancellation();',
   1,
 )
+old_allowed = '  assertNoUnexpectedErrors(expiryWorkers, /abandoned|access denied/i);'
+new_allowed = '  assertNoUnexpectedErrors(expiryWorkers, /abandoned|access denied|membership required/i);'
+if old_allowed not in source:
+  raise SystemExit('expired-membership diagnostic anchor not found')
+source=source.replace(old_allowed,new_allowed,1)
 old_catch = '  record("runtime laboratory", "FAIL", {\n    error: error instanceof Error\n      ? { name: error.name, message: error.message, stack: error.stack }\n      : { message: String(error) },\n  });'
 new_catch = '  const structuredError = error instanceof Error\n    ? { name: error.name, message: error.message, stack: error.stack }\n    : error && typeof error === "object"\n      ? { ...error, message: error.message ?? JSON.stringify(error) }\n      : { message: String(error) };\n  record("runtime laboratory", "FAIL", { stage: activeStage, error: structuredError });'
 if old_catch not in source:
