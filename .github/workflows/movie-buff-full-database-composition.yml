@@ -74,6 +74,7 @@ jobs:
             scripts/movie-buff-core-v12-three-browser-convergence-v2-wrapper.sh \
             scripts/movie-buff-full-database-composition-proof.sh \
             scripts/movie-buff-full-database-composition-proof-v2.sh \
+            scripts/movie-buff-full-database-composition-proof-v3.sh \
             scripts/movie-buff-vip-authority-adversarial-v3-wrapper.sh \
             scripts/validation-bin/pg_dump \
             supabase/tests/movie_buff_security_validation_test.sql | sort)"
@@ -84,6 +85,7 @@ jobs:
           test -z "$(git status --porcelain)"
           bash -n scripts/movie-buff-full-database-composition-proof.sh
           bash -n scripts/movie-buff-full-database-composition-proof-v2.sh
+          bash -n scripts/movie-buff-full-database-composition-proof-v3.sh
           bash -n scripts/validation-bin/pg_dump
           node --check scripts/movie-buff-core-v11-local-users.mjs
           psql --version
@@ -98,7 +100,7 @@ jobs:
           set -uo pipefail
           export PATH="${GITHUB_WORKSPACE}/scripts/validation-bin:${PATH}"
           test "$(pg_dump --version)" = "pg_dump (PostgreSQL) 17.6-container-wrapper"
-          bash scripts/movie-buff-full-database-composition-proof-v2.sh \
+          bash scripts/movie-buff-full-database-composition-proof-v3.sh \
             "${EXPECTED_SHA}" \
             "${EVIDENCE_DIR}"
 
@@ -162,6 +164,7 @@ jobs:
             scripts/movie-buff-core-v12-three-browser-convergence-v2-wrapper.sh \
             scripts/movie-buff-full-database-composition-proof.sh \
             scripts/movie-buff-full-database-composition-proof-v2.sh \
+            scripts/movie-buff-full-database-composition-proof-v3.sh \
             scripts/movie-buff-vip-authority-adversarial-v3-wrapper.sh \
             scripts/validation-bin/pg_dump \
             supabase/tests/movie_buff_security_validation_test.sql | sort)"
