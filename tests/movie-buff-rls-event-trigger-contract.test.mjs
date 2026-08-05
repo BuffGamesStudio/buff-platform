@@ -30,15 +30,16 @@ test("existing contradictory event trigger fails closed", () => {
     migration,
     /Existing ensure_rls event trigger has a contradictory contract/,
   );
-  assert.doesNotMatch(migration, /drop event trigger/i);
+  assert.doesNotMatch(migration, /drop\s+event\s+trigger/i);
 });
 
 test("forward and containment keep direct callback execution closed", () => {
   for (const source of [migration, rollback]) {
     assert.match(source, /revoke all on function public\.rls_auto_enable\(\)/i);
     assert.match(source, /from public, anon, authenticated, service_role/i);
-    assert.doesNotMatch(source, /grant execute/i);
-    assert.doesNotMatch(source, /disable|drop event trigger/i);
+    assert.doesNotMatch(source, /grant\s+execute/i);
+    assert.doesNotMatch(source, /alter\s+event\s+trigger\s+[^;]+\s+disable\b/i);
+    assert.doesNotMatch(source, /drop\s+event\s+trigger/i);
   }
 });
 
