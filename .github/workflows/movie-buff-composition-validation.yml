@@ -17,14 +17,11 @@ jobs:
     name: Linux combined contracts build and byte proof
     runs-on: ubuntu-24.04
     timeout-minutes: 35
-    env:
-      EXPECTED_SHA: ${{ github.sha }}
-      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-composition-linux
     steps:
       - name: Check out exact SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.EXPECTED_SHA }}
+          ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
       - name: Set up Node 22
@@ -39,13 +36,13 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/movie-buff-composition-repository-evidence.sh \
-            "${EXPECTED_SHA}" \
-            "${EVIDENCE_DIR}"
+            "${GITHUB_SHA}" \
+            "${RUNNER_TEMP}/movie-buff-composition-linux"
       - name: Upload Linux composition evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: movie-buff-composition-linux-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_DIR }}
+          name: movie-buff-composition-linux-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-composition-linux
           if-no-files-found: error
           retention-days: 7
