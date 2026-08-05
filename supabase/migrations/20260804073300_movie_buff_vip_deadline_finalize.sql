@@ -31,11 +31,11 @@ begin
     pg_catalog.hashtextextended('movie-buff-vip-window|' || p_round_id::text, 0)
   );
 
-  select window.*
+  select vip_window.*
   into v_window
-  from public.movie_buff_vip_round_windows as window
-  where window.room_id = p_room_id
-    and window.round_id = p_round_id
+  from public.movie_buff_vip_round_windows as vip_window
+  where vip_window.room_id = p_room_id
+    and vip_window.round_id = p_round_id
   for update;
 
   if not found then
