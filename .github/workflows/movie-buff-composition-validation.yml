@@ -1,6 +1,6 @@
 name: Movie Buff exact four-lane composition validation
 
-on:
+"on":
   push:
     branches:
       - validation/movie-buff-mov15-mov16-mov17-pr12-exact-v1
@@ -28,13 +28,16 @@ env:
   DO_NOT_TRACK: "1"
 
 jobs:
-  repository-linux:
-    name: Linux combined contracts and build
+  linux-composition:
+    name: Linux contracts build bytes and database rehearsal
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 70
     env:
       EXPECTED_SHA: ${{ github.sha }}
-      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-composition-linux
+      REPOSITORY_EVIDENCE: ${{ runner.temp }}/movie-buff-composition-linux
+      DATABASE_EVIDENCE: ${{ runner.temp }}/movie-buff-composition-database
+      MOVIE_BUFF_MIGRATION_ENCODING_OUTPUT: ${{ runner.temp }}/movie-buff-composition-linux/encoding-report.json
+      MOVIE_BUFF_BOM_ONLY_OUTPUT: ${{ runner.temp }}/movie-buff-composition-linux/bom-only-report.json
 
     steps:
       - name: Check out exact validation SHA
@@ -58,13 +61,16 @@ jobs:
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
           test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
           test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
           node --version
           npm --version
+          docker --version
+          psql --version
 
       - name: Install committed lock without package scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Validate proof-script syntax
+      - name: Validate proof scripts and redactor
         shell: bash
         run: |
           set -euo pipefail
@@ -83,7 +89,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "${EVIDENCE_DIR}"
+          mkdir -p "${REPOSITORY_EVIDENCE}"
           node --test \
             tests/movie-buff-public-matchmaking-contract.test.mjs \
             tests/movie-buff-public-matchmaking-handoff.test.mjs \
@@ -96,15 +102,9 @@ jobs:
             tests/movie-buff-phase-tile-mutation-guard.test.mjs \
             tests/movie-buff-match-start-handoff.test.mjs \
             tests/movie-buff-migration-encoding.test.mjs \
-            2>&1 | tee "${EVIDENCE_DIR}/contracts.tap"
+            2>&1 | tee "${REPOSITORY_EVIDENCE}/contracts.tap"
 
-      - name: Run TypeScript
-        shell: bash
-        run: |
-          set -euo pipefail
-          npx --no-install tsc --noEmit 2>&1 | tee "${EVIDENCE_DIR}/typescript.txt"
-
-      - name: Run localhost-placeholder production build
+      - name: Run TypeScript and localhost-placeholder production build
         shell: bash
         env:
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
@@ -112,16 +112,25 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: local-build-service-role-key
         run: |
           set -euo pipefail
-          npm run build 2>&1 | tee "${EVIDENCE_DIR}/build.txt"
+          npx --no-install tsc --noEmit 2>&1 | tee "${REPOSITORY_EVIDENCE}/typescript.txt"
+          npm run build 2>&1 | tee "${REPOSITORY_EVIDENCE}/build.txt"
 
-      - name: Write exact composition metadata and hashes
-        if: always()
+      - name: Run exact migration byte proof
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "${EVIDENCE_DIR}"
-          git diff --check
+          node scripts/movie-buff-migration-encoding-check.mjs \
+            supabase/migrations supabase/rollbacks supabase/tests \
+            > "${REPOSITORY_EVIDENCE}/encoding-scan.stdout.txt"
+          git fetch --no-tags --depth=1 origin "${INTEGRATION_BASE_SHA}"
+          node scripts/movie-buff-migration-bom-only-check.mjs "${INTEGRATION_BASE_SHA}" \
+            > "${REPOSITORY_EVIDENCE}/bom-only.stdout.txt"
           test -z "$(git status --porcelain)"
+
+      - name: Write Linux repository evidence metadata
+        shell: bash
+        run: |
+          set -euo pipefail
           {
             echo "lane=MOV-15-MOV-16-MOV-17-PR12-composition"
             echo "repository=BuffGamesStudio/buff-platform"
@@ -143,40 +152,106 @@ jobs:
             echo "runner_os=${RUNNER_OS}"
             echo "node_version=$(node --version)"
             echo "npm_version=$(npm --version)"
-            echo "target_kind=repository-static-and-localhost-placeholder-build"
+            echo "target_kind=repository-static-build-and-byte-validation"
             echo "database_behavior=UNKNOWN"
             echo "browser_behavior=UNKNOWN"
             echo "hosted_state=UNKNOWN"
-            echo "production_readiness=UNKNOWN"
-            echo "workflow_run_id=${GITHUB_RUN_ID}"
-            echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "physical_windows_cursor_equivalence=UNKNOWN"
             echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          } > "${EVIDENCE_DIR}/metadata.txt"
+          } > "${REPOSITORY_EVIDENCE}/metadata.txt"
           (
-            cd "${EVIDENCE_DIR}"
+            cd "${REPOSITORY_EVIDENCE}"
             find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
               | sort -z \
               | xargs -0 sha256sum \
               > sha256.txt
             sha256sum -c sha256.txt
           )
+          git diff --check
+          test -z "$(git status --porcelain)"
 
-      - name: Upload Linux composition evidence
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Run combined migration reset and MOV-17 rollback rehearsal
+        shell: bash
+        run: |
+          set -uo pipefail
+          set +e
+          bash scripts/movie-buff-mov17-local-supabase-evidence.sh \
+            "${EXPECTED_SHA}" \
+            "${DATABASE_EVIDENCE}"
+          wrapper_exit=$?
+          set -e
+          {
+            echo "lane=MOV-15-MOV-16-MOV-17-PR12-composition-database"
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "source_ref=${GITHUB_REF_NAME}"
+            echo "raw_composition_sha=${RAW_COMPOSITION_SHA}"
+            echo "raw_composition_tree=${RAW_COMPOSITION_TREE}"
+            echo "component_mov15_sha=${COMPONENT_MOV15_SHA}"
+            echo "component_mov16_sha=${COMPONENT_MOV16_SHA}"
+            echo "component_mov17_sha=${COMPONENT_MOV17_SHA}"
+            echo "component_encoding_sha=${COMPONENT_ENCODING_SHA}"
+            echo "mov15_pgtap_and_race=UNKNOWN"
+            echo "mov16_pgtap_persona_and_concurrency=UNKNOWN"
+            echo "browser_behavior=UNKNOWN"
+            echo "hosted_state=UNKNOWN"
+            echo "production_readiness=UNKNOWN"
+            echo "workflow_run_id=${GITHUB_RUN_ID}"
+            echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${DATABASE_EVIDENCE}/composition-metadata.txt"
+          while IFS= read -r -d '' evidence_file; do
+            temporary_file="${evidence_file}.redacted"
+            python3 -B scripts/movie-buff-redact-evidence.py \
+              "${evidence_file}" \
+              "${temporary_file}"
+            mv "${temporary_file}" "${evidence_file}"
+          done < <(find "${DATABASE_EVIDENCE}" -maxdepth 1 -type f ! -name sha256.txt -print0)
+          (
+            cd "${DATABASE_EVIDENCE}"
+            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > sha256.txt
+            sha256sum -c sha256.txt
+          )
+          git diff --check
+          test -z "$(git status --porcelain)"
+          exit "${wrapper_exit}"
+
+      - name: Upload Linux repository evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: movie-buff-composition-linux-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_DIR }}
+          path: ${{ env.REPOSITORY_EVIDENCE }}
           if-no-files-found: error
           retention-days: 7
 
-  repository-windows:
-    name: Windows combined command-shell digital twin
+      - name: Upload disposable database evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-composition-database-${{ env.EXPECTED_SHA }}
+          path: ${{ env.DATABASE_EVIDENCE }}
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-composition:
+    name: Windows combined contracts build and byte proof
     runs-on: windows-2025
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       EXPECTED_SHA: ${{ github.sha }}
       EVIDENCE_DIR: ${{ runner.temp }}\movie-buff-composition-windows
+      MOVIE_BUFF_MIGRATION_ENCODING_OUTPUT: ${{ runner.temp }}\movie-buff-composition-windows\encoding-report.json
+      MOVIE_BUFF_BOM_ONLY_OUTPUT: ${{ runner.temp }}\movie-buff-composition-windows\bom-only-report.json
 
     steps:
       - name: Check out exact validation SHA
@@ -208,7 +283,7 @@ jobs:
         shell: pwsh
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Run all composed contracts, TypeScript, and build
+      - name: Run composed contracts TypeScript and build
         shell: pwsh
         env:
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
@@ -241,7 +316,23 @@ jobs:
             2> (Join-Path $env:EVIDENCE_DIR 'build.stderr.txt')
           if ($LASTEXITCODE -ne 0) { throw "Build failed: $LASTEXITCODE" }
 
-      - name: Write exact composition metadata and hashes
+      - name: Run exact migration byte proof
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node scripts/movie-buff-migration-encoding-check.mjs `
+            supabase/migrations supabase/rollbacks supabase/tests `
+            1> (Join-Path $env:EVIDENCE_DIR 'encoding-scan.stdout.txt') `
+            2> (Join-Path $env:EVIDENCE_DIR 'encoding-scan.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "Encoding scan failed: $LASTEXITCODE" }
+          git fetch --no-tags --depth=1 origin $env:INTEGRATION_BASE_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Baseline fetch failed: $LASTEXITCODE" }
+          node scripts/movie-buff-migration-bom-only-check.mjs $env:INTEGRATION_BASE_SHA `
+            1> (Join-Path $env:EVIDENCE_DIR 'bom-only.stdout.txt') `
+            2> (Join-Path $env:EVIDENCE_DIR 'bom-only.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "BOM-only proof failed: $LASTEXITCODE" }
+
+      - name: Write Windows metadata and hashes
         if: always()
         shell: pwsh
         run: |
@@ -271,13 +362,11 @@ jobs:
             "runner_os=$env:RUNNER_OS"
             "powershell_version=$($PSVersionTable.PSVersion)"
             "node_version=$((node --version).Trim())"
-            'target_kind=hosted-windows-command-shell-static-and-build'
-            'physical_windows_cursor_equivalence=UNKNOWN'
+            'target_kind=hosted-windows-command-shell-static-build-and-byte-validation'
             'database_behavior=UNKNOWN'
             'browser_behavior=UNKNOWN'
             'hosted_state=UNKNOWN'
-            "workflow_run_id=$env:GITHUB_RUN_ID"
-            "workflow_run_attempt=$env:GITHUB_RUN_ATTEMPT"
+            'physical_windows_cursor_equivalence=UNKNOWN'
             "generated_at=$([DateTime]::UtcNow.ToString('o'))"
           ) | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'metadata.txt') -Encoding utf8
           $manifestPath = Join-Path $env:EVIDENCE_DIR 'sha256.csv'
@@ -299,385 +388,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: movie-buff-composition-windows-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_DIR }}
-          if-no-files-found: error
-          retention-days: 7
-
-  encoding-proof:
-    name: ${{ matrix.label }} migration byte proof
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            label: Linux
-            artifact: linux
-          - os: windows-2025
-            label: Windows
-            artifact: windows
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    env:
-      EXPECTED_SHA: ${{ github.sha }}
-      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-composition-encoding-${{ matrix.artifact }}
-      MOVIE_BUFF_MIGRATION_ENCODING_OUTPUT: ${{ runner.temp }}/movie-buff-composition-encoding-${{ matrix.artifact }}/report.json
-      MOVIE_BUFF_BOM_ONLY_OUTPUT: ${{ runner.temp }}/movie-buff-composition-encoding-${{ matrix.artifact }}/bom-only-report.json
-
-    steps:
-      - name: Check out exact validation SHA
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.EXPECTED_SHA }}
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Set up Node 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Execute exact byte proof
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
-          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
-          test -z "$(git status --porcelain)"
-          mkdir -p "${EVIDENCE_DIR}"
-          node --test tests/movie-buff-migration-encoding.test.mjs \
-            > "${EVIDENCE_DIR}/tests.tap" \
-            2> "${EVIDENCE_DIR}/tests.stderr.txt"
-          node scripts/movie-buff-migration-encoding-check.mjs \
-            supabase/migrations supabase/rollbacks supabase/tests \
-            > "${EVIDENCE_DIR}/scan.stdout.txt" \
-            2> "${EVIDENCE_DIR}/scan.stderr.txt"
-          git fetch --no-tags --depth=1 origin "${INTEGRATION_BASE_SHA}"
-          node scripts/movie-buff-migration-bom-only-check.mjs "${INTEGRATION_BASE_SHA}" \
-            > "${EVIDENCE_DIR}/bom-only.stdout.txt" \
-            2> "${EVIDENCE_DIR}/bom-only.stderr.txt"
-          git diff --check
-          test -z "$(git status --porcelain)"
-          {
-            echo "lane=MOV-15-MOV-16-MOV-17-PR12-composition-encoding"
-            echo "repository=BuffGamesStudio/buff-platform"
-            echo "source_sha=$(git rev-parse HEAD)"
-            echo "source_tree=$(git rev-parse HEAD^{tree})"
-            echo "source_ref=${GITHUB_REF_NAME}"
-            echo "raw_composition_sha=${RAW_COMPOSITION_SHA}"
-            echo "component_encoding_sha=${COMPONENT_ENCODING_SHA}"
-            echo "component_encoding_tree=${COMPONENT_ENCODING_TREE}"
-            echo "baseline_sha=${INTEGRATION_BASE_SHA}"
-            echo "runner_os=${RUNNER_OS}"
-            echo "node_version=$(node --version)"
-            echo "target_kind=repository-byte-validation"
-            echo "hosted_state=UNKNOWN"
-            echo "physical_windows_cursor_equivalence=UNKNOWN"
-            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          } > "${EVIDENCE_DIR}/metadata.txt"
-          node - "${EVIDENCE_DIR}" <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
-          const crypto = require('node:crypto');
-          const root = process.argv[2];
-          const rows = fs.readdirSync(root)
-            .filter((name) => name !== 'sha256.json')
-            .sort()
-            .map((name) => ({
-              path: name,
-              sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(root, name))).digest('hex'),
-            }));
-          fs.writeFileSync(path.join(root, 'sha256.json'), JSON.stringify(rows, null, 2) + '\n');
-          for (const row of rows) {
-            const actual = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, row.path))).digest('hex');
-            if (actual !== row.sha256) throw new Error(`hash mismatch: ${row.path}`);
-          }
-          NODE
-
-      - name: Upload migration byte evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: movie-buff-composition-encoding-${{ matrix.artifact }}-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_DIR }}
-          if-no-files-found: error
-          retention-days: 7
-
-  mov17-local-rehearsal:
-    name: Combined reset plus MOV-17 rollback rehearsal
-    runs-on: ubuntu-24.04
-    timeout-minutes: 55
-    env:
-      EXPECTED_SHA: ${{ github.sha }}
-      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-composition-mov17-local
-
-    steps:
-      - name: Check out exact validation SHA
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.EXPECTED_SHA }}
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Verify exact unlinked checkout
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
-          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
-          test -z "$(git status --porcelain)"
-          test ! -f supabase/.temp/project-ref
-          bash -n scripts/movie-buff-mov17-local-supabase-evidence.sh
-          python3 -B scripts/movie-buff-redact-evidence-test.py
-          docker --version
-          psql --version
-
-      - name: Install pinned Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: 2.111.0
-
-      - name: Run reset, MOV-17 pgTAP, rollback, and forward rehearsal
-        shell: bash
-        run: |
-          set -uo pipefail
-          set +e
-          bash scripts/movie-buff-mov17-local-supabase-evidence.sh \
-            "${EXPECTED_SHA}" \
-            "${EVIDENCE_DIR}"
-          wrapper_exit=$?
-          set -e
-          {
-            echo "lane=MOV-15-MOV-16-MOV-17-PR12-composition-mov17-rehearsal"
-            echo "repository=BuffGamesStudio/buff-platform"
-            echo "source_sha=$(git rev-parse HEAD)"
-            echo "source_tree=$(git rev-parse HEAD^{tree})"
-            echo "source_ref=${GITHUB_REF_NAME}"
-            echo "raw_composition_sha=${RAW_COMPOSITION_SHA}"
-            echo "raw_composition_tree=${RAW_COMPOSITION_TREE}"
-            echo "component_mov15_sha=${COMPONENT_MOV15_SHA}"
-            echo "component_mov16_sha=${COMPONENT_MOV16_SHA}"
-            echo "component_mov17_sha=${COMPONENT_MOV17_SHA}"
-            echo "component_encoding_sha=${COMPONENT_ENCODING_SHA}"
-            echo "mov15_race_behavior=UNKNOWN"
-            echo "mov16_persona_and_concurrency_behavior=UNKNOWN"
-            echo "browser_behavior=UNKNOWN"
-            echo "hosted_state=UNKNOWN"
-            echo "workflow_run_id=${GITHUB_RUN_ID}"
-            echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
-            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          } > "${EVIDENCE_DIR}/composition-metadata.txt"
-          while IFS= read -r -d '' evidence_file; do
-            temporary_file="${evidence_file}.redacted"
-            python3 -B scripts/movie-buff-redact-evidence.py "${evidence_file}" "${temporary_file}"
-            mv "${temporary_file}" "${evidence_file}"
-          done < <(find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0)
-          (
-            cd "${EVIDENCE_DIR}"
-            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
-              | sort -z \
-              | xargs -0 sha256sum \
-              > sha256.txt
-            sha256sum -c sha256.txt
-          )
-          git diff --check
-          test -z "$(git status --porcelain)"
-          exit "${wrapper_exit}"
-
-      - name: Upload local rehearsal evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: movie-buff-composition-mov17-local-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_DIR }}
-          if-no-files-found: error
-          retention-days: 7
-
-  combined-pgtap:
-    name: Combined MOV-15 MOV-16 MOV-17 pgTAP
-    runs-on: ubuntu-24.04
-    timeout-minutes: 50
-    env:
-      EXPECTED_SHA: ${{ github.sha }}
-      WORK_ROOT: ${{ runner.temp }}/movie-buff-composition-db
-      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-composition-pgtap
-      RAW_DIR: ${{ runner.temp }}/movie-buff-composition-pgtap-raw
-      LOCAL_PROJECT_ID: movie-buff-composition-${{ github.run_id }}-${{ github.run_attempt }}
-
-    steps:
-      - name: Check out exact validation SHA
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.EXPECTED_SHA }}
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Verify exact unlinked checkout
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
-          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
-          test -z "$(git status --porcelain)"
-          test ! -f supabase/.temp/project-ref
-          python3 -B scripts/movie-buff-redact-evidence-test.py
-          docker --version
-          psql --version
-
-      - name: Install pinned Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: 2.111.0
-
-      - name: Run combined reset, ledger proof, and all lane pgTAP
-        shell: bash
-        run: |
-          set -euo pipefail
-          SOURCE_ROOT="${GITHUB_WORKSPACE}"
-          rm -rf "${WORK_ROOT}" "${EVIDENCE_DIR}" "${RAW_DIR}"
-          mkdir -p "${WORK_ROOT}" "${EVIDENCE_DIR}" "${RAW_DIR}"
-          cp -a "${SOURCE_ROOT}/supabase" "${WORK_ROOT}/supabase"
-          python3 - "${WORK_ROOT}/supabase/config.toml" "${LOCAL_PROJECT_ID}" <<'PY'
-          import pathlib
-          import re
-          import sys
-          path = pathlib.Path(sys.argv[1])
-          project_id = sys.argv[2]
-          text = path.read_text(encoding="utf-8")
-          text, project_count = re.subn(r'(?m)^project_id\s*=\s*"[^"]+"\s*$', f'project_id = "{project_id}"', text, count=1)
-          text, seed_count = re.subn(r'(?ms)(^\[db\.seed\]\s*.*?^enabled\s*=\s*)true(\s*$)', r'\1false\2', text, count=1)
-          if project_count != 1 or seed_count != 1:
-              raise SystemExit("unable to create isolated config")
-          path.write_text(text, encoding="utf-8")
-          PY
-          run_safe() {
-            local name="$1"
-            shift
-            local raw_stdout="${RAW_DIR}/${name}.stdout.raw"
-            local raw_stderr="${RAW_DIR}/${name}.stderr.raw"
-            local safe_stdout="${EVIDENCE_DIR}/${name}.stdout.txt"
-            local safe_stderr="${EVIDENCE_DIR}/${name}.stderr.txt"
-            set +e
-            "$@" >"${raw_stdout}" 2>"${raw_stderr}"
-            local code=$?
-            set -e
-            printf '%s\n' "${code}" > "${EVIDENCE_DIR}/${name}.exit.txt"
-            python3 -B "${SOURCE_ROOT}/scripts/movie-buff-redact-evidence.py" "${raw_stdout}" "${safe_stdout}"
-            python3 -B "${SOURCE_ROOT}/scripts/movie-buff-redact-evidence.py" "${raw_stderr}" "${safe_stderr}"
-            rm -f "${raw_stdout}" "${raw_stderr}"
-            return "${code}"
-          }
-          (
-            cd "${WORK_ROOT}"
-            run_safe supabase-start supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor
-            run_safe db-reset supabase db reset --local
-          )
-          export PGPASSWORD=postgres
-          run_safe migration-ledger psql \
-            -h 127.0.0.1 -p 55322 -U postgres -d postgres \
-            -v ON_ERROR_STOP=1 -Atc \
-            "select version from supabase_migrations.schema_migrations where version between '20260804073000' and '20260804083600' order by version;"
-          required_versions=(
-            20260804073000 20260804073100 20260804073200 20260804073300
-            20260804081500 20260804081600
-            20260804083000 20260804083100 20260804083200 20260804083300
-            20260804083400 20260804083500 20260804083600
-          )
-          for version in "${required_versions[@]}"; do
-            grep -qx "${version}" "${EVIDENCE_DIR}/migration-ledger.stdout.txt"
-          done
-          test_files=(
-            supabase/tests/movie_buff_public_matchmaking_test.sql
-            supabase/tests/movie_buff_vip_authority_test.sql
-            supabase/tests/movie_buff_vip_snapshot_release_test.sql
-            supabase/tests/movie_buff_vip_deadline_finalize_test.sql
-            supabase/tests/movie_buff_server_phase_machine_test.sql
-            supabase/tests/movie_buff_phase_contract_alignment_test.sql
-            supabase/tests/movie_buff_match_start_handoff_test.sql
-          )
-          for test_file in "${test_files[@]}"; do
-            label="pgtap-$(basename "${test_file}" .sql | tr '_' '-')"
-            (
-              cd "${WORK_ROOT}"
-              run_safe "${label}" supabase test db "${test_file}" --local
-            )
-          done
-          printf 'PASS\n' > "${EVIDENCE_DIR}/classification.txt"
-          git diff --check
-          test -z "$(git status --porcelain)"
-
-      - name: Clean disposable stack and finalize evidence
-        if: always()
-        shell: bash
-        run: |
-          set -uo pipefail
-          SOURCE_ROOT="${GITHUB_WORKSPACE}"
-          mkdir -p "${EVIDENCE_DIR}" "${RAW_DIR}"
-          cleanup_code=0
-          if [[ -d "${WORK_ROOT}/supabase" ]]; then
-            (
-              cd "${WORK_ROOT}" || exit 1
-              supabase stop --no-backup
-            ) > "${RAW_DIR}/cleanup.stdout.raw" 2> "${RAW_DIR}/cleanup.stderr.raw"
-            cleanup_code=$?
-            printf '%s\n' "${cleanup_code}" > "${EVIDENCE_DIR}/cleanup.exit.txt"
-            python3 -B "${SOURCE_ROOT}/scripts/movie-buff-redact-evidence.py" \
-              "${RAW_DIR}/cleanup.stdout.raw" "${EVIDENCE_DIR}/cleanup.stdout.txt"
-            python3 -B "${SOURCE_ROOT}/scripts/movie-buff-redact-evidence.py" \
-              "${RAW_DIR}/cleanup.stderr.raw" "${EVIDENCE_DIR}/cleanup.stderr.txt"
-          else
-            printf 'NOT APPLICABLE\n' > "${EVIDENCE_DIR}/cleanup.exit.txt"
-          fi
-          rm -rf "${WORK_ROOT}" "${RAW_DIR}"
-          classification=FAIL
-          if [[ -f "${EVIDENCE_DIR}/classification.txt" ]] && grep -qx PASS "${EVIDENCE_DIR}/classification.txt"; then
-            classification=PASS
-          fi
-          {
-            echo "lane=MOV-15-MOV-16-MOV-17-PR12-composition-pgtap"
-            echo "repository=BuffGamesStudio/buff-platform"
-            echo "source_sha=$(git rev-parse HEAD)"
-            echo "source_tree=$(git rev-parse HEAD^{tree})"
-            echo "source_ref=${GITHUB_REF_NAME}"
-            echo "raw_composition_sha=${RAW_COMPOSITION_SHA}"
-            echo "raw_composition_tree=${RAW_COMPOSITION_TREE}"
-            echo "component_mov15_sha=${COMPONENT_MOV15_SHA}"
-            echo "component_mov16_sha=${COMPONENT_MOV16_SHA}"
-            echo "component_mov17_sha=${COMPONENT_MOV17_SHA}"
-            echo "component_encoding_sha=${COMPONENT_ENCODING_SHA}"
-            echo "target_kind=disposable-local-supabase-combined-pgtap"
-            echo "mov15_race_behavior=UNKNOWN"
-            echo "mov16_persona_and_concurrency_behavior=UNKNOWN"
-            echo "three_client_browser_behavior=UNKNOWN"
-            echo "hosted_state=UNKNOWN"
-            echo "production_readiness=UNKNOWN"
-            echo "cleanup_exit=${cleanup_code}"
-            echo "classification=${classification}"
-            echo "workflow_run_id=${GITHUB_RUN_ID}"
-            echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
-            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          } > "${EVIDENCE_DIR}/metadata.txt"
-          while IFS= read -r -d '' evidence_file; do
-            temporary_file="${evidence_file}.redacted"
-            python3 -B scripts/movie-buff-redact-evidence.py "${evidence_file}" "${temporary_file}"
-            mv "${temporary_file}" "${evidence_file}"
-          done < <(find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0)
-          (
-            cd "${EVIDENCE_DIR}" || exit 1
-            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
-              | sort -z \
-              | xargs -0 sha256sum \
-              > sha256.txt
-            sha256sum -c sha256.txt
-          )
-          git diff --check
-          test -z "$(git status --porcelain)"
-          exit "${cleanup_code}"
-
-      - name: Upload combined pgTAP evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: movie-buff-composition-pgtap-${{ env.EXPECTED_SHA }}
           path: ${{ env.EVIDENCE_DIR }}
           if-no-files-found: error
           retention-days: 7
