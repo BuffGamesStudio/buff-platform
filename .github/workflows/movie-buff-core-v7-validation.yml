@@ -1,0 +1,292 @@
+name: Movie Buff core v7 source and Windows laboratories
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-core-v7
+  pull_request:
+    branches:
+      - integration/movie-buff
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-core-v7
+  EXPECTED_REPOSITORY: BuffGamesStudio/buff-platform
+  EXPECTED_REMOTE: https://github.com/BuffGamesStudio/buff-platform
+  RAW_SHA: 0a0c1af65a0e5708b9fa823c1496ae1800028f09
+  RAW_TREE: 167191fe2a143bae2f197218949fbe5b2195726a
+  MOV15_SHA: 295a85fcf3935755fc6fa2e9cfc2e31e83e4fa1d
+  MOV15_TREE: fb92eb3331cd1aac2e918603f449aadbd177935c
+  MOV16_SHA: 8eab77a63042911417d6ef16d52ab9b308fc8f0d
+  MOV16_TREE: a4aa7c9962389b9894c8a90afe69fdb276313953
+  MOV17_SHA: 6d7e9aabe5b07796a3a17fdf6c11df091dd1f978
+  MOV17_TREE: 8264d2e30b0c75a8bebaa1ad938df6a635f7d991
+  ENCODING_SHA: bf5e6d6f251f6840d17eed2fc68e0d580295437f
+  ENCODING_TREE: d97528616454b9e93c6be9a44705d008a901ac66
+  INTEGRATION_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
+
+jobs:
+  linux-source:
+    name: Linux contracts build byte proof and negative paths
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+      MOVIE_BUFF_APP_URL: http://127.0.0.1:3000
+
+    steps:
+      - name: Check out exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Bind exact identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-core-v7-linux"
+          mkdir -p "${evidence}"
+          actual_branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${actual_branch}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test "$(git remote get-url origin)" = "${EXPECTED_REMOTE}"
+          git merge-base --is-ancestor "${RAW_SHA}" HEAD
+          test "$(git rev-parse "${RAW_SHA}^{tree}")" = "${RAW_TREE}"
+          test "$(git rev-parse "${MOV15_SHA}^{tree}")" = "${MOV15_TREE}"
+          test "$(git rev-parse "${MOV16_SHA}^{tree}")" = "${MOV16_TREE}"
+          test "$(git rev-parse "${MOV17_SHA}^{tree}")" = "${MOV17_TREE}"
+          test "$(git rev-parse "${ENCODING_SHA}^{tree}")" = "${ENCODING_TREE}"
+          git diff --name-only "${RAW_SHA}"..HEAD | tee "${evidence}/validation-owned-paths.txt"
+          while IFS= read -r file; do
+            case "${file}" in
+              .github/workflows/movie-buff-core-v7-validation.yml|.github/workflows/movie-buff-core-v7-database-v2.yml|scripts/movie-buff-core-v6-db.sh|scripts/movie-buff-core-v7-guard.mjs) ;;
+              *) echo "Unexpected functional delta: ${file}"; exit 1 ;;
+            esac
+          done < "${evidence}/validation-owned-paths.txt"
+          test -z "$(git status --porcelain)"
+          echo "EVIDENCE_DIR=${evidence}" >> "${GITHUB_ENV}"
+          echo "MOVIE_BUFF_EXPECTED_REPOSITORY=${EXPECTED_REPOSITORY}" >> "${GITHUB_ENV}"
+          echo "MOVIE_BUFF_EXPECTED_REMOTE=${EXPECTED_REMOTE}" >> "${GITHUB_ENV}"
+          echo "MOVIE_BUFF_EXPECTED_BRANCH=${EXPECTED_BRANCH}" >> "${GITHUB_ENV}"
+          echo "MOVIE_BUFF_EXPECTED_SHA=${EXPECTED_SHA}" >> "${GITHUB_ENV}"
+          echo "MOVIE_BUFF_EXPECTED_TREE=$(git rev-parse HEAD^{tree})" >> "${GITHUB_ENV}"
+          echo "MOVIE_BUFF_EVIDENCE_ROOT=${evidence}" >> "${GITHUB_ENV}"
+
+      - name: Run actual guard and deliberate negative paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/movie-buff-core-v7-guard.mjs | tee "${EVIDENCE_DIR}/guard-actual.json"
+          node scripts/movie-buff-core-v7-guard.mjs --self-test | tee "${EVIDENCE_DIR}/guard-negative-paths.json"
+
+      - name: Install committed lock
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run combined contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            tests/movie-buff-public-matchmaking-contract.test.mjs \
+            tests/movie-buff-public-matchmaking-handoff.test.mjs \
+            tests/movie-buff-vip-authority.test.mjs \
+            tests/movie-buff-vip-finalize-contract.test.mjs \
+            tests/movie-buff-vip-phase-policy.test.mjs \
+            tests/movie-buff-server-phase-machine.test.mjs \
+            tests/movie-buff-authoritative-phase-runtime.test.mjs \
+            tests/movie-buff-buster-safe-boundary.test.mjs \
+            tests/movie-buff-phase-tile-mutation-guard.test.mjs \
+            tests/movie-buff-match-start-handoff.test.mjs \
+            tests/movie-buff-migration-encoding.test.mjs \
+            2>&1 | tee "${EVIDENCE_DIR}/contracts.tap"
+
+      - name: Prove migration bytes
+        shell: bash
+        env:
+          MOVIE_BUFF_MIGRATION_ENCODING_OUTPUT: ${{ runner.temp }}/movie-buff-core-v7-linux/encoding-report.json
+          MOVIE_BUFF_BOM_ONLY_OUTPUT: ${{ runner.temp }}/movie-buff-core-v7-linux/bom-only-report.json
+        run: |
+          set -euo pipefail
+          node scripts/movie-buff-migration-encoding-check.mjs \
+            supabase/migrations supabase/rollbacks supabase/tests \
+            > "${EVIDENCE_DIR}/encoding.stdout.txt"
+          node scripts/movie-buff-migration-bom-only-check.mjs "${INTEGRATION_SHA}" \
+            > "${EVIDENCE_DIR}/bom-only.stdout.txt"
+
+      - name: TypeScript and localhost production build
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install tsc --noEmit 2>&1 | tee "${EVIDENCE_DIR}/typescript.txt"
+          npm run build 2>&1 | tee "${EVIDENCE_DIR}/build.txt"
+
+      - name: Finalize Linux evidence
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -uo pipefail
+          evidence="${EVIDENCE_DIR:-${RUNNER_TEMP}/movie-buff-core-v7-linux}"
+          mkdir -p "${evidence}"
+          classification=FAIL
+          [ "${JOB_STATUS}" = success ] && classification=PASS
+          git diff --check > "${evidence}/git-diff-check.txt" 2>&1 || classification=FAIL
+          [ -z "$(git status --porcelain)" ] || classification=FAIL
+          {
+            echo "classification=${classification}"
+            echo "repository=${EXPECTED_REPOSITORY}"
+            echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "raw_sha=${RAW_SHA}"
+            echo "raw_tree=${RAW_TREE}"
+            echo "mov15_sha=${MOV15_SHA}"
+            echo "mov16_sha=${MOV16_SHA}"
+            echo "mov17_sha=${MOV17_SHA}"
+            echo "encoding_sha=${ENCODING_SHA}"
+            echo "node=$(node --version 2>/dev/null || echo UNKNOWN)"
+            echo "npm=$(npm --version 2>/dev/null || echo UNKNOWN)"
+            echo "database_behavior=separate-lab"
+            echo "browser_behavior=UNKNOWN"
+            echo "hosted_state=UNKNOWN"
+            echo "physical_windows_cursor_equivalence=UNKNOWN"
+            echo "workflow_run_id=${GITHUB_RUN_ID}"
+            echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${evidence}/metadata.txt"
+          (cd "${evidence}" && find . -maxdepth 1 -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt && sha256sum -c sha256.txt)
+          test "${classification}" = PASS
+
+      - name: Upload Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-core-v7-linux-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/movie-buff-core-v7-linux
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-command:
+    name: Windows PowerShell command-shell digital twin
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+      MOVIE_BUFF_APP_URL: http://127.0.0.1:3000
+
+    steps:
+      - name: Check out exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Bind identity and run checked-in guard
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $branch = if ($env:GITHUB_HEAD_REF) { $env:GITHUB_HEAD_REF } else { $env:GITHUB_REF_NAME }
+          if ($branch -ne $env:EXPECTED_BRANCH) { throw "Wrong branch: $branch" }
+          if ((git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'Wrong SHA' }
+          git merge-base --is-ancestor $env:RAW_SHA HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Raw composition is not an ancestor' }
+          if ((git rev-parse "$env:RAW_SHA`^{tree}").Trim() -ne $env:RAW_TREE) { throw 'Raw tree mismatch' }
+          $evidence = Join-Path $env:RUNNER_TEMP 'movie-buff-core-v7-windows'
+          New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+          $env:MOVIE_BUFF_EXPECTED_REPOSITORY = $env:EXPECTED_REPOSITORY
+          $env:MOVIE_BUFF_EXPECTED_REMOTE = $env:EXPECTED_REMOTE
+          $env:MOVIE_BUFF_EXPECTED_BRANCH = $env:EXPECTED_BRANCH
+          $env:MOVIE_BUFF_EXPECTED_SHA = $env:EXPECTED_SHA
+          $env:MOVIE_BUFF_EXPECTED_TREE = (git rev-parse 'HEAD^{tree}').Trim()
+          $env:MOVIE_BUFF_EVIDENCE_ROOT = $evidence
+          node scripts/movie-buff-core-v7-guard.mjs *> (Join-Path $evidence 'guard-actual.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Actual guard failed' }
+          node scripts/movie-buff-core-v7-guard.mjs --self-test *> (Join-Path $evidence 'guard-negative-paths.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Negative-path guard failed' }
+          "EVIDENCE_DIR=$evidence" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Execute exact Windows commands
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & npm.cmd ci --ignore-scripts --no-audit --no-fund *> (Join-Path $env:EVIDENCE_DIR 'npm-ci.txt')
+          if ($LASTEXITCODE -ne 0) { throw "npm ci failed: $LASTEXITCODE" }
+          & node.exe --test `
+            tests/movie-buff-public-matchmaking-contract.test.mjs `
+            tests/movie-buff-public-matchmaking-handoff.test.mjs `
+            tests/movie-buff-vip-authority.test.mjs `
+            tests/movie-buff-vip-finalize-contract.test.mjs `
+            tests/movie-buff-vip-phase-policy.test.mjs `
+            tests/movie-buff-server-phase-machine.test.mjs `
+            tests/movie-buff-authoritative-phase-runtime.test.mjs `
+            tests/movie-buff-buster-safe-boundary.test.mjs `
+            tests/movie-buff-phase-tile-mutation-guard.test.mjs `
+            tests/movie-buff-match-start-handoff.test.mjs `
+            tests/movie-buff-migration-encoding.test.mjs `
+            *> (Join-Path $env:EVIDENCE_DIR 'contracts.tap')
+          if ($LASTEXITCODE -ne 0) { throw "contracts failed: $LASTEXITCODE" }
+          & npx.cmd --no-install tsc --noEmit *> (Join-Path $env:EVIDENCE_DIR 'typescript.txt')
+          if ($LASTEXITCODE -ne 0) { throw "TypeScript failed: $LASTEXITCODE" }
+          & npm.cmd run build *> (Join-Path $env:EVIDENCE_DIR 'build.txt')
+          if ($LASTEXITCODE -ne 0) { throw "build failed: $LASTEXITCODE" }
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
+          if (git status --porcelain) { throw 'Worktree dirty after Windows laboratory' }
+          @(
+            'classification=PASS'
+            "repository=$env:EXPECTED_REPOSITORY"
+            "branch=$env:EXPECTED_BRANCH"
+            "source_sha=$((git rev-parse HEAD).Trim())"
+            "source_tree=$((git rev-parse 'HEAD^{tree}').Trim())"
+            "raw_sha=$env:RAW_SHA"
+            "powershell=$($PSVersionTable.PSVersion)"
+            "node=$((& node.exe --version).Trim())"
+            "npm=$((& npm.cmd --version).Trim())"
+            'database_behavior=separate-lab'
+            'browser_behavior=UNKNOWN'
+            'hosted_state=UNKNOWN'
+            'physical_windows_cursor_equivalence=UNKNOWN'
+            "workflow_run_id=$env:GITHUB_RUN_ID"
+            "finished_at=$([DateTime]::UtcNow.ToString('o'))"
+          ) | Set-Content -LiteralPath (Join-Path $env:EVIDENCE_DIR 'metadata.txt') -Encoding utf8
+          Push-Location $env:EVIDENCE_DIR
+          try {
+            Get-ChildItem -File | Where-Object Name -ne 'sha256.csv' | Sort-Object Name | ForEach-Object {
+              [pscustomobject]@{ Path = $_.Name; SHA256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+            } | Export-Csv -LiteralPath 'sha256.csv' -NoTypeInformation -Encoding utf8
+          } finally {
+            Pop-Location
+          }
+
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-core-v7-windows-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}\movie-buff-core-v7-windows
+          if-no-files-found: error
+          retention-days: 7

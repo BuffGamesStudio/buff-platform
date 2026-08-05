@@ -1,0 +1,102 @@
+name: Movie Buff core v7 seeded browser v3
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-core-v7-browser-v1
+    paths:
+      - ".github/workflows/movie-buff-core-v7-browser-v3.yml"
+      - "scripts/movie-buff-core-v7-browser-v3.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-core-v7-browser-v1
+  CORE_SHA: 700783a7f669878377eb9e015009d57e4764405b
+  CORE_TREE: 629962d5ceaea39a40d6c9c6d3b14556c40e09f4
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  seeded-three-browser-v3:
+    name: Seeded exact current-core three browsers v3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - name: Check out exact harness SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify exact validation-only delta and wrapper syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test "$(git rev-parse "${CORE_SHA}^{tree}")" = "${CORE_TREE}"
+          git merge-base --is-ancestor "${CORE_SHA}" HEAD
+          actual="$(git diff --name-only "${CORE_SHA}"..HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/movie-buff-core-v7-browser-v2.yml' \
+            '.github/workflows/movie-buff-core-v7-browser-v3.yml' \
+            '.github/workflows/movie-buff-core-v7-browser.yml' \
+            'scripts/movie-buff-core-v7-browser-v3.sh' \
+            'scripts/movie-buff-core-v7-local-users.mjs' \
+            'scripts/movie-buff-core-v7-three-browser-lab.mjs' | sort)"
+          test "${actual}" = "${expected}"
+          test ! -f supabase/.temp/project-ref
+          test -z "$(git status --porcelain)"
+          bash -n scripts/movie-buff-core-v7-browser-v3.sh
+          node --check scripts/movie-buff-core-v7-local-users.mjs
+          node --check scripts/movie-buff-core-v7-three-browser-lab.mjs
+          docker --version
+          psql --version
+          python3 --version
+
+      - name: Install repository dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Execute checked-in seeded browser wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/movie-buff-core-v7-browser-v3.sh \
+            "${GITHUB_SHA}" \
+            "${CORE_SHA}" \
+            "${CORE_TREE}" \
+            "${RUNNER_TEMP}/movie-buff-core-v7-browser-v3-evidence" \
+            "${RUNNER_TEMP}/movie-buff-core-v7-browser-v3-users.json" \
+            "${RUNNER_TEMP}/movie-buff-core-v7-browser-v3-playwright" \
+            "${RUNNER_TEMP}/movie-buff-core-v7-browser-v3-stack"
+
+      - name: Upload exact browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-core-v7-browser-v3-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-core-v7-browser-v3-evidence
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify checkout remained clean
+        if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"

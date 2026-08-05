@@ -1,0 +1,115 @@
+name: Movie Buff core v7 corrected database laboratory
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-core-v7
+    paths:
+      - ".github/workflows/movie-buff-core-v7-validation.yml"
+      - ".github/workflows/movie-buff-core-v7-database-v2.yml"
+      - "scripts/movie-buff-core-v7-guard.mjs"
+      - "scripts/movie-buff-core-v6-db.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-core-v7
+  RAW_SHA: 0a0c1af65a0e5708b9fa823c1496ae1800028f09
+  RAW_TREE: 167191fe2a143bae2f197218949fbe5b2195726a
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  disposable-database-v2:
+    name: Corrected disposable Supabase pgTAP rollback and reapply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Prepare exact corrected runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-core-v7-database-v2"
+          patched="${RUNNER_TEMP}/movie-buff-core-v7-db-v2.sh"
+          mkdir -p "${evidence}"
+          echo "EVIDENCE_DIR=${evidence}" >> "${GITHUB_ENV}"
+          echo "PATCHED_DB=${patched}" >> "${GITHUB_ENV}"
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test "$(git rev-parse "${RAW_SHA}^{tree}")" = "${RAW_TREE}"
+          git merge-base --is-ancestor "${RAW_SHA}" HEAD
+          test ! -f supabase/.temp/project-ref
+          test -z "$(git status --porcelain)"
+          git diff --name-only "${RAW_SHA}"..HEAD > "${evidence}/validation-owned-paths.txt"
+          while IFS= read -r file; do
+            case "${file}" in
+              .github/workflows/movie-buff-core-v7-validation.yml|.github/workflows/movie-buff-core-v7-database-v2.yml|scripts/movie-buff-core-v7-guard.mjs|scripts/movie-buff-core-v6-db.sh) ;;
+              *) echo "Unexpected functional delta: ${file}"; exit 1 ;;
+            esac
+          done < "${evidence}/validation-owned-paths.txt"
+          python3 - scripts/movie-buff-core-v6-db.sh "${patched}" "${evidence}/transformations.txt" <<'PY'
+          import pathlib,sys
+          text=pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+          replacements=[
+            ('validation/movie-buff-core-v6','validation/movie-buff-core-v7'),
+            ('movie-buff-core-v6','movie-buff-core-v7'),
+            ('91b8b65f85d53a950eae15544af39e2efd108c5c','0a0c1af65a0e5708b9fa823c1496ae1800028f09'),
+            ('40d72195ced550771ad257054a6325c51f183a28','167191fe2a143bae2f197218949fbe5b2195726a'),
+            ('4906147038a5a2deda5c13fdafc6f07b66ae100b','295a85fcf3935755fc6fa2e9cfc2e31e83e4fa1d'),
+            ('aab4b0256683ec77a4d9e3373fd84f60ba682e88','fb92eb3331cd1aac2e918603f449aadbd177935c'),
+            ('d50a2417b95b6a37548bba914584cef309d707a9','8eab77a63042911417d6ef16d52ab9b308fc8f0d'),
+            ('0a30efee906e28cbeeb76c6efd9232f07ede163d','a4aa7c9962389b9894c8a90afe69fdb276313953'),
+          ]
+          rows=[]
+          for old,new in replacements:
+            count=text.count(old)
+            if count < 1:
+              raise SystemExit(f'missing expected identity: {old}')
+            text=text.replace(old,new)
+            rows.append(f'{old} -> {new}; count={count}')
+          pathlib.Path(sys.argv[2]).write_text(text,encoding='utf-8')
+          pathlib.Path(sys.argv[3]).write_text('\n'.join(rows)+'\n',encoding='utf-8')
+          PY
+          chmod +x "${patched}"
+          bash -n "${patched}"
+          sha256sum scripts/movie-buff-core-v6-db.sh > "${evidence}/source-wrapper.sha256"
+          sha256sum "${patched}" > "${evidence}/patched-wrapper.sha256"
+
+      - name: Execute corrected database laboratory
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(supabase --version)" = "2.111.0"
+          bash "${PATCHED_DB}" "${GITHUB_SHA}" "$(git rev-parse HEAD^{tree})" "${EVIDENCE_DIR}"
+
+      - name: Verify clean source
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Upload corrected database evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-core-v7-database-v2-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-core-v7-database-v2
+          if-no-files-found: error
+          retention-days: 7
