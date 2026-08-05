@@ -13,14 +13,22 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => null)) as
-      | { quoteToken?: unknown; idempotencyKey?: unknown }
+      | {
+          roomId?: unknown;
+          quoteToken?: unknown;
+          idempotencyKey?: unknown;
+        }
       | null;
 
-    if (!isMovieBuffPhaseUuid(body?.quoteToken)) {
-      throw new MovieBuffPhaseRouteError(
-        "Valid active-leave quoteToken required.",
-        400,
-      );
+    if (!isMovieBuffPhaseUuid(body?.roomId)) {
+      throw new MovieBuffPhaseRouteError("Valid roomId required.", 400);
+    }
+    if (
+      typeof body?.quoteToken !== "string" ||
+      body.quoteToken.trim().length < 8 ||
+      body.quoteToken.trim().length > 256
+    ) {
+      throw new MovieBuffPhaseRouteError("Valid quoteToken required.", 400);
     }
 
     const idempotencyKey = normalizeMovieBuffPhaseActionKey(
@@ -28,20 +36,20 @@ export async function POST(request: Request) {
     );
     if (!idempotencyKey) {
       throw new MovieBuffPhaseRouteError(
-        "Valid active-leave idempotencyKey required.",
+        "Valid idempotencyKey required.",
         400,
       );
     }
 
-    // Confirmation retries must remain idempotent after the first successful
-    // transaction marks room membership left. The database quote binds caller,
-    // room, match, seat, phase version, policy, and expiry.
+    // Authentication only: an identical retry must remain replayable after the
+    // first successful confirmation has atomically closed room membership.
     const { caller } = await requireMovieBuffPhaseCaller(request);
 
     const { data, error } = await caller.rpc(
       "confirm_movie_buff_active_leave",
       {
-        p_quote_token: body.quoteToken,
+        p_room_id: body.roomId,
+        p_quote_token: body.quoteToken.trim(),
         p_idempotency_key: idempotencyKey,
       },
     );
@@ -50,7 +58,7 @@ export async function POST(request: Request) {
       throw new MovieBuffPhaseRouteError(error.message, 409);
     }
 
-    return Response.json({ result: data }, { status: 200 });
+    return Response.json({ confirmation: data }, { status: 200 });
   } catch (error) {
     return movieBuffPhaseErrorResponse(error);
   }
