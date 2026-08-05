@@ -106,9 +106,9 @@ for file_path in FILES:
         text = text.replace(HELPER_MARKER, HELPER_INSERT, 1)
 
     if file_path.name == "movie-buff-three-client-phase-proof.mjs":
-        text, count = PHASE_PATTERN.subn(PHASE_REPLACEMENT, text, count=1)
+        text, count = PHASE_PATTERN.subn(lambda _match: PHASE_REPLACEMENT, text, count=1)
     else:
-        text, count = RECONNECT_PATTERN.subn(RECONNECT_REPLACEMENT, text, count=1)
+        text, count = RECONNECT_PATTERN.subn(lambda _match: RECONNECT_REPLACEMENT, text, count=1)
     if count != 1:
         raise SystemExit(f"match_players fixture block replacement count {count}: {file_path}")
     file_path.write_text(text, encoding="utf-8")
