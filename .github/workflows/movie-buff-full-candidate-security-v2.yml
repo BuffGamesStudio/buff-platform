@@ -1,0 +1,116 @@
+name: Movie Buff full-candidate security finalizer v2
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-full-candidate-v2-security-finalizer
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  validate:
+    name: Validate exact full-candidate security SHA
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      EXPECTED_SHA: ${{ github.sha }}
+      EXPECTED_BRANCH: validation/movie-buff-full-candidate-v2-security-finalizer
+      PARENT_SHA: 5c531f9735d1def1dbb6eff28d255a1f42e1df39
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Bind exact source and tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "SOURCE_EVIDENCE=${RUNNER_TEMP}/movie-buff-full-security-source" >> "${GITHUB_ENV}"
+          echo "DATABASE_EVIDENCE=${RUNNER_TEMP}/movie-buff-full-security-database" >> "${GITHUB_ENV}"
+          mkdir -p "${RUNNER_TEMP}/movie-buff-full-security-source" "${RUNNER_TEMP}/movie-buff-full-security-database"
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          git merge-base --is-ancestor "${PARENT_SHA}" HEAD
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          node --check tests/movie-buff-current-security-finalizer.test.mjs
+          bash -n scripts/movie-buff-current-security-finalizer-evidence.sh
+          docker --version
+          psql --version
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run source security contract
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test tests/movie-buff-current-security-finalizer.test.mjs 2>&1 | tee "${SOURCE_EVIDENCE}/contracts.tap"
+      - name: Run TypeScript and production build
+        shell: bash
+        run: |
+          set -o pipefail
+          npx --no-install tsc --noEmit 2>&1 | tee "${SOURCE_EVIDENCE}/typescript.txt"
+          npm run build 2>&1 | tee "${SOURCE_EVIDENCE}/build.txt"
+      - name: Run full-candidate disposable database rehearsal
+        shell: bash
+        run: |
+          bash scripts/movie-buff-current-security-finalizer-evidence.sh "${EXPECTED_SHA}" "${DATABASE_EVIDENCE}"
+      - name: Finalize source evidence
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "${SOURCE_EVIDENCE}"
+          classification=PASS
+          git diff --check >"${SOURCE_EVIDENCE}/git-diff-check.txt" 2>&1 || classification=FAIL
+          test -z "$(git status --porcelain)" || classification=FAIL
+          {
+            echo "lane=movie-buff-full-candidate-security-v2"
+            echo "classification=${classification}"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "source_ref=${GITHUB_REF_NAME}"
+            echo "parent_candidate=${PARENT_SHA}"
+            echo "persona_behavior=UNKNOWN"
+            echo "hosted_state=UNKNOWN"
+            echo "production_state=UNTOUCHED"
+            echo "workflow_run_id=${GITHUB_RUN_ID}"
+            echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"${SOURCE_EVIDENCE}/metadata.txt"
+          (cd "${SOURCE_EVIDENCE}" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt)
+          test "${classification}" = PASS
+      - name: Upload exact-SHA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-full-security-${{ env.EXPECTED_SHA }}
+          path: |
+            ${{ runner.temp }}/movie-buff-full-security-source
+            ${{ runner.temp }}/movie-buff-full-security-database
+          if-no-files-found: error
+          retention-days: 7
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
