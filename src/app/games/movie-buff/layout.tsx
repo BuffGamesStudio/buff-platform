@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { MovieBuffAuthoritativeNavigation } from "@/components/movie-buff/MovieBuffAuthoritativeNavigation";
+
 export const dynamic = "force-dynamic";
 
 export default function MovieBuffLayout({
@@ -7,5 +9,9 @@ export default function MovieBuffLayout({
 }: {
   children: ReactNode;
 }) {
-  return children;
+  return (
+    <MovieBuffAuthoritativeNavigation>
+      {children}
+    </MovieBuffAuthoritativeNavigation>
+  );
 }
