@@ -3,7 +3,7 @@ name: MOV-17 disposable local Supabase evidence
 on:
   push:
     branches:
-      - copilot/MOV-17-shared-phase-machine
+      - validation/mov17-6d7e9aab-migration-repair-bf5e6d6f-v3
     paths:
       - ".github/workflows/movie-buff-mov17-local-supabase.yml"
       - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 50
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EXPECTED_BRANCH: copilot/MOV-17-shared-phase-machine
+      EXPECTED_BRANCH: validation/mov17-6d7e9aab-migration-repair-bf5e6d6f-v3
 
     steps:
       - name: Check out exact MOV-17 SHA
@@ -65,7 +65,7 @@ jobs:
           set -euo pipefail
           mkdir -p "${EVIDENCE_DIR}"
           {
-            echo "lane=MOV-17"
+            echo "lane=MOV-17-validation-twin-v3"
             echo "source_sha=${EXPECTED_SHA}"
             echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
             echo "preflight=UNKNOWN"
@@ -87,7 +87,7 @@ jobs:
           psql --version
           python3 --version
           {
-            echo "lane=MOV-17"
+            echo "lane=MOV-17-validation-twin-v3"
             echo "source_sha=${EXPECTED_SHA}"
             echo "source_ref=${resolved_ref}"
             echo "preflight=PASS"
