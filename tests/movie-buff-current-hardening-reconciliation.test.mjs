@@ -26,9 +26,11 @@ const tables = [
 
 test("legacy board resolve verifies bearer membership before mutation", () => {
   const authIndex = route.indexOf("requireMovieBuffPhaseMember(request, roomId)");
-  const mutationIndex = route.indexOf("resolveMovieBuffBoardAfterRound");
+  const mutationCallIndex = route.indexOf(
+    "await resolveMovieBuffBoardAfterRound({",
+  );
   assert.ok(authIndex > 0);
-  assert.ok(mutationIndex > authIndex);
+  assert.ok(mutationCallIndex > authIndex);
   assert.match(route, /movieBuffPhaseErrorResponse/);
   assert.doesNotMatch(route, /SUPABASE_SERVICE_ROLE_KEY|serviceRoleKey/);
 });
