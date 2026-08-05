@@ -1,12 +1,15 @@
-name: Movie Buff core disposable database laboratory
+name: Movie Buff core v2 disposable database laboratory
 
 on:
   push:
     branches:
-      - validation/movie-buff-core-v1
+      - validation/movie-buff-core-v2
     paths:
+      - ".github/workflows/movie-buff-core-validation.yml"
+      - ".github/workflows/movie-buff-core-windows.yml"
       - ".github/workflows/movie-buff-core-database.yml"
       - "scripts/movie-buff-core-validation-guard.mjs"
+      - "scripts/movie-buff-core-windows-digital-twin.ps1"
       - "scripts/movie-buff-core-local-supabase-lab.sh"
       - "supabase/**"
   pull_request:
@@ -18,9 +21,9 @@ permissions:
   contents: read
 
 env:
-  EXPECTED_BRANCH: validation/movie-buff-core-v1
+  EXPECTED_BRANCH: validation/movie-buff-core-v2
   EXPECTED_REMOTE: https://github.com/BuffGamesStudio/buff-platform
-  RAW_COMPOSITION_SHA: b4f8e2196a8a0423e7340ac97bd5592d58a966db
+  RAW_COMPOSITION_SHA: 1825e452fa5e3caa24f5a99ac27e974d14b3ab66
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
 
@@ -85,7 +88,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: movie-buff-core-database-${{ env.EXPECTED_SHA }}
+          name: movie-buff-core-v2-database-${{ env.EXPECTED_SHA }}
           path: ${{ runner.temp }}/movie-buff-core-db-evidence
           if-no-files-found: error
           retention-days: 7
