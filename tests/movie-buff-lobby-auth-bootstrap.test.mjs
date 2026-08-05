@@ -2,29 +2,34 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-const lobby = fs.readFileSync(
-  "src/app/games/movie-buff/lobby/LobbyClient.tsx",
+const page = fs.readFileSync(
+  "src/app/games/movie-buff/lobby/page.tsx",
+  "utf8",
+);
+const bootstrap = fs.readFileSync(
+  "src/app/games/movie-buff/lobby/LobbyAuthBootstrap.tsx",
   "utf8",
 );
 
-test("lobby defers an empty INITIAL_SESSION until explicit session lookup", () => {
-  assert.match(
-    lobby,
-    /event\s*===\s*"INITIAL_SESSION"\s*&&\s*!session\?\.user/,
-  );
-  assert.match(
-    lobby,
-    /\.then\(\(user\)\s*=>\s*\{\s*void resolveAuthenticatedUser\(user\);\s*\}\)/s,
-  );
-  assert.doesNotMatch(
-    lobby,
-    /\.then\(\(user\)\s*=>\s*\{\s*if\s*\(user\)/s,
-  );
+test("lobby page mounts the persisted-session bootstrap before LobbyClient", () => {
+  assert.match(page, /import MovieBuffLobbyAuthBootstrap/);
+  assert.match(page, /<MovieBuffLobbyAuthBootstrap/);
+  assert.doesNotMatch(page, /<MovieBuffLobbyClient/);
 });
 
-test("lobby still resolves signed-out and authenticated auth events", () => {
-  assert.match(lobby, /subscribeToAuthChanges\(\s*\(event, session\)/s);
-  assert.match(lobby, /session\?\.user\s*\?\?\s*null/);
-  assert.match(lobby, /!user\s*\|\|\s*user\.is_anonymous\s*===\s*true/);
-  assert.match(lobby, /router\.replace\(/);
+test("bootstrap resolves persisted auth before rendering LobbyClient", () => {
+  assert.match(bootstrap, /const user = await getCurrentUser\(\)/);
+  assert.match(bootstrap, /if \(!user \|\| user\.is_anonymous === true\)/);
+  assert.match(bootstrap, /router\.replace\(signInPath\)/);
+  assert.match(bootstrap, /setAuthReady\(true\)/);
+  assert.match(bootstrap, /if \(!authReady\)/);
+  assert.match(bootstrap, /<MovieBuffLobbyClient/);
+});
+
+test("bootstrap fails closed and prevents stale async completion", () => {
+  assert.match(bootstrap, /let isMounted = true/);
+  assert.match(bootstrap, /let authResolved = false/);
+  assert.match(bootstrap, /if \(!isMounted \|\| authResolved\)/);
+  assert.match(bootstrap, /catch \{/);
+  assert.match(bootstrap, /window\.clearTimeout\(retryTimer\)/);
 });
