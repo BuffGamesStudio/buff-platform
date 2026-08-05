@@ -1,0 +1,262 @@
+name: Movie Buff exact three-browser v4
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-exact-mov15-mov16-mov17-pr12-20260805-v3
+    paths:
+      - ".github/workflows/movie-buff-exact-three-browser-v4.yml"
+      - "scripts/movie-buff-exact-three-browser-lab-v4.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-exact-mov15-mov16-mov17-pr12-20260805-v3
+  COMPOSITION_SHA: a0beb8a6f124831e5f93a07530e1c75f3ccb2898
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-three-browser-v4:
+    name: Exact three authenticated browsers v4
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out exact validation harness
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify immutable composition and approved harness delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git merge-base --is-ancestor "${COMPOSITION_SHA}" HEAD
+          actual="$(git diff --name-only "${COMPOSITION_SHA}"..HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/movie-buff-exact-composition-labs.yml' \
+            '.github/workflows/movie-buff-exact-three-browser-v4.yml' \
+            'scripts/movie-buff-exact-local-users.mjs' \
+            'scripts/movie-buff-exact-three-browser-lab.mjs' \
+            'scripts/movie-buff-exact-three-browser-lab-v4.mjs' | sort)"
+          test "${actual}" = "${expected}"
+          test -z "$(git status --porcelain)"
+
+      - name: Install repository dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Run exact three-browser laboratory
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-exact-three-browser-v4
+          USERS_FILE: ${{ runner.temp }}/movie-buff-exact-browser-v4-users.json
+          PLAYWRIGHT_ROOT: ${{ runner.temp }}/movie-buff-playwright-v4
+          WORK_ROOT: ${{ runner.temp }}/movie-buff-exact-browser-v4-stack
+        run: |
+          set -uo pipefail
+          set +e
+          mkdir -p "${EVIDENCE_DIR}"
+          overall=0
+          app_pid=""
+
+          cleanup() {
+            if [ -n "${app_pid}" ]; then
+              kill "${app_pid}" >/dev/null 2>&1 || true
+              wait "${app_pid}" >/dev/null 2>&1 || true
+              app_pid=""
+            fi
+            if [ -d "${WORK_ROOT}/supabase" ]; then
+              (cd "${WORK_ROOT}" && supabase stop --no-backup) \
+                >"${EVIDENCE_DIR}/cleanup.log" 2>&1 || true
+            fi
+            rm -rf "${WORK_ROOT}" "${USERS_FILE}" "${PLAYWRIGHT_ROOT}"
+          }
+          trap cleanup EXIT
+
+          printf 'laboratory=ephemeral-three-browser-v4\nharness_sha=%s\ncomposition_sha=%s\nclassification=UNKNOWN\n' \
+            "${GITHUB_SHA}" "${COMPOSITION_SHA}" > "${EVIDENCE_DIR}/metadata.txt"
+          git show -s --format=fuller HEAD > "${EVIDENCE_DIR}/harness-commit.txt"
+          git show -s --format=fuller "${COMPOSITION_SHA}" > "${EVIDENCE_DIR}/composition-commit.txt"
+          git diff --name-only "${COMPOSITION_SHA}"..HEAD \
+            > "${EVIDENCE_DIR}/harness-delta.txt"
+          node --version > "${EVIDENCE_DIR}/node-version.txt"
+          supabase --version > "${EVIDENCE_DIR}/supabase-version.txt"
+          docker --version > "${EVIDENCE_DIR}/docker-version.txt"
+
+          rm -rf "${WORK_ROOT}"
+          mkdir -p "${WORK_ROOT}"
+          cp -a supabase "${WORK_ROOT}/supabase"
+          python3 - "${WORK_ROOT}/supabase/config.toml" "exact-browser-v4-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" <<'PY'
+          import pathlib, re, sys
+          path = pathlib.Path(sys.argv[1])
+          project_id = sys.argv[2]
+          text = path.read_text(encoding="utf-8")
+          text, project_count = re.subn(
+              r'(?m)^project_id\s*=\s*"[^"]+"\s*$',
+              f'project_id = "{project_id}"',
+              text,
+              count=1,
+          )
+          text, seed_count = re.subn(
+              r'(?ms)(^\[db\.seed\]\s*.*?^enabled\s*=\s*)true(\s*$)',
+              r'\1false\2',
+              text,
+              count=1,
+          )
+          if project_count != 1 or seed_count != 1:
+              raise SystemExit("unable to create isolated local Supabase config")
+          path.write_text(text, encoding="utf-8")
+          PY
+          config_exit=$?
+          printf '%s\n' "${config_exit}" > "${EVIDENCE_DIR}/ephemeral-config.exit"
+          if [ "${config_exit}" -ne 0 ]; then overall=1; fi
+
+          if [ "${config_exit}" -eq 0 ]; then
+            (
+              cd "${WORK_ROOT}"
+              supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor
+            ) > "${EVIDENCE_DIR}/supabase-start.log" 2>&1
+            start_exit=$?
+          else
+            start_exit=125
+          fi
+          printf '%s\n' "${start_exit}" > "${EVIDENCE_DIR}/supabase-start.exit"
+          if [ "${start_exit}" -ne 0 ]; then overall=1; fi
+
+          if [ "${start_exit}" -eq 0 ]; then
+            (
+              cd "${WORK_ROOT}"
+              supabase db reset --local
+            ) > "${EVIDENCE_DIR}/database-reset.log" 2>&1
+            reset_exit=$?
+          else
+            reset_exit=125
+          fi
+          printf '%s\n' "${reset_exit}" > "${EVIDENCE_DIR}/database-reset.exit"
+          if [ "${reset_exit}" -ne 0 ]; then overall=1; fi
+
+          if [ "${reset_exit}" -eq 0 ]; then
+            status_env="$(cd "${WORK_ROOT}" && supabase status -o env 2>"${EVIDENCE_DIR}/supabase-status.error")"
+            status_exit=$?
+            printf '%s\n' "${status_exit}" > "${EVIDENCE_DIR}/supabase-status.exit"
+            if [ "${status_exit}" -ne 0 ]; then overall=1; fi
+            eval "${status_env}"
+            export NEXT_PUBLIC_SUPABASE_URL="${API_URL:-http://127.0.0.1:55321}"
+            export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+            export SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY:-${SECRET_KEY:-}}"
+            export MOVIE_BUFF_APP_URL="http://127.0.0.1:3001"
+
+            MOVIE_BUFF_LOCAL_USERS_OUTPUT="${USERS_FILE}" \
+            MOVIE_BUFF_LOCAL_RUN_ID="browser-v4-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+              node scripts/movie-buff-exact-local-users.mjs \
+              > "${EVIDENCE_DIR}/local-users-setup.log" 2>&1
+            users_exit=$?
+            printf '%s\n' "${users_exit}" > "${EVIDENCE_DIR}/local-users-setup.exit"
+            if [ "${users_exit}" -ne 0 ]; then overall=1; fi
+
+            NEXT_PUBLIC_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL}" \
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}" \
+            SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY}" \
+              npm run dev -- --hostname 127.0.0.1 --port 3001 \
+              > "${EVIDENCE_DIR}/application.log" 2>&1 &
+            app_pid=$!
+            app_health=1
+            for attempt in $(seq 1 90); do
+              curl -fsS "${MOVIE_BUFF_APP_URL}/sign-in" >/dev/null 2>&1
+              app_health=$?
+              if [ "${app_health}" -eq 0 ]; then break; fi
+              sleep 1
+            done
+            printf '%s\n' "${app_health}" > "${EVIDENCE_DIR}/application-health.exit"
+            if [ "${app_health}" -ne 0 ]; then overall=1; fi
+
+            mkdir -p "${PLAYWRIGHT_ROOT}"
+            (
+              cd "${PLAYWRIGHT_ROOT}"
+              npm init -y >/dev/null 2>&1
+              npm install --ignore-scripts playwright@1.54.2
+              npx playwright install --with-deps chromium
+            ) > "${EVIDENCE_DIR}/playwright-install.log" 2>&1
+            playwright_exit=$?
+            printf '%s\n' "${playwright_exit}" > "${EVIDENCE_DIR}/playwright-install.exit"
+            if [ "${playwright_exit}" -ne 0 ]; then overall=1; fi
+
+            if [ "${users_exit}" -eq 0 ] && [ "${app_health}" -eq 0 ] && [ "${playwright_exit}" -eq 0 ]; then
+              MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
+              MOVIE_BUFF_COMPOSITION_SHA="${COMPOSITION_SHA}" \
+              MOVIE_BUFF_LOCAL_USERS_OUTPUT="${USERS_FILE}" \
+              MOVIE_BUFF_EVIDENCE_DIR="${EVIDENCE_DIR}" \
+              PLAYWRIGHT_PACKAGE_ROOT="${PLAYWRIGHT_ROOT}" \
+                node scripts/movie-buff-exact-three-browser-lab-v4.mjs \
+                > "${EVIDENCE_DIR}/three-browser.log" 2>&1
+              browser_exit=$?
+            else
+              browser_exit=125
+            fi
+            printf '%s\n' "${browser_exit}" > "${EVIDENCE_DIR}/three-browser.exit"
+            if [ "${browser_exit}" -ne 0 ]; then overall=1; fi
+          else
+            printf '125\n' > "${EVIDENCE_DIR}/supabase-status.exit"
+            printf '125\n' > "${EVIDENCE_DIR}/three-browser.exit"
+          fi
+
+          cleanup
+          trap - EXIT
+
+          classification=PASS
+          if [ "${overall}" -ne 0 ]; then classification=FAIL; fi
+          printf '\nclassification=%s\nexit_code=%s\nfinished_at=%s\n' \
+            "${classification}" "${overall}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            >> "${EVIDENCE_DIR}/metadata.txt"
+
+          while IFS= read -r -d '' file; do
+            python3 -B scripts/movie-buff-redact-evidence.py "${file}" "${file}.redacted"
+            redact_exit=$?
+            if [ "${redact_exit}" -eq 0 ]; then
+              mv "${file}.redacted" "${file}"
+            else
+              overall=1
+              rm -f "${file}.redacted"
+            fi
+          done < <(
+            find "${EVIDENCE_DIR}" -maxdepth 1 -type f \
+              \( -name '*.log' -o -name '*.txt' -o -name '*.json' -o -name '*.exit' \) \
+              -print0
+          )
+
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -type f ! -name sha256.txt -print0 \
+              | sort -z | xargs -0 sha256sum > sha256.txt
+            sha256sum -c sha256.txt
+          )
+          hash_exit=$?
+          if [ "${hash_exit}" -ne 0 ]; then overall=1; fi
+          exit "${overall}"
+
+      - name: Upload exact three-browser v4 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-exact-three-browser-v4-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-exact-three-browser-v4
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify checkout remained clean
+        if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
