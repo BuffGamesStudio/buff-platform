@@ -51,7 +51,7 @@ run_step() {
 write_metadata() {
   local classification="$1"
   {
-    echo "lane=movie-buff-core-v1"
+    echo "lane=movie-buff-core-v2"
     echo "repository=BuffGamesStudio/buff-platform"
     echo "remote=$(git -C "$SOURCE_ROOT" remote get-url origin 2>/dev/null || echo UNKNOWN)"
     echo "source_branch=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-UNKNOWN}}"
@@ -59,12 +59,16 @@ write_metadata() {
     echo "source_tree=$(git -C "$SOURCE_ROOT" rev-parse HEAD^{tree} 2>/dev/null || echo UNKNOWN)"
     echo "expected_sha=$EXPECTED_SHA"
     echo "expected_tree=$EXPECTED_TREE"
-    echo "raw_composition_sha=b4f8e2196a8a0423e7340ac97bd5592d58a966db"
-    echo "raw_composition_tree=68715cde77454c8c1057f9480373208cec88ba32"
-    echo "component_mov15_sha=0ecf8de86d2ea1a28c1496ed044a5092a7d3ffcb"
+    echo "raw_composition_sha=1825e452fa5e3caa24f5a99ac27e974d14b3ab66"
+    echo "raw_composition_tree=75d61e32ab0aceeff142ce76e9328d9eed7f2888"
+    echo "component_mov15_sha=4906147038a5a2deda5c13fdafc6f07b66ae100b"
+    echo "component_mov15_tree=38efa7f253931eae9f16d7d92d2236a3a1621296"
     echo "component_mov16_sha=95c292ead66fc83cf13d7154bd3cf691610f549d"
+    echo "component_mov16_tree=04267651da0b9caa741d95bcea01a096b5086a31"
     echo "component_mov17_sha=6d7e9aabe5b07796a3a17fdf6c11df091dd1f978"
+    echo "component_mov17_tree=8264d2e30b0c75a8bebaa1ad938df6a635f7d991"
     echo "component_encoding_sha=bf5e6d6f251f6840d17eed2fc68e0d580295437f"
+    echo "component_encoding_tree=d97528616454b9e93c6be9a44705d008a901ac66"
     echo "integration_base_sha=bf316a15a2120e32d8a32e479df2ae439081f9a1"
     echo "target_kind=disposable-local-supabase"
     echo "application_target=http://127.0.0.1:3000"
@@ -102,7 +106,18 @@ cleanup_and_exit() {
   fi
   rm -rf "$WORK_ROOT"
   unset PGPASSWORD
-  if [[ "$status" -eq 0 ]]; then write_metadata PASS; hash_evidence || status=1; else write_metadata FAIL; hash_evidence || true; fi
+  if [[ "$status" -eq 0 ]]; then
+    write_metadata PASS
+    if ! hash_evidence; then
+      status=1
+      FAILURE_STEP="evidence-hash"
+      write_metadata FAIL
+      hash_evidence || true
+    fi
+  else
+    write_metadata FAIL
+    hash_evidence || true
+  fi
   if [[ "$status" -eq 0 ]]; then classify PASS; else classify FAIL; fi
   exit "$status"
 }
@@ -133,7 +148,7 @@ main() {
   [[ "$(git -C "$SOURCE_ROOT" rev-parse HEAD)" == "$EXPECTED_SHA" ]] || { FAILURE_STEP="wrong-sha"; return 1; }
   [[ "$(git -C "$SOURCE_ROOT" rev-parse HEAD^{tree})" == "$EXPECTED_TREE" ]] || { FAILURE_STEP="wrong-tree"; return 1; }
   [[ -z "$(git -C "$SOURCE_ROOT" status --porcelain)" ]] || { FAILURE_STEP="dirty-preflight"; return 1; }
-  [[ "${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}" == "validation/movie-buff-core-v1" ]] || { FAILURE_STEP="wrong-branch"; return 1; }
+  [[ "${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}" == "validation/movie-buff-core-v2" ]] || { FAILURE_STEP="wrong-branch"; return 1; }
   [[ ! -f "$SOURCE_ROOT/supabase/.temp/project-ref" ]] || { FAILURE_STEP="linked-project"; return 1; }
   [[ "$EVIDENCE_ROOT" != "$SOURCE_ROOT" && "$EVIDENCE_ROOT" != "$SOURCE_ROOT"/* ]] || { FAILURE_STEP="evidence-inside-repository"; return 1; }
   [[ "$(supabase --version)" == "2.111.0" ]] || { FAILURE_STEP="unsupported-supabase-version"; return 1; }
