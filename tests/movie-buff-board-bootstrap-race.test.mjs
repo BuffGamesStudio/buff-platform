@@ -2,12 +2,24 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-const wrapper = fs.readFileSync("src/lib/server/movieBuffBoardRaceSafe.ts", "utf8");
-const route = fs.readFileSync("src/app/api/movie-buff/match/view/route.ts", "utf8");
+const wrapper = fs.readFileSync(
+  "src/lib/server/movieBuffBoardRaceSafe.ts",
+  "utf8",
+);
+const route = fs.readFileSync(
+  "src/app/api/movie-buff/match/view/route.ts",
+  "utf8",
+);
 
 test("match view uses the race-safe board bootstrap", () => {
-  assert.match(route, /ensureMovieBuffBoardForRoomRaceSafe\(body\.roomId\)/);
-  assert.doesNotMatch(route, /from "@\/lib\/server\/movieBuffBoard"/);
+  assert.match(
+    route,
+    /ensureMovieBuffBoardForRoomRaceSafe\(body\.roomId\)/,
+  );
+  assert.doesNotMatch(
+    route,
+    /from "@\/lib\/server\/movieBuffBoard"/,
+  );
 });
 
 test("only the one-board-per-room conflict enters recovery", () => {
