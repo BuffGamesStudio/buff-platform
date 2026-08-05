@@ -1,95 +1,14 @@
-name: Movie Buff core v2 disposable database laboratory
+name: Retired Movie Buff core v2 database workflow
 
 on:
-  push:
-    branches:
-      - validation/movie-buff-core-v2
-    paths:
-      - ".github/workflows/movie-buff-core-validation.yml"
-      - ".github/workflows/movie-buff-core-windows.yml"
-      - ".github/workflows/movie-buff-core-database.yml"
-      - "scripts/movie-buff-core-validation-guard.mjs"
-      - "scripts/movie-buff-core-windows-digital-twin.ps1"
-      - "scripts/movie-buff-core-local-supabase-lab.sh"
-      - "supabase/**"
-  pull_request:
-    branches:
-      - integration/movie-buff
   workflow_dispatch:
 
 permissions:
   contents: read
 
-env:
-  EXPECTED_BRANCH: validation/movie-buff-core-v2
-  EXPECTED_REMOTE: https://github.com/BuffGamesStudio/buff-platform
-  RAW_COMPOSITION_SHA: 1825e452fa5e3caa24f5a99ac27e974d14b3ab66
-  SUPABASE_TELEMETRY_DISABLED: "1"
-  DO_NOT_TRACK: "1"
-
 jobs:
-  disposable-database-lab:
-    name: Local Supabase migrations, pgTAP, rollback, and reapply
+  retired:
+    if: ${{ false }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
-    env:
-      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-
     steps:
-      - name: Check out exact SHA
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.EXPECTED_SHA }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Verify exact preflight
-        shell: bash
-        run: |
-          set -euo pipefail
-          evidence_dir="${RUNNER_TEMP}/movie-buff-core-db-evidence"
-          mkdir -p "${evidence_dir}"
-          echo "EVIDENCE_DIR=${evidence_dir}" >> "${GITHUB_ENV}"
-          actual_branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
-          test "${actual_branch}" = "${EXPECTED_BRANCH}"
-          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
-          test "$(git remote get-url origin)" = "${EXPECTED_REMOTE}"
-          git merge-base --is-ancestor "${RAW_COMPOSITION_SHA}" HEAD
-          test -z "$(git status --porcelain)"
-          test ! -f supabase/.temp/project-ref
-          docker --version
-          psql --version
-          python3 --version
-
-      - name: Install pinned Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: 2.111.0
-
-      - name: Execute checked-in database wrapper
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(supabase --version)" = "2.111.0"
-          bash -n scripts/movie-buff-core-local-supabase-lab.sh
-          bash scripts/movie-buff-core-local-supabase-lab.sh \
-            "${EXPECTED_SHA}" \
-            "$(git rev-parse HEAD^{tree})" \
-            "${EVIDENCE_DIR}"
-
-      - name: Verify source remained clean
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          git diff --check
-          test -z "$(git status --porcelain)"
-
-      - name: Upload database evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: movie-buff-core-v2-database-${{ env.EXPECTED_SHA }}
-          path: ${{ runner.temp }}/movie-buff-core-db-evidence
-          if-no-files-found: error
-          retention-days: 7
+      - run: echo "Retired; use movie-buff-core-v4-validation.yml"
