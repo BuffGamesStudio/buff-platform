@@ -3,18 +3,7 @@ name: MOV-17 disposable local Supabase evidence
 on:
   push:
     branches:
-      - copilot/MOV-17-shared-phase-machine
-    paths:
-      - ".github/workflows/movie-buff-mov17-local-supabase.yml"
-      - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
-      - "supabase/config.toml"
-      - "supabase/migrations/**"
-      - "supabase/rollbacks/**"
-      - "supabase/tests/movie_buff_server_phase_machine_test.sql"
-      - "supabase/tests/movie_buff_reconnect_buster_rollback_probe.sql"
-  pull_request:
-    branches:
-      - integration/movie-buff
+      - validation/MOV-17-encoding-twin
     paths:
       - ".github/workflows/movie-buff-mov17-local-supabase.yml"
       - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
@@ -38,11 +27,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
-      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EXPECTED_BRANCH: copilot/MOV-17-shared-phase-machine
+      EXPECTED_SHA: ${{ github.sha }}
+      EXPECTED_BRANCH: validation/MOV-17-encoding-twin
 
     steps:
-      - name: Check out exact MOV-17 SHA
+      - name: Check out exact validation SHA
         uses: actions/checkout@v4
         with:
           ref: ${{ env.EXPECTED_SHA }}
@@ -53,8 +42,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
-          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
           test -z "$(git status --porcelain)"
           test ! -f supabase/.temp/project-ref
@@ -94,7 +82,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mov17-local-supabase-${{ env.EXPECTED_SHA }}
+          name: mov17-local-supabase-validation-${{ env.EXPECTED_SHA }}
           path: ${{ runner.temp }}/mov17-local-supabase-evidence
           if-no-files-found: error
           retention-days: 7
