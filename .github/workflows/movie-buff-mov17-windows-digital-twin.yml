@@ -12,10 +12,13 @@ on:
       - "scripts/movie-buff-three-client-phase-evidence-runner.mjs"
       - "supabase/migrations/20260804083*_movie_buff_*.sql"
       - "supabase/rollbacks/20260804083*_movie_buff_*.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
       - "tests/movie-buff-server-phase-machine.test.mjs"
       - "tests/movie-buff-authoritative-phase-runtime.test.mjs"
       - "tests/movie-buff-buster-safe-boundary.test.mjs"
       - "tests/movie-buff-phase-tile-mutation-guard.test.mjs"
+      - "tests/movie-buff-match-start-handoff.test.mjs"
   workflow_dispatch:
 
 permissions:
