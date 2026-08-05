@@ -15,7 +15,7 @@ permissions:
 
 env:
   EXPECTED_BRANCH: validation/movie-buff-exact-mov15-mov16-mov17-pr12-20260805-v3
-  COMPOSITION_SHA: 54a5afa2cb0212806bb81042001fb382a43aa77c
+  COMPOSITION_SHA: a0beb8a6f124831e5f93a07530e1c75f3ccb2898
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
 
@@ -45,7 +45,7 @@ jobs:
             'scripts/movie-buff-exact-local-users.mjs' \
             'scripts/movie-buff-exact-three-browser-lab.mjs' | sort)"
           git merge-base --is-ancestor 0ecf8de86d2ea1a28c1496ed044a5092a7d3ffcb "${COMPOSITION_SHA}"
-          git merge-base --is-ancestor d50a2417b95b6a37548bba914584cef309d707a9 "${COMPOSITION_SHA}"
+          git merge-base --is-ancestor 8eab77a63042911417d6ef16d52ab9b308fc8f0d "${COMPOSITION_SHA}"
           git merge-base --is-ancestor 6d7e9aabe5b07796a3a17fdf6c11df091dd1f978 "${COMPOSITION_SHA}"
           git merge-base --is-ancestor bf5e6d6f251f6840d17eed2fc68e0d580295437f "${COMPOSITION_SHA}"
           test -z "$(git status --porcelain)"
