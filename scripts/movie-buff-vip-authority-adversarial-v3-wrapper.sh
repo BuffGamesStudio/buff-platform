@@ -122,6 +122,51 @@ source = replace_once(
     "dispose window-race context",
 )
 
+source = replace_once(
+    source,
+    "\ntry {\n  const password = `Local-${runId}-A9!`;",
+    """
+async function createUserWithRetry(attributes) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    try {
+      const result = await admin.auth.admin.createUser(attributes);
+      if (!result.error && result.data?.user) return result;
+      lastError = result.error;
+    } catch (error) {
+      lastError = error;
+    }
+
+    try {
+      const listed = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      const existing = listed.data?.users?.find(
+        (user) => user.email?.toLowerCase() === attributes.email.toLowerCase(),
+      );
+      if (existing) return { data: { user: existing }, error: null };
+      if (listed.error) lastError = listed.error;
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (attempt < 8) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+    }
+  }
+  return { data: { user: null }, error: lastError ?? new Error("createUser retry exhausted") };
+}
+
+try {
+  const password = `Local-${runId}-A9!`;""",
+    "insert bounded local-auth retry",
+)
+
+source = replace_once(
+    source,
+    "    const { data, error } = await admin.auth.admin.createUser({",
+    "    const { data, error } = await createUserWithRetry({",
+    "use bounded local-auth retry",
+)
+
 output.write_text(source, encoding="utf-8")
 PY
 

@@ -90,6 +90,42 @@ source = replace_once(
     "export third persona",
 )
 
+source = replace_once(
+    source,
+    """  if verify_catalog_contracts; then
+    RESULT[function_contract]=\"PASS\"
+    RESULT[rls_policy_catalog]=\"PASS\"
+  else
+    RESULT[function_contract]=\"FAIL\"
+    RESULT[rls_policy_catalog]=\"FAIL\"
+    record_failure catalog-contract
+  fi
+  RESULT[direct_effective_grants]=\"PASS\"""",
+    """  verify_catalog_contracts || true
+  if grep -Eq $'^(exposed-routine-owner-postgres|security-definer-fixed-safe-search-path)\\t.*\\tFAIL$' \\
+    \"$EVIDENCE_ROOT/catalog-contract-verification.tsv\"; then
+    RESULT[function_contract]=\"FAIL\"
+    record_failure function-contract
+  else
+    RESULT[function_contract]=\"PASS\"
+  fi
+  if grep -q $'^api-exposed-table-rls\\t0\\tPASS$' \\
+    \"$EVIDENCE_ROOT/catalog-contract-verification.tsv\"; then
+    RESULT[rls_policy_catalog]=\"PASS\"
+  else
+    RESULT[rls_policy_catalog]=\"FAIL\"
+    record_failure rls-policy-catalog
+  fi
+  if grep -Eq '# Failed test .*authenticated retains intended SELECT|# Failed test .*anon cannot execute|# Failed test .*service_role retains EXECUTE' \\
+    \"$RAW_ROOT/pgtap-movie_buff_security_validation_test.stdout.raw\"; then
+    RESULT[direct_effective_grants]=\"FAIL\"
+    record_failure direct-effective-grants
+  else
+    RESULT[direct_effective_grants]=\"PASS\"
+  fi""",
+    "separate function, RLS, and grant classifications",
+)
+
 output.write_text(source, encoding="utf-8")
 PY
 
