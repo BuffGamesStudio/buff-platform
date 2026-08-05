@@ -12,10 +12,12 @@ FAILURE_STEP=""
 STACK_START="UNKNOWN"
 MIGRATION_APPLY="UNKNOWN"
 INITIAL_SECURITY_TESTS="UNKNOWN"
+INITIAL_RUNTIME_BEHAVIOR="UNKNOWN"
 ROLLBACK_APPLY="UNKNOWN"
 ROLLBACK_TESTS="UNKNOWN"
 FORWARD_REAPPLY="UNKNOWN"
 FORWARD_SECURITY_TESTS="UNKNOWN"
+FORWARD_RUNTIME_BEHAVIOR="UNKNOWN"
 CLEANUP="UNKNOWN"
 DATABASE_URL=""
 
@@ -65,11 +67,13 @@ write_metadata() {
     printf 'stack_start=%s\n' "$STACK_START"
     printf 'migration_apply=%s\n' "$MIGRATION_APPLY"
     printf 'initial_security_tests=%s\n' "$INITIAL_SECURITY_TESTS"
+    printf 'initial_runtime_behavior=%s\n' "$INITIAL_RUNTIME_BEHAVIOR"
     printf 'rollback_apply=%s\n' "$ROLLBACK_APPLY"
     printf 'rollback_tests=%s\n' "$ROLLBACK_TESTS"
     printf 'forward_reapply=%s\n' "$FORWARD_REAPPLY"
     printf 'forward_security_tests=%s\n' "$FORWARD_SECURITY_TESTS"
-    printf 'runtime_race_behavior=UNKNOWN\n'
+    printf 'forward_runtime_behavior=%s\n' "$FORWARD_RUNTIME_BEHAVIOR"
+    printf 'concurrent_multi_client_race=UNKNOWN\n'
     printf 'browser_behavior=UNKNOWN\n'
     printf 'hosted_state=UNTOUCHED\n'
     printf 'failure_step=%s\n' "$FAILURE_STEP"
@@ -168,6 +172,11 @@ PY
     || { INITIAL_SECURITY_TESTS="FAIL"; FAILURE_STEP="leave-pgtap-initial"; return 1; }
   INITIAL_SECURITY_TESTS="PASS"
 
+  run_step leave-runtime-initial psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+    -f "$WORK_ROOT/supabase/tests/movie_buff_buster_leave_authority_runtime_test.sql" \
+    || { INITIAL_RUNTIME_BEHAVIOR="FAIL"; FAILURE_STEP="leave-runtime-initial"; return 1; }
+  INITIAL_RUNTIME_BEHAVIOR="PASS"
+
   run_step leave-rollback-apply psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
     -f "$WORK_ROOT/supabase/rollbacks/20260805194500_movie_buff_buster_leave_authority_repair.rollback.sql" \
     || { ROLLBACK_APPLY="FAIL"; FAILURE_STEP="leave-rollback-apply"; return 1; }
@@ -188,6 +197,11 @@ PY
     supabase/tests/movie_buff_buster_leave_authority_repair_test.sql --local) \
     || { FORWARD_SECURITY_TESTS="FAIL"; FAILURE_STEP="leave-pgtap-forward"; return 1; }
   FORWARD_SECURITY_TESTS="PASS"
+
+  run_step leave-runtime-forward psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+    -f "$WORK_ROOT/supabase/tests/movie_buff_buster_leave_authority_runtime_test.sql" \
+    || { FORWARD_RUNTIME_BEHAVIOR="FAIL"; FAILURE_STEP="leave-runtime-forward"; return 1; }
+  FORWARD_RUNTIME_BEHAVIOR="PASS"
 
   [[ -z "$(git -C "$SOURCE_ROOT" status --porcelain)" ]] \
     || { FAILURE_STEP="dirty-postflight"; return 1; }
