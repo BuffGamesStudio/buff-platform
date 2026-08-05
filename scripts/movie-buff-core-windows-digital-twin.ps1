@@ -7,7 +7,7 @@ param(
   [ValidatePattern('^[0-9a-fA-F]{40}$')]
   [string]$ExpectedTree,
 
-  [string]$ExpectedBranch = 'validation/movie-buff-core-v1',
+  [string]$ExpectedBranch = 'validation/movie-buff-core-v2',
 
   [string]$EvidenceRoot = $(
     if ($env:RUNNER_TEMP) {
@@ -100,12 +100,22 @@ try {
   $env:SUPABASE_SERVICE_ROLE_KEY = 'local-placeholder'
 
   @(
-    'lane=movie-buff-core-v1'
+    'lane=movie-buff-core-v2'
     'repository=BuffGamesStudio/buff-platform'
     "remote=$((git remote get-url origin).Trim())"
     "source_branch=$actualBranch"
     "source_sha=$actualSha"
     "source_tree=$actualTree"
+    'raw_composition_sha=1825e452fa5e3caa24f5a99ac27e974d14b3ab66'
+    'raw_composition_tree=75d61e32ab0aceeff142ce76e9328d9eed7f2888'
+    'component_mov15_sha=4906147038a5a2deda5c13fdafc6f07b66ae100b'
+    'component_mov15_tree=38efa7f253931eae9f16d7d92d2236a3a1621296'
+    'component_mov16_sha=95c292ead66fc83cf13d7154bd3cf691610f549d'
+    'component_mov16_tree=04267651da0b9caa741d95bcea01a096b5086a31'
+    'component_mov17_sha=6d7e9aabe5b07796a3a17fdf6c11df091dd1f978'
+    'component_mov17_tree=8264d2e30b0c75a8bebaa1ad938df6a635f7d991'
+    'component_encoding_sha=bf5e6d6f251f6840d17eed2fc68e0d580295437f'
+    'component_encoding_tree=d97528616454b9e93c6be9a44705d008a901ac66'
     "powershell_version=$($PSVersionTable.PSVersion)"
     "node_version=$((node --version).Trim())"
     "npm_version=$((npm --version).Trim())"
@@ -113,6 +123,8 @@ try {
     'target_kind=windows-command-laboratory'
     'application_target=http://127.0.0.1:3000'
     'supabase_target=http://127.0.0.1:54321'
+    'docker_database_supabase_cli_psql=NOT APPLICABLE'
+    'browser_runtime=NOT APPLICABLE'
     'physical_windows_cursor_equivalence=UNKNOWN'
     "started_at=$([DateTime]::UtcNow.ToString('o'))"
   ) | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'metadata.txt') -Encoding utf8
@@ -148,6 +160,7 @@ try {
 
   if (git status --porcelain) { throw 'Worktree is dirty after execution.' }
   'clean=true' | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'git-status.txt') -Encoding ascii
+  "finished_at=$([DateTime]::UtcNow.ToString('o'))" | Add-Content -LiteralPath (Join-Path $EvidenceRoot 'metadata.txt') -Encoding utf8
   Assert-NoSecretPatterns $EvidenceRoot
 
   $manifest = Join-Path $EvidenceRoot 'sha256.csv'
@@ -163,7 +176,6 @@ try {
     $file = Join-Path $EvidenceRoot $entry.Path
     if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $entry.Hash) { throw "Hash mismatch: $($entry.Path)" }
   }
-  "finished_at=$([DateTime]::UtcNow.ToString('o'))" | Add-Content -LiteralPath (Join-Path $EvidenceRoot 'metadata.txt') -Encoding utf8
   Write-Classification PASS
   exit 0
 } catch {
