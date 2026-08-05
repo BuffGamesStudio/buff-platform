@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Exact-head synchronization marker for the combined and supplemental laboratories.
 set -uo pipefail
 
 EXPECTED_SHA="${1:-}"
