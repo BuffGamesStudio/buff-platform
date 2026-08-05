@@ -78,7 +78,7 @@ try {
   }
 
   @(
-    "lane=MOV-17"
+    "lane=MOV-17-validation-twin-v2"
     "source_sha=$actualSha"
     "powershell_version=$($PSVersionTable.PSVersion)"
     "node_version=$((node --version).Trim())"
@@ -118,11 +118,32 @@ try {
     throw 'Worktree is not clean after validation.'
   }
 
+  $manifestPath = Join-Path $EvidenceRoot 'sha256.csv'
   Get-ChildItem -LiteralPath $EvidenceRoot -File |
     Where-Object Name -ne 'sha256.csv' |
-    Get-FileHash -Algorithm SHA256 |
-    Select-Object Path, Hash |
-    Export-Csv -LiteralPath (Join-Path $EvidenceRoot 'sha256.csv') -NoTypeInformation
+    Sort-Object Name |
+    ForEach-Object {
+      $hash = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256
+      [pscustomobject]@{
+        Path = $_.Name
+        Hash = $hash.Hash
+      }
+    } |
+    Export-Csv -LiteralPath $manifestPath -NoTypeInformation
+
+  foreach ($entry in Import-Csv -LiteralPath $manifestPath) {
+    if ([System.IO.Path]::IsPathRooted($entry.Path)) {
+      throw "Evidence hash path must be relative: $($entry.Path)"
+    }
+    $artifactPath = Join-Path $EvidenceRoot $entry.Path
+    if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
+      throw "Evidence hash target is missing: $($entry.Path)"
+    }
+    $observedHash = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash
+    if ($observedHash -ne $entry.Hash) {
+      throw "Evidence hash mismatch: $($entry.Path)"
+    }
+  }
 
   Write-Classification PASS
   exit 0
