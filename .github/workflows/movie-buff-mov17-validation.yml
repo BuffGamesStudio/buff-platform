@@ -14,10 +14,13 @@ on:
       - "supabase/migrations/20260804083*_movie_buff_*.sql"
       - "supabase/rollbacks/20260804083*_movie_buff_*.sql"
       - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
       - "tests/movie-buff-server-phase-machine.test.mjs"
       - "tests/movie-buff-authoritative-phase-runtime.test.mjs"
       - "tests/movie-buff-buster-safe-boundary.test.mjs"
       - "tests/movie-buff-phase-tile-mutation-guard.test.mjs"
+      - "tests/movie-buff-match-start-handoff.test.mjs"
   pull_request:
     branches:
       - integration/movie-buff
@@ -31,10 +34,13 @@ on:
       - "supabase/migrations/20260804083*_movie_buff_*.sql"
       - "supabase/rollbacks/20260804083*_movie_buff_*.sql"
       - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
       - "tests/movie-buff-server-phase-machine.test.mjs"
       - "tests/movie-buff-authoritative-phase-runtime.test.mjs"
       - "tests/movie-buff-buster-safe-boundary.test.mjs"
       - "tests/movie-buff-phase-tile-mutation-guard.test.mjs"
+      - "tests/movie-buff-match-start-handoff.test.mjs"
   workflow_dispatch:
 
 permissions:
@@ -84,6 +90,7 @@ jobs:
           node --check scripts/movie-buff-three-client-phase-proof.mjs
           node --check scripts/movie-buff-reconnect-race-proof.mjs
           node --check scripts/movie-buff-three-client-phase-evidence-runner.mjs
+          bash -n scripts/movie-buff-mov17-local-supabase-evidence.sh
 
       - name: Run MOV-17 repository contract tests
         shell: bash
@@ -97,6 +104,7 @@ jobs:
             tests/movie-buff-authoritative-phase-runtime.test.mjs \
             tests/movie-buff-buster-safe-boundary.test.mjs \
             tests/movie-buff-phase-tile-mutation-guard.test.mjs \
+            tests/movie-buff-match-start-handoff.test.mjs \
             2>&1 | tee "${EVIDENCE_DIR}/repository-contract-tests.tap"
 
       - name: Run TypeScript
@@ -125,7 +133,7 @@ jobs:
           git diff --check
           test -z "$(git status --porcelain)"
 
-      - name: Write exact-SHA artifact metadata
+      - name: Write and verify portable exact-SHA artifact metadata
         if: always()
         shell: bash
         env:
@@ -147,10 +155,14 @@ jobs:
             echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
             echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } > "${EVIDENCE_DIR}/metadata.txt"
-          find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0 \
-            | sort -z \
-            | xargs -0 sha256sum \
-            > "${EVIDENCE_DIR}/sha256.txt"
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > sha256.txt
+            sha256sum -c sha256.txt
+          )
 
       - name: Upload exact-SHA repository artifact
         if: always()
