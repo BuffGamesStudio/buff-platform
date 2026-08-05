@@ -1,12 +1,27 @@
 name: MOV-19 independent validation evidence
 
 on:
+  push:
+    branches:
+      - copilot/MOV-19-security-validation
+    paths:
+      - ".github/workflows/movie-buff-mov19-validation.yml"
+      - ".github/workflows/movie-buff-mov19-windows-digital-twin.yml"
+      - "docs/security/**"
+      - "scripts/movie-buff-mov19-windows-digital-twin.ps1"
+      - "scripts/movie-buff-security-evidence.mjs"
+      - "scripts/movie-buff-three-client-validation.mjs"
+      - "supabase/tests/movie_buff_security_validation_test.sql"
+      - "tests/movie-buff-independent-security-validation.test.mjs"
+      - "tests/movie-buff-release-evidence-integrity.test.mjs"
   pull_request:
     branches:
       - integration/movie-buff
     paths:
       - ".github/workflows/movie-buff-mov19-validation.yml"
+      - ".github/workflows/movie-buff-mov19-windows-digital-twin.yml"
       - "docs/security/**"
+      - "scripts/movie-buff-mov19-windows-digital-twin.ps1"
       - "scripts/movie-buff-security-evidence.mjs"
       - "scripts/movie-buff-three-client-validation.mjs"
       - "supabase/tests/movie_buff_security_validation_test.sql"
@@ -25,7 +40,6 @@ jobs:
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       EXPECTED_BRANCH: copilot/MOV-19-security-validation
-      EVIDENCE_DIR: ${{ runner.temp }}/mov19-evidence
 
     steps:
       - name: Check out exact MOV-19 SHA
@@ -58,6 +72,7 @@ jobs:
       - name: Run validator self-guards
         shell: bash
         env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov19-evidence
           MOVIE_BUFF_VALIDATION_ROOT: ${{ github.workspace }}
           MOVIE_BUFF_VALIDATION_SHA: ${{ env.EXPECTED_SHA }}
         run: |
@@ -70,6 +85,8 @@ jobs:
 
       - name: Collect repository-static release findings
         shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov19-evidence
         run: |
           set -euo pipefail
           set +e
@@ -85,6 +102,8 @@ jobs:
 
       - name: Validate evidence proof scopes
         shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov19-evidence
         run: |
           set -euo pipefail
           MOVIE_BUFF_EVIDENCE_JSON="${EVIDENCE_DIR}/repository-static-evidence.json" \
@@ -93,6 +112,8 @@ jobs:
 
       - name: Run TypeScript
         shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov19-evidence
         run: |
           set -euo pipefail
           npx --no-install tsc --noEmit 2>&1 | tee "${EVIDENCE_DIR}/typescript.txt"
@@ -100,6 +121,7 @@ jobs:
       - name: Run production build with localhost-only placeholders
         shell: bash
         env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov19-evidence
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-build-publishable-key
           SUPABASE_SERVICE_ROLE_KEY: local-build-service-role-key
@@ -117,6 +139,8 @@ jobs:
       - name: Write exact-SHA artifact metadata
         if: always()
         shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov19-evidence
         run: |
           set -euo pipefail
           mkdir -p "${EVIDENCE_DIR}"
@@ -143,6 +167,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mov19-validation-evidence-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_DIR }}
+          path: ${{ runner.temp }}/mov19-evidence
           if-no-files-found: error
           retention-days: 7
