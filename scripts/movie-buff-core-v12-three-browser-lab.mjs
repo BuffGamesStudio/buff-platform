@@ -49,8 +49,12 @@ function safeUrl(value) {
   return `${parsed.origin}${parsed.pathname}${allowedParams.size ? `?${allowedParams}` : ""}`;
 }
 
+function isExpectedNavigationAbort(request) {
+  return request.method === "GET" && request.errorText === "net::ERR_ABORTED";
+}
+
 const evidence = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   laboratory: "movie-buff-core-v12-three-browser",
   classification: "UNKNOWN",
   exactHarnessSha: expectedSha,
@@ -69,6 +73,7 @@ const evidence = {
   consoleErrors: [],
   failedResponses: [],
   failedRequests: [],
+  unexpectedFailedRequests: [],
   checks: [],
 };
 function pass(name, details = {}) {
@@ -100,6 +105,8 @@ try {
       evidence.failedRequests.push({
         player: index + 1,
         method: request.method(),
+        resourceType: request.resourceType(),
+        isNavigationRequest: request.isNavigationRequest(),
         url: safeUrl(request.url()),
         errorText: redact(request.failure()?.errorText ?? "unknown request failure"),
       });
@@ -116,6 +123,7 @@ try {
         evidence.failedResponses.push({
           player: index + 1,
           method: response.request().method(),
+          resourceType: response.request().resourceType(),
           url: safeUrl(response.url()),
           status: response.status(),
           statusText: response.statusText(),
@@ -200,14 +208,22 @@ try {
   pass("forbidden-manual-phase-controls-absent", { forbidden });
   pass("shared-state-failure-surfaces-absent", { sharedStateFailures });
 
+  evidence.unexpectedFailedRequests = evidence.failedRequests.filter(
+    (request) => !isExpectedNavigationAbort(request),
+  );
   assert.equal(evidence.pageErrors.length, 0, `page errors observed: ${JSON.stringify(evidence.pageErrors)}`);
-  assert.equal(evidence.failedRequests.length, 0, `failed requests observed: ${JSON.stringify(evidence.failedRequests)}`);
+  assert.equal(evidence.unexpectedFailedRequests.length, 0, `unexpected failed requests observed: ${JSON.stringify(evidence.unexpectedFailedRequests)}`);
   assert.equal(evidence.failedResponses.length, 0, `HTTP error responses observed: ${JSON.stringify(evidence.failedResponses)}`);
   assert.equal(evidence.consoleErrors.length, 0, `console errors observed: ${JSON.stringify(evidence.consoleErrors)}`);
-  pass("browser-error-channels-clean");
+  pass("browser-error-channels-clean", {
+    expectedNavigationAbortCount: evidence.failedRequests.length,
+  });
   evidence.classification = "PASS";
 } catch (error) {
   await Promise.allSettled(responseInspectionPromises);
+  evidence.unexpectedFailedRequests = evidence.failedRequests.filter(
+    (request) => !isExpectedNavigationAbort(request),
+  );
   evidence.classification = "FAIL";
   evidence.failure = error instanceof Error
     ? { name: error.name, message: redact(error.message), stack: redact(error.stack ?? "") }
@@ -224,6 +240,7 @@ try {
   evidence.consoleErrorCount = evidence.consoleErrors.length;
   evidence.failedResponseCount = evidence.failedResponses.length;
   evidence.failedRequestCount = evidence.failedRequests.length;
+  evidence.unexpectedFailedRequestCount = evidence.unexpectedFailedRequests.length;
   fs.writeFileSync(path.join(evidenceDir, "three-browser-evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
   await Promise.allSettled(contexts.map((context) => context.close()));
   await Promise.allSettled(browsers.map((browser) => browser.close()));
