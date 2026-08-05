@@ -66,30 +66,26 @@ function record(name, details = {}) {
   });
 }
 
-async function routePost(index, pathname, body, expectedStatus = 200) {
-  const token = sessions[index]?.access_token;
-  assert.ok(token, `missing access token for player ${index + 1}`);
-  const response = await fetch(`${localAppOrigin}${pathname}`, {
-    method: "POST",
-    cache: "no-store",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  const payload = await response.json().catch(() => null);
-  assert.equal(
-    response.status,
-    expectedStatus,
-    `${pathname} returned ${response.status}: ${JSON.stringify(payload)}`,
+async function phaseView(index, roomId) {
+  const { data, error } = await clients[index].rpc(
+    "get_movie_buff_match_phase_view",
+    { p_room_id: roomId },
   );
-  return payload;
+  if (error) throw error;
+  assert.ok(data, `missing phase view for player ${index + 1}`);
+  return data;
 }
 
-async function phaseView(index, roomId) {
-  const payload = await routePost(index, "/api/movie-buff/match/view", { roomId });
-  return payload.view;
+async function advancePhase(index, roomId, expectedVersion) {
+  const { data, error } = await clients[index].rpc(
+    "advance_movie_buff_match_phase",
+    {
+      p_room_id: roomId,
+      p_expected_version: expectedVersion,
+    },
+  );
+  if (error) throw error;
+  return data;
 }
 
 async function createDisposableMatch() {
@@ -245,16 +241,21 @@ try {
     clients[reconnectIndex].rpc("touch_movie_buff_match_participant", {
       p_room_id: context.roomId,
     }),
-    routePost(otherIndex, "/api/movie-buff/match/advance", {
-      roomId: context.roomId,
-      expectedVersion: initialViews[otherIndex].phaseVersion,
-    }),
+    advancePhase(
+      otherIndex,
+      context.roomId,
+      initialViews[otherIndex].phaseVersion,
+    ),
   ]);
 
   const reconnectAttempt = expiredReconnectRace[0];
   if (reconnectAttempt.status === "fulfilled") {
+    assert.equal(reconnectAttempt.value.error, null);
     assert.notEqual(reconnectAttempt.value.data?.resumeAllowed, true);
   }
+
+  const advanceAttempt = expiredReconnectRace[1];
+  if (advanceAttempt.status === "rejected") throw advanceAttempt.reason;
 
   const abandonedSeat = await seatFor(context.matchId, reconnectPlayerId);
   assert.equal(abandonedSeat.participant_state, "abandoned");
@@ -288,31 +289,20 @@ try {
 
   const introView = await phaseView(otherIndex, context.roomId);
   assert.equal(introView.phase, "round_intro");
-  assert.equal((await seatFor(context.matchId, reconnectPlayerId)).controller_type, "human");
-
-  const { error: vipPhaseError } = await admin
-    .from("movie_buff_match_phase_state")
-    .update({
-      phase: "vip_lock",
-      phase_version: introView.phaseVersion + 1,
-      phase_started_at: new Date().toISOString(),
-      phase_ends_at: new Date(Date.now() + 30_000).toISOString(),
-      selector_deadline_at: null,
-    })
-    .eq("match_id", context.matchId);
-  if (vipPhaseError) throw vipPhaseError;
-
-  const vipBoundaryView = await phaseView(otherIndex, context.roomId);
-  assert.equal(vipBoundaryView.phase, "vip_lock");
-  assert.equal((await seatFor(context.matchId, reconnectPlayerId)).controller_type, "human");
-  record("Buster remains inactive through Round Intro and private VIP lock");
+  assert.equal(
+    (await seatFor(context.matchId, reconnectPlayerId)).controller_type,
+    "human",
+  );
+  record(
+    "Buster remains inactive before board_select; source and pgTAP separately cover vip_lock",
+  );
 
   const abandonedSelectorSeat = await seatFor(context.matchId, reconnectPlayerId);
   const { error: boardPhaseError } = await admin
     .from("movie_buff_match_phase_state")
     .update({
       phase: "board_select",
-      phase_version: vipBoundaryView.phaseVersion + 1,
+      phase_version: introView.phaseVersion + 1,
       phase_started_at: new Date().toISOString(),
       phase_ends_at: new Date(Date.now() + 20_000).toISOString(),
       selector_seat_index: abandonedSelectorSeat.seat_index,
@@ -324,7 +314,10 @@ try {
   const boardBoundaryView = await phaseView(otherIndex, context.roomId);
   assert.equal(boardBoundaryView.phase, "board_select");
   assert.equal(boardBoundaryView.selectorControllerType, "buster");
-  assert.equal((await seatFor(context.matchId, reconnectPlayerId)).controller_type, "buster");
+  assert.equal(
+    (await seatFor(context.matchId, reconnectPlayerId)).controller_type,
+    "buster",
+  );
   record("Buster activates only when the authoritative phase reaches board_select");
 
   evidence.classification = "PASS";
