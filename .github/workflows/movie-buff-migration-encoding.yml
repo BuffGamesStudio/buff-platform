@@ -3,7 +3,7 @@ name: Movie Buff migration encoding evidence
 on:
   push:
     branches:
-      - copilot/MOV-14-migration-encoding
+      - validation/mov17-6d7e9aab-migration-repair-bf5e6d6f-v3
     paths:
       - ".github/workflows/movie-buff-migration-encoding.yml"
       - "scripts/movie-buff-migration-encoding-check.mjs"
@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 10
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EXPECTED_BRANCH: copilot/MOV-14-migration-encoding
+      EXPECTED_BRANCH: validation/mov17-6d7e9aab-migration-repair-bf5e6d6f-v3
       BASELINE_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
 
     steps:
@@ -89,7 +89,7 @@ jobs:
           node scripts/movie-buff-migration-bom-only-check.mjs "${BASELINE_SHA}" \
             > "${EVIDENCE_DIR}/bom-only.stdout.txt"
 
-      - name: Verify clean checkout and write metadata
+      - name: Verify clean checkout and write portable metadata
         if: always()
         shell: bash
         env:
@@ -100,7 +100,7 @@ jobs:
           git diff --check
           test -z "$(git status --porcelain)"
           {
-            echo "lane=MOV-14-integration-support"
+            echo "lane=MOV-17-validation-twin-v3-encoding"
             echo "source_sha=$(git rev-parse HEAD)"
             echo "baseline_sha=${BASELINE_SHA}"
             echo "runner_os=${RUNNER_OS}"
@@ -109,10 +109,14 @@ jobs:
             echo "hosted_state=UNKNOWN"
             echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } > "${EVIDENCE_DIR}/metadata.txt"
-          find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0 \
-            | sort -z \
-            | xargs -0 sha256sum \
-            > "${EVIDENCE_DIR}/sha256.txt"
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > sha256.txt
+            sha256sum -c sha256.txt
+          )
 
       - name: Upload Linux encoding evidence
         if: always()
@@ -129,7 +133,7 @@ jobs:
     timeout-minutes: 10
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EXPECTED_BRANCH: copilot/MOV-14-migration-encoding
+      EXPECTED_BRANCH: validation/mov17-6d7e9aab-migration-repair-bf5e6d6f-v3
       BASELINE_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
 
     steps:
@@ -186,7 +190,7 @@ jobs:
             2> (Join-Path $evidenceRoot 'bom-only.stderr.txt')
           if ($LASTEXITCODE -ne 0) { throw "BOM-only proof failed: $LASTEXITCODE" }
 
-      - name: Verify clean checkout and write metadata
+      - name: Verify clean checkout and write portable metadata
         if: always()
         shell: pwsh
         run: |
@@ -197,7 +201,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
           if (git status --porcelain) { throw 'Checkout is not clean after validation' }
           @(
-            'lane=MOV-14-integration-support'
+            'lane=MOV-17-validation-twin-v3-encoding'
             "source_sha=$((git rev-parse HEAD).Trim())"
             "baseline_sha=$env:BASELINE_SHA"
             "runner_os=$env:RUNNER_OS"
@@ -207,11 +211,33 @@ jobs:
             'hosted_state=UNKNOWN'
             "generated_at=$([DateTime]::UtcNow.ToString('o'))"
           ) | Set-Content -LiteralPath (Join-Path $evidenceRoot 'metadata.txt') -Encoding utf8
+
+          $manifestPath = Join-Path $evidenceRoot 'sha256.csv'
           Get-ChildItem -LiteralPath $evidenceRoot -File |
             Where-Object Name -ne 'sha256.csv' |
-            Get-FileHash -Algorithm SHA256 |
-            Select-Object Path, Hash |
-            Export-Csv -LiteralPath (Join-Path $evidenceRoot 'sha256.csv') -NoTypeInformation
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256
+              [pscustomobject]@{
+                Path = $_.Name
+                Hash = $hash.Hash
+              }
+            } |
+            Export-Csv -LiteralPath $manifestPath -NoTypeInformation
+
+          foreach ($entry in Import-Csv -LiteralPath $manifestPath) {
+            if ([System.IO.Path]::IsPathRooted($entry.Path)) {
+              throw "Evidence hash path must be relative: $($entry.Path)"
+            }
+            $artifactPath = Join-Path $evidenceRoot $entry.Path
+            if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
+              throw "Evidence hash target is missing: $($entry.Path)"
+            }
+            $observedHash = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash
+            if ($observedHash -ne $entry.Hash) {
+              throw "Evidence hash mismatch: $($entry.Path)"
+            }
+          }
 
       - name: Upload Windows encoding evidence
         if: always()
