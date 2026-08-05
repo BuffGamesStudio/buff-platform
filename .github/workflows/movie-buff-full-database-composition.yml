@@ -12,6 +12,7 @@ on:
       - "scripts/movie-buff-full-database-composition-proof.sh"
       - "scripts/movie-buff-concurrency-replay-proof.sh"
       - "scripts/movie-buff-concurrency-replay-proof-v2.sh"
+      - "scripts/validation-bin/pg_dump"
       - "supabase/migrations/**"
       - "supabase/rollbacks/**"
       - "supabase/tests/**"
@@ -56,14 +57,6 @@ jobs:
         with:
           version: 2.111.0
 
-      - name: Install PostgreSQL 17 client
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client-17
-          echo "/usr/lib/postgresql/17/bin" >> "${GITHUB_PATH}"
-
       - name: Bind immutable composition and validation assets
         shell: bash
         run: |
@@ -77,17 +70,17 @@ jobs:
             scripts/movie-buff-concurrency-replay-proof.sh \
             scripts/movie-buff-concurrency-replay-proof-v2.sh \
             scripts/movie-buff-full-database-composition-proof.sh \
+            scripts/validation-bin/pg_dump \
             supabase/tests/movie_buff_security_validation_test.sql | sort)"
           test "$(git rev-parse HEAD:supabase/tests/movie_buff_security_validation_test.sql)" = "${MOV19_TEST_BLOB}"
           test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
           test "$(supabase --version)" = "2.111.0"
-          test "$(pg_dump --version | awk '{print $3}' | cut -d. -f1)" = "17"
           test ! -f supabase/.temp/project-ref
           test -z "$(git status --porcelain)"
           bash -n scripts/movie-buff-full-database-composition-proof.sh
+          bash -n scripts/validation-bin/pg_dump
           node --check scripts/movie-buff-core-v11-local-users.mjs
           psql --version
-          pg_dump --version
           docker --version
 
       - name: Install committed dependency graph
@@ -97,6 +90,8 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          export PATH="${GITHUB_WORKSPACE}/scripts/validation-bin:${PATH}"
+          test "$(pg_dump --version)" = "pg_dump (PostgreSQL) 17.6-container-wrapper"
           bash scripts/movie-buff-full-database-composition-proof.sh \
             "${EXPECTED_SHA}" \
             "${EVIDENCE_DIR}"
@@ -158,6 +153,7 @@ jobs:
             scripts/movie-buff-concurrency-replay-proof.sh \
             scripts/movie-buff-concurrency-replay-proof-v2.sh \
             scripts/movie-buff-full-database-composition-proof.sh \
+            scripts/validation-bin/pg_dump \
             supabase/tests/movie_buff_security_validation_test.sql | sort)"
           test "$(git rev-parse HEAD:supabase/tests/movie_buff_security_validation_test.sql)" = "${MOV19_TEST_BLOB}"
           test "$(supabase --version)" = "2.111.0"

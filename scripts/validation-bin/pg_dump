@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "--version" ]]; then
+  echo "pg_dump (PostgreSQL) 17.6-container-wrapper"
+  exit 0
+fi
+
+mapfile -t database_containers < <(
+  docker ps --filter 'name=^supabase_db_' --format '{{.ID}}'
+)
+
+if [[ "${#database_containers[@]}" -ne 1 ]]; then
+  echo "Expected exactly one running local Supabase database container; found ${#database_containers[@]}." >&2
+  exit 1
+fi
+
+if [[ "${1:-}" == postgres://* || "${1:-}" == postgresql://* ]]; then
+  shift
+fi
+
+exec docker exec -i "${database_containers[0]}" \
+  pg_dump -U postgres -d postgres "$@"
