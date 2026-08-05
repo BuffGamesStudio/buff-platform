@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     env:
-      EXPECTED_SHA: ${{ github.sha }}
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Check out exact SHA
@@ -47,7 +47,8 @@ jobs:
           evidence_dir="${RUNNER_TEMP}/movie-buff-core-db-evidence"
           mkdir -p "${evidence_dir}"
           echo "EVIDENCE_DIR=${evidence_dir}" >> "${GITHUB_ENV}"
-          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          actual_branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${actual_branch}" = "${EXPECTED_BRANCH}"
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
           test "$(git remote get-url origin)" = "${EXPECTED_REMOTE}"
           git merge-base --is-ancestor "${RAW_COMPOSITION_SHA}" HEAD
