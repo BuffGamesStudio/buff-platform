@@ -98,7 +98,7 @@ try {
       const player = players[index];
       await page.goto(
         `${target.origin}/sign-in?next=${encodeURIComponent("/games/movie-buff/lobby")}`,
-        { waitUntil: "domcontentloaded", timeout: 60_000 },
+        { waitUntil: "networkidle", timeout: 60_000 },
       );
       const emailInput = page.getByPlaceholder("you@example.com");
       const passwordInput = page.getByPlaceholder("Password");
@@ -106,6 +106,7 @@ try {
       await passwordInput.waitFor({ state: "visible", timeout: 60_000 });
       await emailInput.fill(player.email);
       await passwordInput.fill(player.password);
+      await page.waitForTimeout(750);
       await Promise.all([
         page.waitForURL(/\/games\/movie-buff\/lobby/, { timeout: 60_000 }),
         page.getByRole("button", { name: "Enter Buff Games" }).click(),
