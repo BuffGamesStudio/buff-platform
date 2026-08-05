@@ -21,6 +21,16 @@ function functionDefinition(name) {
   return match[0];
 }
 
+function privilegeStatement(action, name) {
+  const expression = new RegExp(
+    `${action} on function public\\.${name}\\(uuid\\)[^;]*;`,
+    "i",
+  );
+  const match = migration.match(expression);
+  assert.ok(match, `${action} statement for ${name} is required`);
+  return match[0];
+}
+
 test("MOV-17 owns the final start wrapper and internal admission handoff", () => {
   const helper = functionDefinition("begin_movie_buff_match_from_admission");
   const wrapper = functionDefinition("start_movie_buff_match");
@@ -69,22 +79,20 @@ test("canonical round intro owns the first shared timestamp", () => {
 });
 
 test("internal helper is not browser executable", () => {
-  assert.match(
-    migration,
-    /revoke all on function public\.begin_movie_buff_match_from_admission\(uuid\)[\s\S]*from public, anon, authenticated, service_role/i,
+  const helperRevoke = privilegeStatement(
+    "revoke all",
+    "begin_movie_buff_match_from_admission",
   );
-  assert.match(
-    migration,
-    /grant execute on function public\.begin_movie_buff_match_from_admission\(uuid\)[\s\S]*to service_role/i,
+  const helperGrant = privilegeStatement(
+    "grant execute",
+    "begin_movie_buff_match_from_admission",
   );
-  assert.doesNotMatch(
-    migration,
-    /grant execute on function public\.begin_movie_buff_match_from_admission\(uuid\)[\s\S]*to authenticated/i,
-  );
-  assert.match(
-    migration,
-    /grant execute on function public\.start_movie_buff_match\(uuid\)[\s\S]*to authenticated, service_role/i,
-  );
+  const wrapperGrant = privilegeStatement("grant execute", "start_movie_buff_match");
+
+  assert.match(helperRevoke, /from public, anon, authenticated, service_role/i);
+  assert.match(helperGrant, /to service_role/i);
+  assert.doesNotMatch(helperGrant, /\bauthenticated\b/i);
+  assert.match(wrapperGrant, /to authenticated, service_role/i);
 });
 
 test("match-start rollback contains authority without deleting durable data", () => {
