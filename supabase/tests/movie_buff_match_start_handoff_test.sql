@@ -106,12 +106,12 @@ select ok(
     )
   ) > 0
   and position(
-    'v_match.id,\n      null,\n      1,\n      30,\n      null'
+    'Pre-phase round state is not an inert authoritative shell.'
     in pg_get_functiondef(
       'public.begin_movie_buff_match_from_admission(uuid)'::regprocedure
     )
   ) > 0,
-  'authoritative start creates an inert first-round shell'
+  'authoritative start creates and guards an inert first-round shell'
 );
 select ok(
   position(
