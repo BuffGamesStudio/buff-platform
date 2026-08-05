@@ -1,6 +1,4 @@
-import fs from "node:fs";
 import fsp from "node:fs/promises";
-import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 
 import { getRoundGeneratedClip } from "@/lib/server/movieClipper";
@@ -14,25 +12,37 @@ type RouteContext = {
   }>;
 };
 
+function redirectToResolvedAsset(
+  request: Request,
+  assetUrl: string,
+) {
+  return NextResponse.redirect(
+    new URL(assetUrl, request.url),
+    {
+      status: 307,
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+        "X-Movie-Buff-Asset-Url": assetUrl,
+      },
+    },
+  );
+}
+
 async function buildRoundMediaResponse(
   request: Request,
   roundId: string,
   headOnly: boolean,
 ) {
   try {
-    const summary =
-      await getRoundGeneratedClip(roundId);
+    const summary = await getRoundGeneratedClip(roundId);
 
-    if (!summary.assetPath) {
-      return NextResponse.redirect(
-        new URL(summary.assetUrl, request.url),
-        {
-          status: 307,
-          headers: {
-            "Cache-Control":
-              "no-store, max-age=0",
-          },
-        },
+    // Browsers require native range-request semantics for synchronized media.
+    // Resolve or generate the authoritative round asset here, then let the
+    // same-origin public media handler serve the concrete file directly.
+    if (!headOnly || !summary.assetPath) {
+      return redirectToResolvedAsset(
+        request,
+        summary.assetUrl,
       );
     }
 
@@ -41,83 +51,17 @@ async function buildRoundMediaResponse(
       summary.clipType === "audio"
         ? "audio/mpeg"
         : "video/mp4";
-    const baseHeaders = {
-      "Accept-Ranges": "bytes",
-      "Cache-Control": "no-store, max-age=0",
-      "Content-Length": stats.size.toString(),
-      "Content-Type": contentType,
-      "X-Movie-Buff-Asset-Url":
-        summary.assetUrl,
-    };
 
-    if (headOnly) {
-      return new NextResponse(null, {
-        status: 200,
-        headers: baseHeaders,
-      });
-    }
-
-    const rangeHeader =
-      request.headers.get("range");
-
-    if (rangeHeader) {
-      const [startRaw, endRaw] = rangeHeader
-        .replace(/bytes=/i, "")
-        .split("-");
-      const start = Number.parseInt(
-        startRaw ?? "",
-        10,
-      );
-      const requestedEnd = Number.parseInt(
-        endRaw ?? "",
-        10,
-      );
-
-      if (
-        Number.isFinite(start) &&
-        start >= 0 &&
-        start < stats.size
-      ) {
-        const end =
-          Number.isFinite(requestedEnd) &&
-          requestedEnd >= start
-            ? Math.min(requestedEnd, stats.size - 1)
-            : stats.size - 1;
-        const chunkSize = end - start + 1;
-        const stream = fs.createReadStream(
-          summary.assetPath,
-          {
-            start,
-            end,
-          },
-        );
-
-        return new NextResponse(
-          Readable.toWeb(stream) as ReadableStream,
-          {
-            status: 206,
-            headers: {
-              ...baseHeaders,
-              "Content-Length":
-                chunkSize.toString(),
-              "Content-Range": `bytes ${start}-${end}/${stats.size}`,
-            },
-          },
-        );
-      }
-    }
-
-    const stream = fs.createReadStream(
-      summary.assetPath,
-    );
-
-    return new NextResponse(
-      Readable.toWeb(stream) as ReadableStream,
-      {
-        status: 200,
-        headers: baseHeaders,
+    return new NextResponse(null, {
+      status: 200,
+      headers: {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store, max-age=0",
+        "Content-Length": stats.size.toString(),
+        "Content-Type": contentType,
+        "X-Movie-Buff-Asset-Url": summary.assetUrl,
       },
-    );
+    });
   } catch (error) {
     return NextResponse.json(
       {
