@@ -928,11 +928,11 @@ begin
     );
   end if;
 
-  select window.* into v_window
-  from public.movie_buff_vip_round_windows as window
-  where window.round_id = p_round_id
-    and window.room_id = p_room_id
-    and window.match_id = v_lock.match_id
+  select vip_window.* into v_window
+  from public.movie_buff_vip_round_windows as vip_window
+  where vip_window.round_id = p_round_id
+    and vip_window.room_id = p_room_id
+    and vip_window.match_id = v_lock.match_id
   for update;
   if not found then raise exception 'VIP round window is unavailable.'; end if;
 
