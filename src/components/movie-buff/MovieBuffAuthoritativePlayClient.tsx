@@ -11,6 +11,7 @@ import {
 } from "react";
 import { Clock3, Film, Lightbulb, Send, Volume2 } from "lucide-react";
 
+import { MovieBuffTransitionSurface } from "@/components/movie-buff/visual";
 import {
   getMovieBuffAuthoritativePhase,
   type MovieBuffAuthoritativePhaseView,
@@ -235,13 +236,14 @@ export default function MovieBuffAuthoritativePlayClient({
 
         <div className="mt-6 overflow-hidden rounded-[2rem] border border-zinc-800 bg-zinc-950 shadow-2xl">
           {isTransition ? (
-            <div className="flex aspect-video flex-col items-center justify-center bg-[linear-gradient(135deg,#240606,#050505)] px-8 text-center">
-              <Film size={58} className="text-amber-300" />
-              <p className="mt-5 text-xs font-black uppercase tracking-[0.35em] text-amber-300">Scene locked</p>
-              <h2 className="mt-3 text-4xl font-black">Curtain and film slate</h2>
-              <p className="mt-4 text-zinc-400">Playback begins for every client from one server timestamp.</p>
-              <p className="mt-6 text-6xl font-black tabular-nums">{playbackStartsIn}</p>
-            </div>
+            <MovieBuffTransitionSurface kind="filmSlate">
+              <p className="text-xs font-black uppercase tracking-[0.3em] text-zinc-500">
+                Shared playback begins in
+              </p>
+              <p className="mt-3 text-6xl font-black tabular-nums">
+                {playbackStartsIn}
+              </p>
+            </MovieBuffTransitionSurface>
           ) : round.clipType === "audio" ? (
             <div className="flex aspect-video flex-col items-center justify-center bg-black px-8 text-center">
               <Volume2 size={64} className="text-red-400" />
