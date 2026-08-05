@@ -1,0 +1,99 @@
+name: Movie Buff combined MOV-15 MOV-16 MOV-17 race matrix
+
+on:
+  push:
+    branches: [validation/movie-buff-combined-race-matrix-v1]
+    paths:
+      - ".github/workflows/movie-buff-combined-race-matrix.yml"
+      - "scripts/movie-buff-combined-race-matrix-lab.sh"
+      - "scripts/movie-buff-combined-race-residual.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-combined-race-matrix-v1
+  FUNCTIONAL_COMPOSITION_SHA: fe74dc595f54de30370c45169aaab0e8c5622d22
+  FUNCTIONAL_COMPOSITION_TREE: 8326dc323f9378fd4d38a1013faa3fa4b0b338ac
+  MOV15_SHA: dc9804cdae03d8627a89980dbcdf2292d2055372
+  MOV16_SHA: cdbfb9ba265b3b26ea86e267b7856d6f4dda4cda
+  MOV17_SHA: c04cd53995c55608a6a9b4bfa2d7fbfe488d90c7
+  ENCODING_SHA: bf5e6d6f251f6840d17eed2fc68e0d580295437f
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-combined-races:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind exact composition and parse evidence controllers
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          git merge-base --is-ancestor "${FUNCTIONAL_COMPOSITION_SHA}" HEAD
+          git merge-base --is-ancestor "${MOV15_SHA}" HEAD
+          git merge-base --is-ancestor "${MOV16_SHA}" HEAD
+          git merge-base --is-ancestor "${MOV17_SHA}" HEAD
+          git merge-base --is-ancestor "${ENCODING_SHA}" HEAD
+          test "$(git rev-parse "${FUNCTIONAL_COMPOSITION_SHA}^{tree}")" = "${FUNCTIONAL_COMPOSITION_TREE}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          bash -n scripts/movie-buff-combined-race-matrix-lab.sh
+          node --check scripts/movie-buff-combined-race-residual.mjs
+          node --check scripts/movie-buff-public-matchmaking-race.mjs
+          node --check scripts/movie-buff-three-client-phase-evidence-runner.mjs
+          docker --version
+          psql --version
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Execute real combined race and synchronization matrix
+        shell: bash
+        run: |
+          set +e
+          bash scripts/movie-buff-combined-race-matrix-lab.sh \
+            "${GITHUB_SHA}" \
+            "${FUNCTIONAL_COMPOSITION_SHA}" \
+            "${FUNCTIONAL_COMPOSITION_TREE}" \
+            "${RUNNER_TEMP}/movie-buff-combined-race-matrix" \
+            "${RUNNER_TEMP}/movie-buff-combined-race-stack" \
+            "${RUNNER_TEMP}/movie-buff-combined-race-worktree" \
+            "${RUNNER_TEMP}/movie-buff-combined-race-users.json"
+          exit $?
+
+      - name: Upload exact combined evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-combined-race-matrix-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-combined-race-matrix
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify clean postflight
+        if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
