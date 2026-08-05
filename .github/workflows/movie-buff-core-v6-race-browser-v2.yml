@@ -1,4 +1,4 @@
-name: Movie Buff core v6 race and browser laboratories v2
+name: Movie Buff core v6 race and browser laboratories v3
 
 on:
   push:
@@ -28,8 +28,8 @@ permissions:
 
 env:
   EXPECTED_BRANCH: validation/movie-buff-core-v6
-  RAW_COMPOSITION_SHA: 88ea15071e5d8393adf54a947fef4afe6ac86630
-  RAW_COMPOSITION_TREE: 538590b96a4ce45f7ebe5f1220dd4db682bc8003
+  RAW_COMPOSITION_SHA: 5010be9ad7440d65ca9e21fe35541433c2e16917
+  RAW_COMPOSITION_TREE: b15f7f490a6face44c69ab6b8565dfe594eb1894
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
 
@@ -62,13 +62,13 @@ jobs:
           docker --version; psql --version; python3 --version
       - name: Execute race wrapper
         shell: bash
-        run: bash scripts/movie-buff-core-v6-race-browser-v2.sh race "${EXPECTED_SHA}" "$(git rev-parse HEAD^{tree})" "${RUNNER_TEMP}/movie-buff-core-v6-race-v2"
+        run: bash scripts/movie-buff-core-v6-race-browser-v2.sh race "${EXPECTED_SHA}" "$(git rev-parse HEAD^{tree})" "${RUNNER_TEMP}/movie-buff-core-v6-race-v3"
       - if: always()
         shell: bash
         run: git diff --check && test -z "$(git status --porcelain)"
       - if: always()
         uses: actions/upload-artifact@v4
-        with: {name: "movie-buff-core-v6-race-v2-${{ env.EXPECTED_SHA }}", path: "${{ runner.temp }}/movie-buff-core-v6-race-v2", if-no-files-found: error, retention-days: 7}
+        with: {name: "movie-buff-core-v6-race-v3-${{ env.EXPECTED_SHA }}", path: "${{ runner.temp }}/movie-buff-core-v6-race-v3", if-no-files-found: error, retention-days: 7}
 
   exact-three-browser:
     runs-on: ubuntu-24.04
@@ -98,10 +98,10 @@ jobs:
           docker --version; python3 --version
       - name: Execute browser wrapper
         shell: bash
-        run: bash scripts/movie-buff-core-v6-race-browser-v2.sh browser "${EXPECTED_SHA}" "$(git rev-parse HEAD^{tree})" "${RUNNER_TEMP}/movie-buff-core-v6-browser-v2"
+        run: bash scripts/movie-buff-core-v6-race-browser-v2.sh browser "${EXPECTED_SHA}" "$(git rev-parse HEAD^{tree})" "${RUNNER_TEMP}/movie-buff-core-v6-browser-v3"
       - if: always()
         shell: bash
         run: git diff --check && test -z "$(git status --porcelain)"
       - if: always()
         uses: actions/upload-artifact@v4
-        with: {name: "movie-buff-core-v6-browser-v2-${{ env.EXPECTED_SHA }}", path: "${{ runner.temp }}/movie-buff-core-v6-browser-v2", if-no-files-found: error, retention-days: 7}
+        with: {name: "movie-buff-core-v6-browser-v3-${{ env.EXPECTED_SHA }}", path: "${{ runner.temp }}/movie-buff-core-v6-browser-v3", if-no-files-found: error, retention-days: 7}
