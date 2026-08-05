@@ -68,10 +68,19 @@ try {
     $source = $source.Replace($entry.Key, $entry.Value)
   }
 
-  $oldPathCheck = "`$root = Get-GitValue @('rev-parse', '--show-toplevel')`nif ((Split-Path -Leaf `$root) -ne 'buff-platform') { throw 'Wrong repository folder' }`nif ((Get-Location).Path -ne `$root) { throw 'Wrapper must run from repository root' }"
-  $newPathCheck = "`$root = (Resolve-Path (Get-GitValue @('rev-parse', '--show-toplevel'))).Path`n`$cwd = (Resolve-Path '.').Path`nif ((Split-Path -Leaf `$root) -ne 'buff-platform') { throw 'Wrong repository folder' }`n`$rootNormalized = [System.IO.Path]::GetFullPath(`$root).TrimEnd([char[]]'\\/')`n`$cwdNormalized = [System.IO.Path]::GetFullPath(`$cwd).TrimEnd([char[]]'\\/')`nif (-not [string]::Equals(`$cwdNormalized, `$rootNormalized, [System.StringComparison]::OrdinalIgnoreCase)) { throw 'Wrapper must run from repository root' }"
-  if (-not $source.Contains($oldPathCheck)) { throw 'Expected Windows path-check block missing' }
-  $source = $source.Replace($oldPathCheck, $newPathCheck)
+  $oldRootLine = '$root = Get-GitValue @(''rev-parse'', ''--show-toplevel'')'
+  $newRootLine = '$root = (Resolve-Path (Get-GitValue @(''rev-parse'', ''--show-toplevel''))).Path'
+  $oldCompareLine = 'if ((Get-Location).Path -ne $root) { throw ''Wrapper must run from repository root'' }'
+  $newCompareBlock = @'
+$cwd = (Resolve-Path '.').Path
+$rootNormalized = [System.IO.Path]::GetFullPath($root).TrimEnd([char[]]'\/')
+$cwdNormalized = [System.IO.Path]::GetFullPath($cwd).TrimEnd([char[]]'\/')
+if (-not [string]::Equals($cwdNormalized, $rootNormalized, [System.StringComparison]::OrdinalIgnoreCase)) { throw 'Wrapper must run from repository root' }
+'@
+  if (-not $source.Contains($oldRootLine)) { throw 'Expected Windows root-resolution line missing' }
+  if (-not $source.Contains($oldCompareLine)) { throw 'Expected Windows path-comparison line missing' }
+  $source = $source.Replace($oldRootLine, $newRootLine)
+  $source = $source.Replace($oldCompareLine, $newCompareBlock.Trim())
   $source = $source.Replace('exit 0', '$global:LASTEXITCODE = 0; return')
   $source = $source.Replace('exit 1', '$global:LASTEXITCODE = 1; return')
   Write-NoBom $tempPath $source
