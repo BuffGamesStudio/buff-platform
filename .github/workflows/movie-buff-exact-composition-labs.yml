@@ -39,7 +39,7 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          test "$(git rev-parse HEAD^)" = "${COMPOSITION_SHA}"
+          test "$(git rev-parse HEAD^1)" = "${COMPOSITION_SHA}"
           git merge-base --is-ancestor 0ecf8de86d2ea1a28c1496ed044a5092a7d3ffcb "${COMPOSITION_SHA}"
           git merge-base --is-ancestor 95c292ead66fc83cf13d7154bd3cf691610f549d "${COMPOSITION_SHA}"
           git merge-base --is-ancestor 6d7e9aabe5b07796a3a17fdf6c11df091dd1f978 "${COMPOSITION_SHA}"
@@ -55,19 +55,24 @@ jobs:
           version: 2.111.0
 
       - name: Run disposable exact database and race laboratory
-        id: database_lab
         shell: bash
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-exact-database-race
           USERS_FILE: ${{ runner.temp }}/movie-buff-exact-database-users.json
+          WORK_ROOT: ${{ runner.temp }}/movie-buff-exact-database-stack
         run: |
           set -uo pipefail
+          set +e
           mkdir -p "${EVIDENCE_DIR}"
           overall=0
           app_pid=""
           cleanup() {
             if [ -n "${app_pid}" ]; then kill "${app_pid}" >/dev/null 2>&1 || true; fi
-            supabase stop --no-backup >/dev/null 2>&1 || true
+            if [ -d "${WORK_ROOT}/supabase" ]; then
+              (cd "${WORK_ROOT}" && supabase stop --no-backup) \
+                >"${EVIDENCE_DIR}/cleanup.log" 2>&1 || true
+            fi
+            rm -rf "${WORK_ROOT}" "${USERS_FILE}"
           }
           trap cleanup EXIT
 
@@ -82,15 +87,56 @@ jobs:
           psql --version > "${EVIDENCE_DIR}/psql-version.txt"
 
           node scripts/movie-buff-migration-encoding-check.mjs \
-            > "${EVIDENCE_DIR}/migration-encoding.log" 2>&1 || overall=1
+            > "${EVIDENCE_DIR}/migration-encoding.log" 2>&1
+          encoding_exit=$?
+          printf '%s\n' "${encoding_exit}" > "${EVIDENCE_DIR}/migration-encoding.exit"
+          if [ "${encoding_exit}" -ne 0 ]; then overall=1; fi
 
-          supabase start >/dev/null 2>&1
-          start_exit=$?
+          rm -rf "${WORK_ROOT}"
+          mkdir -p "${WORK_ROOT}"
+          cp -a supabase "${WORK_ROOT}/supabase"
+          python3 - "${WORK_ROOT}/supabase/config.toml" "exact-db-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" <<'PY'
+          import pathlib, re, sys
+          path = pathlib.Path(sys.argv[1])
+          project_id = sys.argv[2]
+          text = path.read_text(encoding="utf-8")
+          text, project_count = re.subn(
+              r'(?m)^project_id\s*=\s*"[^"]+"\s*$',
+              f'project_id = "{project_id}"',
+              text,
+              count=1,
+          )
+          text, seed_count = re.subn(
+              r'(?ms)(^\[db\.seed\]\s*.*?^enabled\s*=\s*)true(\s*$)',
+              r'\1false\2',
+              text,
+              count=1,
+          )
+          if project_count != 1 or seed_count != 1:
+              raise SystemExit("unable to create isolated local Supabase config")
+          path.write_text(text, encoding="utf-8")
+          PY
+          config_exit=$?
+          printf '%s\n' "${config_exit}" > "${EVIDENCE_DIR}/ephemeral-config.exit"
+          if [ "${config_exit}" -ne 0 ]; then overall=1; fi
+
+          if [ "${config_exit}" -eq 0 ]; then
+            (
+              cd "${WORK_ROOT}"
+              supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor
+            ) > "${EVIDENCE_DIR}/supabase-start.log" 2>&1
+            start_exit=$?
+          else
+            start_exit=125
+          fi
           printf '%s\n' "${start_exit}" > "${EVIDENCE_DIR}/supabase-start.exit"
           if [ "${start_exit}" -ne 0 ]; then overall=1; fi
 
           if [ "${start_exit}" -eq 0 ]; then
-            supabase db reset --local > "${EVIDENCE_DIR}/database-reset.log" 2>&1
+            (
+              cd "${WORK_ROOT}"
+              supabase db reset --local
+            ) > "${EVIDENCE_DIR}/database-reset.log" 2>&1
             reset_exit=$?
           else
             reset_exit=125
@@ -99,19 +145,24 @@ jobs:
           if [ "${reset_exit}" -ne 0 ]; then overall=1; fi
 
           if [ "${reset_exit}" -eq 0 ]; then
-            status_env="$(supabase status -o env)"
+            status_env="$(cd "${WORK_ROOT}" && supabase status -o env 2>"${EVIDENCE_DIR}/supabase-status.error")"
+            status_exit=$?
+            printf '%s\n' "${status_exit}" > "${EVIDENCE_DIR}/supabase-status.exit"
+            if [ "${status_exit}" -ne 0 ]; then overall=1; fi
             eval "${status_env}"
             export NEXT_PUBLIC_SUPABASE_URL="${API_URL:-http://127.0.0.1:55321}"
             export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
             export SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY:-${SECRET_KEY:-}}"
             export MOVIE_BUFF_APP_URL="http://127.0.0.1:3001"
-            test -n "${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}" || overall=1
-            test -n "${SUPABASE_SERVICE_ROLE_KEY}" || overall=1
+            export PGPASSWORD=postgres
 
             MOVIE_BUFF_LOCAL_USERS_OUTPUT="${USERS_FILE}" \
             MOVIE_BUFF_LOCAL_RUN_ID="db-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
               node scripts/movie-buff-exact-local-users.mjs \
-              > "${EVIDENCE_DIR}/local-users-setup.log" 2>&1 || overall=1
+              > "${EVIDENCE_DIR}/local-users-setup.log" 2>&1
+            users_exit=$?
+            printf '%s\n' "${users_exit}" > "${EVIDENCE_DIR}/local-users-setup.exit"
+            if [ "${users_exit}" -ne 0 ]; then overall=1; fi
 
             NEXT_PUBLIC_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL}" \
             NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}" \
@@ -119,16 +170,15 @@ jobs:
               npm run dev -- --hostname 127.0.0.1 --port 3001 \
               > "${EVIDENCE_DIR}/application.log" 2>&1 &
             app_pid=$!
+            app_health=1
             for attempt in $(seq 1 90); do
-              curl -fsS "${MOVIE_BUFF_APP_URL}/games/movie-buff" >/dev/null 2>&1 && break
+              curl -fsS "${MOVIE_BUFF_APP_URL}/games/movie-buff" >/dev/null 2>&1
+              app_health=$?
+              if [ "${app_health}" -eq 0 ]; then break; fi
               sleep 1
             done
-            curl -fsS "${MOVIE_BUFF_APP_URL}/games/movie-buff" \
-              > "${EVIDENCE_DIR}/application-health.html" 2> "${EVIDENCE_DIR}/application-health.error" || overall=1
-
-            users_json="$(cat "${USERS_FILE}")"
-            core_users="$(jq -c '.[0:3]' "${USERS_FILE}")"
-            overflow_user="$(jq -c '.[3]' "${USERS_FILE}")"
+            printf '%s\n' "${app_health}" > "${EVIDENCE_DIR}/application-health.exit"
+            if [ "${app_health}" -ne 0 ]; then overall=1; fi
 
             for sql_file in \
               supabase/tests/movie_buff_public_matchmaking_test.sql \
@@ -140,7 +190,8 @@ jobs:
             do
               label="$(basename "${sql_file}" .sql)"
               if [ -f "${sql_file}" ]; then
-                psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${sql_file}" \
+                psql -h 127.0.0.1 -p 55322 -U postgres -d postgres \
+                  -v ON_ERROR_STOP=1 -f "${sql_file}" \
                   > "${EVIDENCE_DIR}/${label}.log" 2>&1
                 exit_code=$?
               else
@@ -151,54 +202,62 @@ jobs:
               if [ "${exit_code}" -ne 0 ]; then overall=1; fi
             done
 
-            MOVIE_BUFF_ALLOW_LOCAL_DESTRUCTIVE_TESTS=YES_I_UNDERSTAND_LOCAL_ONLY \
-            MOVIE_BUFF_ALLOW_LOCAL_DELETIONS=YES \
-            MOVIE_BUFF_EXACT_SHA="${GITHUB_SHA}" \
-            MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
-            MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-public-matchmaking-evidence-runner.mjs" \
-            MOVIE_BUFF_TEST_USERS="${core_users}" \
-            MOVIE_BUFF_OVERFLOW_TEST_USER="${overflow_user}" \
-            MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov15-public-matchmaking.json" \
-              node scripts/movie-buff-public-matchmaking-evidence-runner.mjs \
-              > "${EVIDENCE_DIR}/mov15-public-matchmaking.log" 2>&1
-            mov15_exit=$?
-            printf '%s\n' "${mov15_exit}" > "${EVIDENCE_DIR}/mov15-public-matchmaking.exit"
-            if [ "${mov15_exit}" -ne 0 ]; then overall=1; fi
+            if [ "${users_exit}" -eq 0 ]; then
+              users_json="$(cat "${USERS_FILE}")"
+              core_users="$(jq -c '.[0:3]' "${USERS_FILE}")"
+              overflow_user="$(jq -c '.[3]' "${USERS_FILE}")"
 
-            MOVIE_BUFF_ALLOW_LOCAL_DELETIONS=YES \
-            MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
-            MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-vip-authority-adversarial.mjs" \
-            MOVIE_BUFF_VIP_TEST_USERS="${users_json}" \
-            MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov16-vip-authority.json" \
-              node scripts/movie-buff-vip-authority-adversarial.mjs \
-              > "${EVIDENCE_DIR}/mov16-vip-authority.log" 2>&1
-            vip_exit=$?
-            printf '%s\n' "${vip_exit}" > "${EVIDENCE_DIR}/mov16-vip-authority.exit"
-            if [ "${vip_exit}" -ne 0 ]; then overall=1; fi
+              MOVIE_BUFF_ALLOW_LOCAL_DESTRUCTIVE_TESTS=YES_I_UNDERSTAND_LOCAL_ONLY \
+              MOVIE_BUFF_ALLOW_LOCAL_DELETIONS=YES \
+              MOVIE_BUFF_EXACT_SHA="${GITHUB_SHA}" \
+              MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
+              MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-public-matchmaking-evidence-runner.mjs" \
+              MOVIE_BUFF_TEST_USERS="${core_users}" \
+              MOVIE_BUFF_OVERFLOW_TEST_USER="${overflow_user}" \
+              MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov15-public-matchmaking.json" \
+                node scripts/movie-buff-public-matchmaking-evidence-runner.mjs \
+                > "${EVIDENCE_DIR}/mov15-public-matchmaking.log" 2>&1
+              mov15_exit=$?
+              printf '%s\n' "${mov15_exit}" > "${EVIDENCE_DIR}/mov15-public-matchmaking.exit"
+              if [ "${mov15_exit}" -ne 0 ]; then overall=1; fi
 
-            MOVIE_BUFF_ALLOW_LOCAL_DELETIONS=YES \
-            MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
-            MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-vip-finalize-adversarial.mjs" \
-            MOVIE_BUFF_VIP_TEST_USERS="${users_json}" \
-            MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov16-vip-finalize.json" \
-              node scripts/movie-buff-vip-finalize-adversarial.mjs \
-              > "${EVIDENCE_DIR}/mov16-vip-finalize.log" 2>&1
-            finalize_exit=$?
-            printf '%s\n' "${finalize_exit}" > "${EVIDENCE_DIR}/mov16-vip-finalize.exit"
-            if [ "${finalize_exit}" -ne 0 ]; then overall=1; fi
+              MOVIE_BUFF_ALLOW_LOCAL_DELETIONS=YES \
+              MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
+              MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-vip-authority-adversarial.mjs" \
+              MOVIE_BUFF_VIP_TEST_USERS="${users_json}" \
+              MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov16-vip-authority.json" \
+                node scripts/movie-buff-vip-authority-adversarial.mjs \
+                > "${EVIDENCE_DIR}/mov16-vip-authority.log" 2>&1
+              vip_exit=$?
+              printf '%s\n' "${vip_exit}" > "${EVIDENCE_DIR}/mov16-vip-authority.exit"
+              if [ "${vip_exit}" -ne 0 ]; then overall=1; fi
 
-            MOVIE_BUFF_ALLOW_LOCAL_PHASE_MUTATION=YES \
-            MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
-            MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-three-client-phase-evidence-runner.mjs" \
-            MOVIE_BUFF_PHASE_TEST_USERS="${core_users}" \
-            MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov17-three-client-phase.json" \
-            MOVIE_BUFF_RECONNECT_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov17-reconnect-race.json" \
-            MOVIE_BUFF_EVIDENCE_MANIFEST="${EVIDENCE_DIR}/mov17-three-client-phase.manifest.json" \
-              node scripts/movie-buff-three-client-phase-evidence-runner.mjs \
-              > "${EVIDENCE_DIR}/mov17-three-client-phase.log" 2>&1
-            mov17_exit=$?
-            printf '%s\n' "${mov17_exit}" > "${EVIDENCE_DIR}/mov17-three-client-phase.exit"
-            if [ "${mov17_exit}" -ne 0 ]; then overall=1; fi
+              MOVIE_BUFF_ALLOW_LOCAL_DELETIONS=YES \
+              MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
+              MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-vip-finalize-adversarial.mjs" \
+              MOVIE_BUFF_VIP_TEST_USERS="${users_json}" \
+              MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov16-vip-finalize.json" \
+                node scripts/movie-buff-vip-finalize-adversarial.mjs \
+                > "${EVIDENCE_DIR}/mov16-vip-finalize.log" 2>&1
+              finalize_exit=$?
+              printf '%s\n' "${finalize_exit}" > "${EVIDENCE_DIR}/mov16-vip-finalize.exit"
+              if [ "${finalize_exit}" -ne 0 ]; then overall=1; fi
+
+              MOVIE_BUFF_ALLOW_LOCAL_PHASE_MUTATION=YES \
+              MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
+              MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-three-client-phase-evidence-runner.mjs" \
+              MOVIE_BUFF_PHASE_TEST_USERS="${core_users}" \
+              MOVIE_BUFF_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov17-three-client-phase.json" \
+              MOVIE_BUFF_RECONNECT_EVIDENCE_OUTPUT="${EVIDENCE_DIR}/mov17-reconnect-race.json" \
+              MOVIE_BUFF_EVIDENCE_MANIFEST="${EVIDENCE_DIR}/mov17-three-client-phase.manifest.json" \
+                node scripts/movie-buff-three-client-phase-evidence-runner.mjs \
+                > "${EVIDENCE_DIR}/mov17-three-client-phase.log" 2>&1
+              mov17_exit=$?
+              printf '%s\n' "${mov17_exit}" > "${EVIDENCE_DIR}/mov17-three-client-phase.exit"
+              if [ "${mov17_exit}" -ne 0 ]; then overall=1; fi
+            fi
+          else
+            printf '125\n' > "${EVIDENCE_DIR}/supabase-status.exit"
           fi
 
           classification=PASS
@@ -207,16 +266,25 @@ jobs:
             "${classification}" "${overall}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             >> "${EVIDENCE_DIR}/metadata.txt"
 
-          find "${EVIDENCE_DIR}" -type f \( -name '*.txt' -o -name '*.log' -o -name '*.json' -o -name '*.html' -o -name '*.error' \) -print0 \
-            | while IFS= read -r -d '' file; do
-                python3 -B scripts/movie-buff-redact-evidence.py "${file}" "${file}.redacted"
-                mv "${file}.redacted" "${file}"
-              done
+          while IFS= read -r -d '' file; do
+            python3 -B scripts/movie-buff-redact-evidence.py "${file}" "${file}.redacted"
+            redact_exit=$?
+            if [ "${redact_exit}" -eq 0 ]; then
+              mv "${file}.redacted" "${file}"
+            else
+              overall=1
+              rm -f "${file}.redacted"
+            fi
+          done < <(find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0)
+
           (
             cd "${EVIDENCE_DIR}"
-            find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt
+            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+              | sort -z | xargs -0 sha256sum > sha256.txt
             sha256sum -c sha256.txt
           )
+          hash_exit=$?
+          if [ "${hash_exit}" -ne 0 ]; then overall=1; fi
           exit "${overall}"
 
       - name: Upload database and race evidence ZIP
@@ -253,7 +321,7 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          test "$(git rev-parse HEAD^)" = "${COMPOSITION_SHA}"
+          test "$(git rev-parse HEAD^1)" = "${COMPOSITION_SHA}"
           test -z "$(git status --porcelain)"
 
       - name: Install repository dependencies
@@ -270,14 +338,20 @@ jobs:
           EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-exact-three-browser
           USERS_FILE: ${{ runner.temp }}/movie-buff-exact-browser-users.json
           PLAYWRIGHT_ROOT: ${{ runner.temp }}/movie-buff-playwright
+          WORK_ROOT: ${{ runner.temp }}/movie-buff-exact-browser-stack
         run: |
           set -uo pipefail
+          set +e
           mkdir -p "${EVIDENCE_DIR}"
           overall=0
           app_pid=""
           cleanup() {
             if [ -n "${app_pid}" ]; then kill "${app_pid}" >/dev/null 2>&1 || true; fi
-            supabase stop --no-backup >/dev/null 2>&1 || true
+            if [ -d "${WORK_ROOT}/supabase" ]; then
+              (cd "${WORK_ROOT}" && supabase stop --no-backup) \
+                >"${EVIDENCE_DIR}/cleanup.log" 2>&1 || true
+            fi
+            rm -rf "${WORK_ROOT}" "${USERS_FILE}" "${PLAYWRIGHT_ROOT}"
           }
           trap cleanup EXIT
 
@@ -286,13 +360,51 @@ jobs:
           git show -s --format=fuller HEAD > "${EVIDENCE_DIR}/harness-commit.txt"
           git show -s --format=fuller "${COMPOSITION_SHA}" > "${EVIDENCE_DIR}/composition-commit.txt"
 
-          supabase start >/dev/null 2>&1
-          start_exit=$?
+          rm -rf "${WORK_ROOT}"
+          mkdir -p "${WORK_ROOT}"
+          cp -a supabase "${WORK_ROOT}/supabase"
+          python3 - "${WORK_ROOT}/supabase/config.toml" "exact-browser-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" <<'PY'
+          import pathlib, re, sys
+          path = pathlib.Path(sys.argv[1])
+          project_id = sys.argv[2]
+          text = path.read_text(encoding="utf-8")
+          text, project_count = re.subn(
+              r'(?m)^project_id\s*=\s*"[^"]+"\s*$',
+              f'project_id = "{project_id}"',
+              text,
+              count=1,
+          )
+          text, seed_count = re.subn(
+              r'(?ms)(^\[db\.seed\]\s*.*?^enabled\s*=\s*)true(\s*$)',
+              r'\1false\2',
+              text,
+              count=1,
+          )
+          if project_count != 1 or seed_count != 1:
+              raise SystemExit("unable to create isolated local Supabase config")
+          path.write_text(text, encoding="utf-8")
+          PY
+          config_exit=$?
+          printf '%s\n' "${config_exit}" > "${EVIDENCE_DIR}/ephemeral-config.exit"
+          if [ "${config_exit}" -ne 0 ]; then overall=1; fi
+
+          if [ "${config_exit}" -eq 0 ]; then
+            (
+              cd "${WORK_ROOT}"
+              supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor
+            ) > "${EVIDENCE_DIR}/supabase-start.log" 2>&1
+            start_exit=$?
+          else
+            start_exit=125
+          fi
           printf '%s\n' "${start_exit}" > "${EVIDENCE_DIR}/supabase-start.exit"
           if [ "${start_exit}" -ne 0 ]; then overall=1; fi
 
           if [ "${start_exit}" -eq 0 ]; then
-            supabase db reset --local > "${EVIDENCE_DIR}/database-reset.log" 2>&1
+            (
+              cd "${WORK_ROOT}"
+              supabase db reset --local
+            ) > "${EVIDENCE_DIR}/database-reset.log" 2>&1
             reset_exit=$?
           else
             reset_exit=125
@@ -301,7 +413,10 @@ jobs:
           if [ "${reset_exit}" -ne 0 ]; then overall=1; fi
 
           if [ "${reset_exit}" -eq 0 ]; then
-            status_env="$(supabase status -o env)"
+            status_env="$(cd "${WORK_ROOT}" && supabase status -o env 2>"${EVIDENCE_DIR}/supabase-status.error")"
+            status_exit=$?
+            printf '%s\n' "${status_exit}" > "${EVIDENCE_DIR}/supabase-status.exit"
+            if [ "${status_exit}" -ne 0 ]; then overall=1; fi
             eval "${status_env}"
             export NEXT_PUBLIC_SUPABASE_URL="${API_URL:-http://127.0.0.1:55321}"
             export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
@@ -311,7 +426,10 @@ jobs:
             MOVIE_BUFF_LOCAL_USERS_OUTPUT="${USERS_FILE}" \
             MOVIE_BUFF_LOCAL_RUN_ID="browser-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
               node scripts/movie-buff-exact-local-users.mjs \
-              > "${EVIDENCE_DIR}/local-users-setup.log" 2>&1 || overall=1
+              > "${EVIDENCE_DIR}/local-users-setup.log" 2>&1
+            users_exit=$?
+            printf '%s\n' "${users_exit}" > "${EVIDENCE_DIR}/local-users-setup.exit"
+            if [ "${users_exit}" -ne 0 ]; then overall=1; fi
 
             NEXT_PUBLIC_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL}" \
             NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}" \
@@ -319,30 +437,44 @@ jobs:
               npm run dev -- --hostname 127.0.0.1 --port 3001 \
               > "${EVIDENCE_DIR}/application.log" 2>&1 &
             app_pid=$!
+            app_health=1
             for attempt in $(seq 1 90); do
-              curl -fsS "${MOVIE_BUFF_APP_URL}/sign-in" >/dev/null 2>&1 && break
+              curl -fsS "${MOVIE_BUFF_APP_URL}/sign-in" >/dev/null 2>&1
+              app_health=$?
+              if [ "${app_health}" -eq 0 ]; then break; fi
               sleep 1
             done
-            curl -fsS "${MOVIE_BUFF_APP_URL}/sign-in" >/dev/null 2>&1 || overall=1
+            printf '%s\n' "${app_health}" > "${EVIDENCE_DIR}/application-health.exit"
+            if [ "${app_health}" -ne 0 ]; then overall=1; fi
 
             mkdir -p "${PLAYWRIGHT_ROOT}"
             (
               cd "${PLAYWRIGHT_ROOT}"
               npm init -y >/dev/null 2>&1
-              npm install --ignore-scripts playwright@1.54.2 > "${EVIDENCE_DIR}/playwright-install.log" 2>&1
-              npx playwright install --with-deps chromium > "${EVIDENCE_DIR}/playwright-browser-install.log" 2>&1
-            ) || overall=1
+              npm install --ignore-scripts playwright@1.54.2
+              npx playwright install --with-deps chromium
+            ) > "${EVIDENCE_DIR}/playwright-install.log" 2>&1
+            playwright_exit=$?
+            printf '%s\n' "${playwright_exit}" > "${EVIDENCE_DIR}/playwright-install.exit"
+            if [ "${playwright_exit}" -ne 0 ]; then overall=1; fi
 
-            MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
-            MOVIE_BUFF_COMPOSITION_SHA="${COMPOSITION_SHA}" \
-            MOVIE_BUFF_LOCAL_USERS_OUTPUT="${USERS_FILE}" \
-            MOVIE_BUFF_EVIDENCE_DIR="${EVIDENCE_DIR}" \
-            PLAYWRIGHT_PACKAGE_ROOT="${PLAYWRIGHT_ROOT}" \
-              node scripts/movie-buff-exact-three-browser-lab.mjs \
-              > "${EVIDENCE_DIR}/three-browser.log" 2>&1
-            browser_exit=$?
+            if [ "${users_exit}" -eq 0 ] && [ "${app_health}" -eq 0 ] && [ "${playwright_exit}" -eq 0 ]; then
+              MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
+              MOVIE_BUFF_COMPOSITION_SHA="${COMPOSITION_SHA}" \
+              MOVIE_BUFF_LOCAL_USERS_OUTPUT="${USERS_FILE}" \
+              MOVIE_BUFF_EVIDENCE_DIR="${EVIDENCE_DIR}" \
+              PLAYWRIGHT_PACKAGE_ROOT="${PLAYWRIGHT_ROOT}" \
+                node scripts/movie-buff-exact-three-browser-lab.mjs \
+                > "${EVIDENCE_DIR}/three-browser.log" 2>&1
+              browser_exit=$?
+            else
+              browser_exit=125
+            fi
             printf '%s\n' "${browser_exit}" > "${EVIDENCE_DIR}/three-browser.exit"
             if [ "${browser_exit}" -ne 0 ]; then overall=1; fi
+          else
+            printf '125\n' > "${EVIDENCE_DIR}/supabase-status.exit"
+            printf '125\n' > "${EVIDENCE_DIR}/three-browser.exit"
           fi
 
           classification=PASS
@@ -351,16 +483,25 @@ jobs:
             "${classification}" "${overall}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             >> "${EVIDENCE_DIR}/metadata.txt"
 
-          find "${EVIDENCE_DIR}" -type f \( -name '*.txt' -o -name '*.log' -o -name '*.json' -o -name '*.error' \) -print0 \
-            | while IFS= read -r -d '' file; do
-                python3 -B scripts/movie-buff-redact-evidence.py "${file}" "${file}.redacted"
-                mv "${file}.redacted" "${file}"
-              done
+          while IFS= read -r -d '' file; do
+            python3 -B scripts/movie-buff-redact-evidence.py "${file}" "${file}.redacted"
+            redact_exit=$?
+            if [ "${redact_exit}" -eq 0 ]; then
+              mv "${file}.redacted" "${file}"
+            else
+              overall=1
+              rm -f "${file}.redacted"
+            fi
+          done < <(find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0)
+
           (
             cd "${EVIDENCE_DIR}"
-            find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt
+            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+              | sort -z | xargs -0 sha256sum > sha256.txt
             sha256sum -c sha256.txt
           )
+          hash_exit=$?
+          if [ "${hash_exit}" -ne 0 ]; then overall=1; fi
           exit "${overall}"
 
       - name: Upload three-browser evidence ZIP
