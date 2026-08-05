@@ -12,6 +12,7 @@ RAW_DIR="${EVIDENCE_DIR}-raw"
 OVERALL=0
 FAILURE_STEP=""
 STACK_STARTED=0
+DIAGNOSTIC_RUNNER=""
 
 mkdir -p "$EVIDENCE_DIR" "$RAW_DIR" "$STACK_ROOT"
 record_exit() { printf '%s\n' "$2" >"$RAW_DIR/$1.exit"; }
@@ -20,6 +21,10 @@ fail_step() { OVERALL=1; [[ -n "$FAILURE_STEP" ]] || FAILURE_STEP="$1"; }
 cleanup() {
   set +e
   local code=0
+  if [[ -n "$DIAGNOSTIC_RUNNER" ]]; then
+    rm -f "$DIAGNOSTIC_RUNNER"
+    DIAGNOSTIC_RUNNER=""
+  fi
   if [[ "$STACK_STARTED" -eq 1 ]]; then
     (cd "$STACK_ROOT" && supabase stop --no-backup) >"$RAW_DIR/cleanup.stdout.log" 2>"$RAW_DIR/cleanup.stderr.log"
     code=$?
@@ -97,8 +102,8 @@ PY
   code=$?; record_exit user-shape "$code"
   if [[ "$code" -ne 0 ]]; then fail_step user-shape; return; fi
 
-  local diagnostic_runner="${RUNNER_TEMP:-/tmp}/movie-buff-mov17-repair-runtime-diagnostic.mjs"
-  python3 - "$SOURCE_ROOT/scripts/movie-buff-mov17-repair-runtime.mjs" "$diagnostic_runner" <<'PY_DIAGNOSTIC'
+  DIAGNOSTIC_RUNNER="$SOURCE_ROOT/scripts/.movie-buff-mov17-repair-runtime-diagnostic-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}.mjs"
+  python3 - "$SOURCE_ROOT/scripts/movie-buff-mov17-repair-runtime.mjs" "$DIAGNOSTIC_RUNNER" <<'PY_DIAGNOSTIC'
 import pathlib,sys
 source=pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
 source=source.replace(
@@ -118,7 +123,10 @@ if old_catch not in source:
 source=source.replace(old_catch,new_catch,1)
 pathlib.Path(sys.argv[2]).write_text(source,encoding='utf-8')
 PY_DIAGNOSTIC
-  node --check "$diagnostic_runner" >"$RAW_DIR/diagnostic-parse.stdout.log" 2>"$RAW_DIR/diagnostic-parse.stderr.log"
+  code=$?; record_exit diagnostic-generate "$code"
+  if [[ "$code" -ne 0 ]]; then fail_step diagnostic-generate; return; fi
+
+  node --check "$DIAGNOSTIC_RUNNER" >"$RAW_DIR/diagnostic-parse.stdout.log" 2>"$RAW_DIR/diagnostic-parse.stderr.log"
   code=$?; record_exit diagnostic-parse "$code"
   if [[ "$code" -ne 0 ]]; then fail_step diagnostic-parse; return; fi
 
@@ -127,10 +135,12 @@ PY_DIAGNOSTIC
     MOVIE_BUFF_EXPECTED_GIT_SHA="$EXPECTED_SHA" \
     MOVIE_BUFF_TEST_USERS="$test_users" \
     MOVIE_BUFF_EVIDENCE_OUTPUT="$EVIDENCE_DIR/runtime.json" \
-      node "$diagnostic_runner"
+      node "$DIAGNOSTIC_RUNNER"
   ) >"$RAW_DIR/runtime.stdout.log" 2>"$RAW_DIR/runtime.stderr.log"
-  rm -f "$diagnostic_runner"
-  code=$?; record_exit runtime "$code"
+  code=$?
+  rm -f "$DIAGNOSTIC_RUNNER"
+  DIAGNOSTIC_RUNNER=""
+  record_exit runtime "$code"
   if [[ "$code" -ne 0 ]]; then fail_step runtime; return; fi
 }
 
