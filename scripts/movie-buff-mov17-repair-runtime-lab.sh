@@ -126,6 +126,11 @@ new_window = "      set opens_at=clock_timestamp()-interval '2 seconds', deadlin
 if old_window not in source:
   raise SystemExit('VIP expiry fixture anchor not found')
 source=source.replace(old_window,new_window,1)
+old_phase_deadline = "    update public.movie_buff_match_phase_state\n      set phase_started_at=clock_timestamp()-interval '2 seconds', phase_ends_at=clock_timestamp()-interval '1 second'\n      where match_id=${q(matchId)}::uuid;"
+new_phase_deadline = "    update public.movie_buff_match_phase_state as state\n      set phase_started_at=window.deadline_at-interval '1 second', phase_ends_at=window.deadline_at\n      from public.movie_buff_vip_round_windows as window\n      where state.match_id=${q(matchId)}::uuid\n        and window.round_id=${q(roundId)}::uuid;"
+if old_phase_deadline not in source:
+  raise SystemExit('phase deadline fixture anchor not found')
+source=source.replace(old_phase_deadline,new_phase_deadline,1)
 old_catch = '  record("runtime laboratory", "FAIL", {\n    error: error instanceof Error\n      ? { name: error.name, message: error.message, stack: error.stack }\n      : { message: String(error) },\n  });'
 new_catch = '  const structuredError = error instanceof Error\n    ? { name: error.name, message: error.message, stack: error.stack }\n    : error && typeof error === "object"\n      ? { ...error, message: error.message ?? JSON.stringify(error) }\n      : { message: String(error) };\n  record("runtime laboratory", "FAIL", { stage: activeStage, error: structuredError });'
 if old_catch not in source:
