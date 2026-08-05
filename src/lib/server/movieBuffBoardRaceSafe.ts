@@ -1,5 +1,5 @@
 import { ensureMovieBuffBoardForRoom as ensureMovieBuffBoardForRoomUnsafe } from "@/lib/server/movieBuffBoard";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/server/supabaseAdmin";
 
 const BOARD_READY_ATTEMPTS = 60;
 const BOARD_READY_DELAY_MS = 100;
