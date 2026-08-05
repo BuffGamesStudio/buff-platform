@@ -61,7 +61,8 @@ jobs:
           test ! -f supabase/.temp/project-ref
           test "$(supabase --version)" = "2.111.0"
           bash -n scripts/movie-buff-combined-race-matrix-lab.sh
-          python3 -m py_compile scripts/movie-buff-core-v10-patch-mov17-owner-fixtures.py
+          PYTHONDONTWRITEBYTECODE=1 python3 -B -m py_compile scripts/movie-buff-core-v10-patch-mov17-owner-fixtures.py
+          test -z "$(git status --porcelain)"
           node --check scripts/movie-buff-combined-race-residual.mjs
           node --check scripts/movie-buff-public-matchmaking-race.mjs
           node --check scripts/movie-buff-three-client-phase-evidence-runner.mjs
