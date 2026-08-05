@@ -62,6 +62,11 @@ try {
     'package-lock.json',
     'supabase/migrations/20260804083500_movie_buff_reconnect_buster_boundary_repair.sql',
     'supabase/rollbacks/20260804083500_movie_buff_reconnect_buster_boundary_repair.rollback.sql',
+    'supabase/migrations/20260804083600_movie_buff_match_start_handoff.sql',
+    'supabase/rollbacks/20260804083600_movie_buff_match_start_handoff.rollback.sql',
+    'supabase/tests/movie_buff_match_start_handoff_test.sql',
+    'supabase/tests/movie_buff_match_start_handoff_rollback_test.sql',
+    'tests/movie-buff-match-start-handoff.test.mjs',
     'scripts/movie-buff-reconnect-race-proof.mjs'
   )) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
@@ -87,6 +92,7 @@ try {
     "target_kind=repository-static-and-localhost-placeholder-build"
     "database_behavior=UNKNOWN"
     "browser_behavior=UNKNOWN"
+    "physical_windows_equivalence=UNKNOWN"
     "generated_at=$([DateTime]::UtcNow.ToString('o'))"
   ) | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'metadata.txt') -Encoding utf8
 
@@ -102,7 +108,8 @@ try {
       tests/movie-buff-server-phase-machine.test.mjs `
       tests/movie-buff-authoritative-phase-runtime.test.mjs `
       tests/movie-buff-buster-safe-boundary.test.mjs `
-      tests/movie-buff-phase-tile-mutation-guard.test.mjs
+      tests/movie-buff-phase-tile-mutation-guard.test.mjs `
+      tests/movie-buff-match-start-handoff.test.mjs
   }
   Invoke-Captured 'typescript' { npx --no-install tsc --noEmit }
 
@@ -118,11 +125,32 @@ try {
     throw 'Worktree is not clean after validation.'
   }
 
+  $manifestPath = Join-Path $EvidenceRoot 'sha256.csv'
   Get-ChildItem -LiteralPath $EvidenceRoot -File |
     Where-Object Name -ne 'sha256.csv' |
-    Get-FileHash -Algorithm SHA256 |
-    Select-Object Path, Hash |
-    Export-Csv -LiteralPath (Join-Path $EvidenceRoot 'sha256.csv') -NoTypeInformation
+    Sort-Object Name |
+    ForEach-Object {
+      $hash = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256
+      [pscustomobject]@{
+        Path = $_.Name
+        Hash = $hash.Hash
+      }
+    } |
+    Export-Csv -LiteralPath $manifestPath -NoTypeInformation
+
+  foreach ($entry in Import-Csv -LiteralPath $manifestPath) {
+    if ([System.IO.Path]::IsPathRooted($entry.Path)) {
+      throw "Evidence hash path must be relative: $($entry.Path)"
+    }
+    $artifactPath = Join-Path $EvidenceRoot $entry.Path
+    if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
+      throw "Evidence hash target is missing: $($entry.Path)"
+    }
+    $observedHash = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash
+    if ($observedHash -ne $entry.Hash) {
+      throw "Evidence hash mismatch: $($entry.Path)"
+    }
+  }
 
   Write-Classification PASS
   exit 0
