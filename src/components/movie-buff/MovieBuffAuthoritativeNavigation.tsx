@@ -25,6 +25,13 @@ const LEGACY_MANUAL_LABELS = new Set([
   "waiting for host to click",
 ]);
 
+const AUTHORITATIVE_PHASE_PATHS = new Set([
+  "/games/movie-buff/round-intro",
+  "/games/movie-buff/board",
+  "/games/movie-buff/play",
+  "/games/movie-buff/round-results",
+]);
+
 function normalizeLabel(value: string | null | undefined) {
   return (value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -47,12 +54,15 @@ export function MovieBuffAuthoritativeNavigation({
   const router = useRouter();
   const searchParams = useSearchParams();
   const roomId = searchParams.get("roomId")?.trim() ?? "";
+  const shouldSynchronize = Boolean(
+    roomId && AUTHORITATIVE_PHASE_PATHS.has(pathname),
+  );
   const [view, setView] = useState<MovieBuffAuthoritativePhaseView | null>(null);
   const [syncError, setSyncError] = useState("");
   const syncing = useRef(false);
 
   const synchronize = useCallback(async () => {
-    if (!roomId || syncing.current) return;
+    if (!shouldSynchronize || syncing.current) return;
     syncing.current = true;
 
     try {
@@ -92,14 +102,19 @@ export function MovieBuffAuthoritativeNavigation({
     } finally {
       syncing.current = false;
     }
-  }, [pathname, roomId, router]);
+  }, [pathname, roomId, router, shouldSynchronize]);
 
   useEffect(() => {
-    if (!roomId) return;
+    if (!shouldSynchronize) {
+      setView(null);
+      setSyncError("");
+      return;
+    }
+
     void synchronize();
     const interval = window.setInterval(() => void synchronize(), 750);
     return () => window.clearInterval(interval);
-  }, [roomId, synchronize]);
+  }, [shouldSynchronize, synchronize]);
 
   function blockLegacyClick(event: MouseEvent<HTMLDivElement>) {
     const element = event.target instanceof Element
