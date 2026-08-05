@@ -1,0 +1,98 @@
+name: Movie Buff PR64 concurrent runtime matrix
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-pr64-concurrency-v1
+    paths:
+      - .github/workflows/movie-buff-pr64-concurrency.yml
+      - scripts/movie-buff-pr64-concurrency-lab.sh
+      - scripts/movie-buff-pr64-concurrency.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-pr64-concurrency-v1
+  COMPOSITION_SHA: 0093e72777ebf48754b32e98306f705edec66321
+  COMPOSITION_TREE: 083e1ebb0190fc48865ccc2fce406a3ad454c552
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-concurrency:
+    name: Exact concurrent Buster/leave matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out exact validation SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind exact composition and controller-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          git merge-base --is-ancestor "${COMPOSITION_SHA}" HEAD
+          test "$(git rev-parse "${COMPOSITION_SHA}^{tree}")" = "${COMPOSITION_TREE}"
+          mapfile -t changed < <(git diff --name-only "${COMPOSITION_SHA}" HEAD | sort)
+          test "${#changed[@]}" -eq 3
+          test "${changed[0]}" = ".github/workflows/movie-buff-pr64-concurrency.yml"
+          test "${changed[1]}" = "scripts/movie-buff-pr64-concurrency-lab.sh"
+          test "${changed[2]}" = "scripts/movie-buff-pr64-concurrency.mjs"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          bash -n scripts/movie-buff-pr64-concurrency-lab.sh
+          node --check scripts/movie-buff-pr64-concurrency.mjs
+          docker --version
+          psql --version
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Execute exact disposable concurrency matrix
+        shell: bash
+        run: |
+          bash scripts/movie-buff-pr64-concurrency-lab.sh \
+            "${GITHUB_SHA}" \
+            "${COMPOSITION_SHA}" \
+            "${COMPOSITION_TREE}" \
+            "${RUNNER_TEMP}/movie-buff-pr64-concurrency" \
+            "${RUNNER_TEMP}/movie-buff-pr64-concurrency-stack" \
+            "${RUNNER_TEMP}/movie-buff-pr64-concurrency-users.json"
+
+      - name: Upload exact concurrency evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-pr64-concurrency-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-pr64-concurrency
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
