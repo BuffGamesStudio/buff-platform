@@ -1,4 +1,4 @@
-﻿create or replace function public.normalize_movie_answer(
+create or replace function public.normalize_movie_answer(
   p_answer text
 )
 returns text
