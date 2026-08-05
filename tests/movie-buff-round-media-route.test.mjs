@@ -14,15 +14,16 @@ test("round media resolves the authoritative asset and redirects GET playback", 
   assert.match(routeSource, /getRoundGeneratedClip\(roundId\)/);
   assert.match(routeSource, /if \(!headOnly \|\| !summary\.assetPath\)/);
   assert.match(routeSource, /NextResponse\.redirect/);
-  assert.match(routeSource, /new URL\(assetUrl, requestUrl\)/);
+  assert.match(routeSource, /new URL\(assetUrl, internalRequestUrl\)/);
   assert.match(routeSource, /X-Movie-Buff-Asset-Url/);
 });
 
-test("loopback redirects preserve the exact browser origin", () => {
-  assert.match(routeSource, /LOOPBACK_HOSTNAMES/);
-  assert.match(routeSource, /LOOPBACK_HOSTNAMES\.has\(requestUrl\.hostname\)/);
-  assert.match(routeSource, /LOOPBACK_HOSTNAMES\.has\(resolvedAsset\.hostname\)/);
-  assert.match(routeSource, /requestUrl\.origin/);
+test("loopback redirects preserve the browser-facing forwarded or Host origin", () => {
+  assert.match(routeSource, /getRequestOrigin/);
+  assert.match(routeSource, /x-forwarded-host/);
+  assert.match(routeSource, /request\.headers\.get\("host"\)/);
+  assert.match(routeSource, /x-forwarded-proto/);
+  assert.match(routeSource, /browserOrigin/);
   assert.match(routeSource, /resolvedAsset\.pathname/);
   assert.match(routeSource, /resolvedAsset\.search/);
 });

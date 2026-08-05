@@ -19,18 +19,36 @@ const LOOPBACK_HOSTNAMES = new Set([
   "[::1]",
 ]);
 
+function getRequestOrigin(request: Request) {
+  const requestUrl = new URL(request.url);
+  const forwardedHost = request.headers
+    .get("x-forwarded-host")
+    ?.split(",")[0]
+    ?.trim();
+  const host = forwardedHost || request.headers.get("host") || requestUrl.host;
+  const forwardedProtocol = request.headers
+    .get("x-forwarded-proto")
+    ?.split(",")[0]
+    ?.trim();
+  const protocol = forwardedProtocol || requestUrl.protocol.replace(/:$/, "");
+
+  return new URL(`${protocol}://${host}`).origin;
+}
+
 function redirectToResolvedAsset(
   request: Request,
   assetUrl: string,
 ) {
-  const requestUrl = new URL(request.url);
-  const resolvedAsset = new URL(assetUrl, requestUrl);
+  const internalRequestUrl = new URL(request.url);
+  const browserOrigin = getRequestOrigin(request);
+  const browserOriginUrl = new URL(browserOrigin);
+  const resolvedAsset = new URL(assetUrl, internalRequestUrl);
   const redirectUrl =
-    LOOPBACK_HOSTNAMES.has(requestUrl.hostname) &&
+    LOOPBACK_HOSTNAMES.has(browserOriginUrl.hostname) &&
     LOOPBACK_HOSTNAMES.has(resolvedAsset.hostname)
       ? new URL(
           `${resolvedAsset.pathname}${resolvedAsset.search}`,
-          requestUrl.origin,
+          browserOrigin,
         )
       : resolvedAsset;
 
