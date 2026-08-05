@@ -29,8 +29,28 @@ const players = users.slice(0, 3);
 const requireFromPlaywright = createRequire(path.join(playwrightRoot, "package.json"));
 const { chromium } = requireFromPlaywright("playwright");
 
+function redact(value) {
+  return String(value)
+    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[REDACTED_JWT]")
+    .replace(/sb_(?:secret|publishable)_[A-Za-z0-9_-]+/g, "[REDACTED_SUPABASE_KEY]")
+    .replace(/postgres(?:ql)?:\/\/[^\s"']+/gi, "postgresql://[REDACTED_LOCAL_DB_URL]")
+    .slice(0, 2000);
+}
+
+function safeUrl(value) {
+  const parsed = new URL(value);
+  if (!["127.0.0.1", "localhost", "::1"].includes(parsed.hostname)) {
+    return `${parsed.origin}${parsed.pathname}`;
+  }
+  const allowedParams = new URLSearchParams();
+  for (const [key, item] of parsed.searchParams) {
+    if (/^(roomId|roundId|matchId)$/i.test(key)) allowedParams.set(key, item);
+  }
+  return `${parsed.origin}${parsed.pathname}${allowedParams.size ? `?${allowedParams}` : ""}`;
+}
+
 const evidence = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   laboratory: "movie-buff-core-v12-three-browser",
   classification: "UNKNOWN",
   exactHarnessSha: expectedSha,
@@ -47,6 +67,8 @@ const evidence = {
   sharedStateErrors: {},
   pageErrors: [],
   consoleErrors: [],
+  failedResponses: [],
+  failedRequests: [],
   checks: [],
 };
 function pass(name, details = {}) {
@@ -61,6 +83,7 @@ const sharedStateFailures = [
 const browsers = [];
 const contexts = [];
 const pages = [];
+const responseInspectionPromises = [];
 
 try {
   for (let index = 0; index < players.length; index += 1) {
@@ -69,9 +92,37 @@ try {
     const context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
     contexts.push(context);
     const page = await context.newPage();
-    page.on("pageerror", (error) => evidence.pageErrors.push({ player: index + 1, message: error.message.slice(0, 1000) }));
+    page.on("pageerror", (error) => evidence.pageErrors.push({ player: index + 1, message: redact(error.message) }));
     page.on("console", (message) => {
-      if (message.type() === "error") evidence.consoleErrors.push({ player: index + 1, message: message.text().slice(0, 1000) });
+      if (message.type() === "error") evidence.consoleErrors.push({ player: index + 1, message: redact(message.text()) });
+    });
+    page.on("requestfailed", (request) => {
+      evidence.failedRequests.push({
+        player: index + 1,
+        method: request.method(),
+        url: safeUrl(request.url()),
+        errorText: redact(request.failure()?.errorText ?? "unknown request failure"),
+      });
+    });
+    page.on("response", (response) => {
+      if (response.status() < 400) return;
+      const inspection = (async () => {
+        let body = "";
+        try {
+          body = redact(await response.text());
+        } catch (error) {
+          body = `[response body unavailable: ${redact(error instanceof Error ? error.message : error)}]`;
+        }
+        evidence.failedResponses.push({
+          player: index + 1,
+          method: response.request().method(),
+          url: safeUrl(response.url()),
+          status: response.status(),
+          statusText: response.statusText(),
+          body,
+        });
+      })();
+      responseInspectionPromises.push(inspection);
     });
     pages.push(page);
   }
@@ -127,6 +178,7 @@ try {
   pass("shared-runtime-route", { path: finalPaths[0] });
 
   await Promise.all(pages.map((page) => page.waitForTimeout(3000)));
+  await Promise.allSettled(responseInspectionPromises);
 
   for (let index = 0; index < pages.length; index += 1) {
     const page = pages[index];
@@ -149,14 +201,17 @@ try {
   pass("shared-state-failure-surfaces-absent", { sharedStateFailures });
 
   assert.equal(evidence.pageErrors.length, 0, `page errors observed: ${JSON.stringify(evidence.pageErrors)}`);
+  assert.equal(evidence.failedRequests.length, 0, `failed requests observed: ${JSON.stringify(evidence.failedRequests)}`);
+  assert.equal(evidence.failedResponses.length, 0, `HTTP error responses observed: ${JSON.stringify(evidence.failedResponses)}`);
   assert.equal(evidence.consoleErrors.length, 0, `console errors observed: ${JSON.stringify(evidence.consoleErrors)}`);
   pass("browser-error-channels-clean");
   evidence.classification = "PASS";
 } catch (error) {
+  await Promise.allSettled(responseInspectionPromises);
   evidence.classification = "FAIL";
   evidence.failure = error instanceof Error
-    ? { name: error.name, message: error.message, stack: error.stack }
-    : { message: String(error) };
+    ? { name: error.name, message: redact(error.message), stack: redact(error.stack ?? "") }
+    : { message: redact(error) };
   for (let index = 0; index < pages.length; index += 1) {
     try {
       await pages[index].screenshot({ path: path.join(evidenceDir, `player-${index + 1}-failure.png`), fullPage: true });
@@ -167,6 +222,8 @@ try {
   evidence.finishedAt = new Date().toISOString();
   evidence.pageErrorCount = evidence.pageErrors.length;
   evidence.consoleErrorCount = evidence.consoleErrors.length;
+  evidence.failedResponseCount = evidence.failedResponses.length;
+  evidence.failedRequestCount = evidence.failedRequests.length;
   fs.writeFileSync(path.join(evidenceDir, "three-browser-evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
   await Promise.allSettled(contexts.map((context) => context.close()));
   await Promise.allSettled(browsers.map((browser) => browser.close()));
