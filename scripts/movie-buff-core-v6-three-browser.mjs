@@ -37,7 +37,7 @@ const requireFromPlaywright = createRequire(path.join(playwrightRoot, "package.j
 const { chromium } = requireFromPlaywright("playwright");
 
 const evidence = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   laboratory: "ephemeral-three-browser",
   classification: "UNKNOWN",
   exactHarnessSha: expectedSha,
@@ -94,8 +94,12 @@ try {
         waitUntil: "domcontentloaded",
         timeout: 60_000,
       });
-      await page.getByLabel("Email").fill(player.email);
-      await page.getByLabel("Password").fill(player.password);
+      const emailInput = page.locator('input[type="email"]');
+      const passwordInput = page.locator('input[type="password"]');
+      await emailInput.waitFor({ state: "visible", timeout: 60_000 });
+      await passwordInput.waitFor({ state: "visible", timeout: 60_000 });
+      await emailInput.fill(player.email);
+      await passwordInput.fill(player.password);
       await Promise.all([
         page.waitForURL(/\/games\/movie-buff\/lobby/, { timeout: 60_000 }),
         page.getByRole("button", { name: "Enter Buff Games" }).click(),
