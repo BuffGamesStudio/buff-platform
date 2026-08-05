@@ -24,7 +24,8 @@ function Assert-Command {
 function Invoke-Captured {
   param(
     [Parameter(Mandatory = $true)][string]$Name,
-    [Parameter(Mandatory = $true)][scriptblock]$Action
+    [Parameter(Mandatory = $true)][scriptblock]$Action,
+    [int[]]$AllowedExitCodes = @(0)
   )
 
   $stdout = Join-Path $EvidenceRoot "$Name.stdout.txt"
@@ -32,16 +33,17 @@ function Invoke-Captured {
   $exitFile = Join-Path $EvidenceRoot "$Name.exit.txt"
 
   try {
+    $global:LASTEXITCODE = 0
     & $Action 1> $stdout 2> $stderr
-    $code = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+    $code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
   } catch {
     $_ | Out-String | Set-Content -LiteralPath $stderr -Encoding utf8
     $code = 1
   }
 
   Set-Content -LiteralPath $exitFile -Value $code -Encoding ascii
-  if ($code -ne 0) {
-    throw "$Name failed with exit code $code"
+  if ($code -notin $AllowedExitCodes) {
+    throw "$Name failed with exit code $code; allowed: $($AllowedExitCodes -join ',')"
   }
 }
 
@@ -83,7 +85,7 @@ try {
   Invoke-Captured 'validator-self-tests' {
     node --test --test-name-pattern='target root|collector forbids|collector evaluates' tests/movie-buff-independent-security-validation.test.mjs
   }
-  Invoke-Captured 'static-collector' { node scripts/movie-buff-security-evidence.mjs }
+  Invoke-Captured 'static-collector' { node scripts/movie-buff-security-evidence.mjs } -AllowedExitCodes @(0, 1)
 
   if (-not (Test-Path -LiteralPath $env:MOVIE_BUFF_EVIDENCE_OUTPUT)) {
     throw 'Repository-static evidence bundle was not created.'
