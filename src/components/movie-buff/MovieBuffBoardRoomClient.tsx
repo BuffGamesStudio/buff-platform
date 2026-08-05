@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { MovieBuffUsedTileStamp } from "@/components/movie-buff/visual";
 import {
   selectMovieBuffAuthoritativeTile,
   type MovieBuffAuthoritativePhaseView,
@@ -278,9 +279,13 @@ export default function MovieBuffBoardRoomClient({ roomId }: { roomId: string })
                             <span className="block text-[11px] font-black uppercase tracking-[0.22em] text-zinc-500">
                               {tile.tierLabel}
                             </span>
-                            <span className="rounded-full border border-zinc-700 px-2 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-400">
-                              {isUsed ? "Scene Complete" : isLocked ? "Locked" : "Tile"}
-                            </span>
+                            {isUsed ? (
+                              <MovieBuffUsedTileStamp />
+                            ) : (
+                              <span className="rounded-full border border-zinc-700 px-2 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-400">
+                                {isLocked ? "Locked" : "Tile"}
+                              </span>
+                            )}
                           </div>
                           <span className="mt-3 block text-3xl font-black leading-none text-white">{tile.pointValue}</span>
                           <span className="mt-2 block text-xs uppercase tracking-[0.2em] text-red-300/80">
