@@ -3,7 +3,7 @@ name: Movie Buff exact composition laboratories
 on:
   push:
     branches:
-      - validation/movie-buff-exact-mov15-mov16-mov17-pr12-20260805
+      - validation/movie-buff-exact-mov15-mov16-mov17-pr12-20260805-v2
     paths:
       - ".github/workflows/movie-buff-exact-composition-labs.yml"
       - "scripts/movie-buff-exact-local-users.mjs"
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  EXPECTED_BRANCH: validation/movie-buff-exact-mov15-mov16-mov17-pr12-20260805
+  EXPECTED_BRANCH: validation/movie-buff-exact-mov15-mov16-mov17-pr12-20260805-v2
   COMPOSITION_SHA: b4f8e2196a8a0423e7340ac97bd5592d58a966db
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
