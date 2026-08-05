@@ -109,7 +109,7 @@ try {
     'raw_composition_sha=1825e452fa5e3caa24f5a99ac27e974d14b3ab66'
     'raw_composition_tree=75d61e32ab0aceeff142ce76e9328d9eed7f2888'
     'component_mov15_sha=4906147038a5a2deda5c13fdafc6f07b66ae100b'
-    'component_mov15_tree=38efa7f253931eae9f16d7d92d2236a3a1621296'
+    'component_mov15_tree=aab4b0256683ec77a4d9e3373fd84f60ba682e88'
     'component_mov16_sha=95c292ead66fc83cf13d7154bd3cf691610f549d'
     'component_mov16_tree=04267651da0b9caa741d95bcea01a096b5086a31'
     'component_mov17_sha=6d7e9aabe5b07796a3a17fdf6c11df091dd1f978'
