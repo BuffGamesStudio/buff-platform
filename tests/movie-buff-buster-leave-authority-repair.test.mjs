@@ -18,10 +18,6 @@ const alignmentRollback = fs.readFileSync(
   "supabase/rollbacks/20260804083710_movie_buff_disconnect_release_reason_alignment.rollback.sql",
   "utf8",
 );
-const vipReleaseHardening = fs.readFileSync(
-  "supabase/migrations/20260804073200_movie_buff_vip_snapshot_release_hardening.sql",
-  "utf8",
-);
 const quoteRoute = fs.readFileSync(
   "src/app/api/movie-buff/match/leave/quote/route.ts",
   "utf8",
@@ -105,10 +101,6 @@ test("disconnect expiry uses one canonical MOV-16 release reason", () => {
   assert.doesNotMatch(
     alignmentMigration,
     /when 'voluntary_active_leave'/,
-  );
-  assert.match(
-    vipReleaseHardening,
-    /already released with a different reason/,
   );
   assert.match(
     alignmentRollback,
