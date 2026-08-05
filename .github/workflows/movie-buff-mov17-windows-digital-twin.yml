@@ -3,7 +3,7 @@ name: MOV-17 Windows digital twin
 on:
   push:
     branches:
-      - copilot/MOV-17-shared-phase-machine
+      - validation/mov17-6d7e9aab-migration-repair-bf5e6d6f-v3
     paths:
       - ".github/workflows/movie-buff-mov17-windows-digital-twin.yml"
       - "scripts/movie-buff-mov17-windows-digital-twin.ps1"
