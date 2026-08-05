@@ -1,0 +1,271 @@
+name: Movie Buff core v11 exact three-browser laboratory
+
+on:
+  push:
+    branches: [validation/movie-buff-core-v11]
+    paths:
+      - ".github/workflows/movie-buff-core-v11-three-browser.yml"
+      - "scripts/movie-buff-core-v11-local-users.mjs"
+      - "scripts/movie-buff-core-v11-three-browser-lab.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-core-v11
+  CORE_SHA: 7582d07b0d8d80c8e5ecea4fedb079667a488d76
+  CORE_TREE: 44f331ac926172d9d824c9ea40e2f83301e7a0bf
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-three-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind exact identity and tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          git merge-base --is-ancestor "${CORE_SHA}" HEAD
+          test "$(git rev-parse "${CORE_SHA}^{tree}")" = "${CORE_TREE}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          test -f scripts/generated/movie-buff-launch-bootstrap.sql
+          node --check scripts/movie-buff-core-v11-local-users.mjs
+          node --check scripts/movie-buff-core-v11-three-browser-lab.mjs
+          psql --version
+          docker --version
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Execute exact seeded three-browser journey
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-core-v11-browser"
+          raw="${RUNNER_TEMP}/movie-buff-core-v11-browser-raw"
+          work="${RUNNER_TEMP}/movie-buff-core-v11-stack"
+          users="${RUNNER_TEMP}/movie-buff-core-v11-users.json"
+          playwright_root="${RUNNER_TEMP}/movie-buff-core-v11-playwright"
+          app_pid=""
+          overall=0
+          failure_step=""
+          mkdir -p "${evidence}" "${raw}" "${work}"
+          cp -a supabase "${work}/supabase"
+          python3 - "${work}/supabase/config.toml" "core-v11-browser-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" <<'PY'
+          import pathlib,re,sys
+          p=pathlib.Path(sys.argv[1]); text=p.read_text(encoding='utf-8'); project=sys.argv[2]
+          text,n=re.subn(r'(?m)^project_id\s*=\s*"[^"]+"\s*$',f'project_id = "{project}"',text,count=1)
+          text,m=re.subn(r'(?ms)(^\[db\.seed\]\s*.*?^enabled\s*=\s*)true(\s*$)',r'\1false\2',text,count=1)
+          if n != 1 or m != 1: raise SystemExit('ephemeral config rewrite failed')
+          p.write_text(text,encoding='utf-8')
+          PY
+          config_exit=$?
+          echo "${config_exit}" >"${raw}/ephemeral-config.exit"
+          if [ "${config_exit}" -ne 0 ]; then overall=1; failure_step=ephemeral-config; fi
+
+          if [ "${overall}" -eq 0 ]; then
+            (cd "${work}" && supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor) >"${raw}/supabase-start.log" 2>&1
+            start_exit=$?
+            echo "${start_exit}" >"${raw}/supabase-start.exit"
+            if [ "${start_exit}" -ne 0 ]; then overall=1; failure_step=supabase-start; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            (cd "${work}" && supabase db reset --local) >"${raw}/database-reset.log" 2>&1
+            reset_exit=$?
+            echo "${reset_exit}" >"${raw}/database-reset.exit"
+            if [ "${reset_exit}" -ne 0 ]; then overall=1; failure_step=database-reset; fi
+          fi
+
+          if [ "${overall}" -eq 0 ]; then
+            status_env="$(cd "${work}" && supabase status -o env 2>"${raw}/supabase-status.error")"
+            status_exit=$?
+            echo "${status_exit}" >"${raw}/supabase-status.exit"
+            if [ "${status_exit}" -eq 0 ]; then
+              eval "${status_env}"
+              api_url="${API_URL:-http://127.0.0.1:54321}"
+              publishable_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+              service_key="${SECRET_KEY:-${SERVICE_ROLE_KEY:-}}"
+              database_url="${DB_URL:-}"
+              if [ -z "${publishable_key}" ] || [ -z "${service_key}" ] || [ -z "${database_url}" ]; then
+                overall=1; failure_step=credential-shape
+              fi
+            else
+              overall=1; failure_step=supabase-status
+            fi
+          fi
+
+          if [ "${overall}" -eq 0 ]; then
+            psql "${database_url}" -X -v ON_ERROR_STOP=1 \
+              -c "truncate table public.movie_categories, public.clips, public.movies, public.categories, public.content_types restart identity cascade" \
+              >"${raw}/content-reset.log" 2>&1
+            content_reset_exit=$?
+            echo "${content_reset_exit}" >"${raw}/content-reset.exit"
+            if [ "${content_reset_exit}" -ne 0 ]; then overall=1; failure_step=content-reset; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            psql "${database_url}" -X -v ON_ERROR_STOP=1 \
+              -f scripts/generated/movie-buff-launch-bootstrap.sql \
+              >"${raw}/content-bootstrap.log" 2>&1
+            bootstrap_exit=$?
+            echo "${bootstrap_exit}" >"${raw}/content-bootstrap.exit"
+            if [ "${bootstrap_exit}" -ne 0 ]; then overall=1; failure_step=content-bootstrap; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            psql "${database_url}" -X -Atq -c "select json_build_object('content_types',(select count(*) from public.content_types),'categories',(select count(*) from public.categories),'movies',(select count(*) from public.movies),'clips',(select count(*) from public.clips),'active_video_clips',(select count(*) from public.clips where is_active and clip_type='video'))" \
+              >"${raw}/content-counts.json" 2>"${raw}/content-counts.error"
+            counts_exit=$?
+            echo "${counts_exit}" >"${raw}/content-counts.exit"
+            if [ "${counts_exit}" -ne 0 ]; then overall=1; failure_step=content-counts; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            python3 - "${raw}/content-counts.json" <<'PY'
+          import json,pathlib,sys
+          value=json.loads(pathlib.Path(sys.argv[1]).read_text())
+          if value.get('content_types',0) < 1 or value.get('active_video_clips',0) < 1 or value.get('movies',0) < 1:
+              raise SystemExit('playable launch content remains absent')
+          PY
+            readiness_exit=$?
+            echo "${readiness_exit}" >"${raw}/content-readiness.exit"
+            if [ "${readiness_exit}" -ne 0 ]; then overall=1; failure_step=content-readiness; fi
+          fi
+
+          if [ "${overall}" -eq 0 ]; then
+            NEXT_PUBLIC_SUPABASE_URL="${api_url}" \
+            SUPABASE_SERVICE_ROLE_KEY="${service_key}" \
+            MOVIE_BUFF_LOCAL_USERS_OUTPUT="${users}" \
+            MOVIE_BUFF_LOCAL_RUN_ID="core-v11-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+              node scripts/movie-buff-core-v11-local-users.mjs >"${raw}/local-users.log" 2>&1
+            users_exit=$?
+            echo "${users_exit}" >"${raw}/local-users.exit"
+            if [ "${users_exit}" -ne 0 ]; then overall=1; failure_step=local-users; fi
+          fi
+
+          if [ "${overall}" -eq 0 ]; then
+            NEXT_PUBLIC_SUPABASE_URL="${api_url}" \
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${publishable_key}" \
+            SUPABASE_SERVICE_ROLE_KEY="${service_key}" \
+            MOVIE_BUFF_APP_URL="http://127.0.0.1:3001" \
+              npm run build >"${raw}/build.log" 2>&1
+            build_exit=$?
+            echo "${build_exit}" >"${raw}/build.exit"
+            if [ "${build_exit}" -ne 0 ]; then overall=1; failure_step=build; fi
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            NEXT_PUBLIC_SUPABASE_URL="${api_url}" \
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${publishable_key}" \
+            SUPABASE_SERVICE_ROLE_KEY="${service_key}" \
+            MOVIE_BUFF_APP_URL="http://127.0.0.1:3001" \
+              npm run start -- --hostname 127.0.0.1 --port 3001 >"${raw}/application.log" 2>&1 &
+            app_pid=$!
+            app_health=1
+            for attempt in $(seq 1 90); do
+              if curl --fail --silent --show-error http://127.0.0.1:3001/sign-in >/dev/null 2>>"${raw}/application-health.log"; then app_health=0; break; fi
+              sleep 1
+            done
+            echo "${app_health}" >"${raw}/application-health.exit"
+            if [ "${app_health}" -ne 0 ]; then overall=1; failure_step=application-health; fi
+          fi
+
+          if [ "${overall}" -eq 0 ]; then
+            mkdir -p "${playwright_root}"
+            (
+              cd "${playwright_root}"
+              npm init -y >/dev/null 2>&1
+              npm install --ignore-scripts --no-audit --no-fund playwright@1.54.2
+              npx playwright install --with-deps chromium
+            ) >"${raw}/playwright-install.log" 2>&1
+            playwright_exit=$?
+            echo "${playwright_exit}" >"${raw}/playwright-install.exit"
+            if [ "${playwright_exit}" -ne 0 ]; then overall=1; failure_step=playwright-install; fi
+          fi
+
+          if [ "${overall}" -eq 0 ]; then
+            MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
+            MOVIE_BUFF_CORE_SHA="${CORE_SHA}" \
+            MOVIE_BUFF_APP_URL="http://127.0.0.1:3001" \
+            MOVIE_BUFF_LOCAL_USERS_OUTPUT="${users}" \
+            MOVIE_BUFF_EVIDENCE_DIR="${evidence}" \
+            PLAYWRIGHT_PACKAGE_ROOT="${playwright_root}" \
+              node scripts/movie-buff-core-v11-three-browser-lab.mjs \
+              >"${raw}/three-browser.log" 2>&1
+            browser_exit=$?
+            echo "${browser_exit}" >"${raw}/three-browser.exit"
+            if [ "${browser_exit}" -ne 0 ]; then overall=1; failure_step=three-browser; fi
+          fi
+
+          if [ -n "${app_pid}" ]; then kill "${app_pid}" >/dev/null 2>&1 || true; wait "${app_pid}" >/dev/null 2>&1 || true; fi
+          (cd "${work}" && supabase stop --no-backup) >"${raw}/cleanup.log" 2>&1
+          cleanup_exit=$?
+          echo "${cleanup_exit}" >"${raw}/cleanup.exit"
+          [ "${cleanup_exit}" -eq 0 ] || overall=1
+          rm -rf "${work}" "${users}" "${playwright_root}"
+
+          python3 - "${raw}" "${evidence}" <<'PY'
+          import pathlib,re,sys
+          raw=pathlib.Path(sys.argv[1]); out=pathlib.Path(sys.argv[2]); out.mkdir(parents=True,exist_ok=True)
+          patterns=[
+            (r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[REDACTED_JWT]'),
+            (r'postgres(?:ql)?://[^\s]+','postgresql://[REDACTED_LOCAL_DB_URL]'),
+            (r'sb_(?:secret|publishable)_[A-Za-z0-9_-]+','[REDACTED_SUPABASE_KEY]'),
+            (r'(?i)(authorization:\s*bearer\s+)[A-Za-z0-9._-]+',r'\1[REDACTED]'),
+          ]
+          for p in raw.iterdir():
+            if not p.is_file(): continue
+            text=p.read_text(encoding='utf-8',errors='replace')
+            for pattern,replacement in patterns: text=re.sub(pattern,replacement,text)
+            (out/p.name).write_text(text,encoding='utf-8')
+          PY
+          {
+            echo "classification=$([ "${overall}" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "failure_step=${failure_step}"
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "source_branch=${GITHUB_REF_NAME}"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "core_sha=${CORE_SHA}"
+            echo "core_tree=${CORE_TREE}"
+            echo "lobby_auth_sha=89cb58be26ab24883e70a73ae41ceeb637e21ec7"
+            echo "target=disposable-localhost"
+            echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"${evidence}/metadata.txt"
+          (cd "${evidence}" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt) || overall=1
+          git diff --check || overall=1
+          test -z "$(git status --porcelain)" || overall=1
+          exit "${overall}"
+
+      - name: Upload exact browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-core-v11-browser-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-core-v11-browser
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify clean postflight
+        if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"

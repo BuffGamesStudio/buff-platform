@@ -1,4 +1,4 @@
-﻿create or replace function public.get_movie_buff_final_results(
+create or replace function public.get_movie_buff_final_results(
   p_room_id uuid
 )
 returns table (
