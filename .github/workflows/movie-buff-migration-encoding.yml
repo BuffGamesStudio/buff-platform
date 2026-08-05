@@ -3,7 +3,7 @@ name: Movie Buff migration encoding evidence
 on:
   push:
     branches:
-      - copilot/MOV-14-migration-encoding
+      - validation/MOV-17-encoding-twin-v2
     paths:
       - ".github/workflows/movie-buff-migration-encoding.yml"
       - "scripts/movie-buff-migration-encoding-check.mjs"
@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 10
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EXPECTED_BRANCH: copilot/MOV-14-migration-encoding
+      EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
       BASELINE_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
 
     steps:
@@ -100,7 +100,7 @@ jobs:
           git diff --check
           test -z "$(git status --porcelain)"
           {
-            echo "lane=MOV-14-integration-support"
+            echo "lane=MOV-17-validation-twin-v2-encoding"
             echo "source_sha=$(git rev-parse HEAD)"
             echo "baseline_sha=${BASELINE_SHA}"
             echo "runner_os=${RUNNER_OS}"
@@ -129,7 +129,7 @@ jobs:
     timeout-minutes: 10
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EXPECTED_BRANCH: copilot/MOV-14-migration-encoding
+      EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
       BASELINE_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
 
     steps:
@@ -197,7 +197,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
           if (git status --porcelain) { throw 'Checkout is not clean after validation' }
           @(
-            'lane=MOV-14-integration-support'
+            'lane=MOV-17-validation-twin-v2-encoding'
             "source_sha=$((git rev-parse HEAD).Trim())"
             "baseline_sha=$env:BASELINE_SHA"
             "runner_os=$env:RUNNER_OS"
