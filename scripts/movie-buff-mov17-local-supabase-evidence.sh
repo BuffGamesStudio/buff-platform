@@ -11,11 +11,16 @@ RAW_ROOT="${WORK_ROOT}/raw"
 
 STACK_START="UNKNOWN"
 MIGRATION_APPLY="UNKNOWN"
-PGTAP_INITIAL="UNKNOWN"
-ROLLBACK_APPLY="UNKNOWN"
-ROLLBACK_PROBE="UNKNOWN"
-FORWARD_REAPPLY="UNKNOWN"
-PGTAP_FORWARD="UNKNOWN"
+SERVER_PGTAP_INITIAL="UNKNOWN"
+MATCH_START_PGTAP_INITIAL="UNKNOWN"
+MATCH_START_ROLLBACK_APPLY="UNKNOWN"
+MATCH_START_ROLLBACK_PROBE="UNKNOWN"
+MATCH_START_FORWARD_REAPPLY="UNKNOWN"
+MATCH_START_PGTAP_FORWARD="UNKNOWN"
+RECONNECT_ROLLBACK_APPLY="UNKNOWN"
+RECONNECT_ROLLBACK_PROBE="UNKNOWN"
+RECONNECT_FORWARD_REAPPLY="UNKNOWN"
+SERVER_PGTAP_FORWARD="UNKNOWN"
 CLEANUP="UNKNOWN"
 FAILURE_STEP=""
 
@@ -90,11 +95,16 @@ write_metadata() {
     printf 'psql_version=%s\n' "$(psql --version 2>/dev/null || printf 'UNKNOWN')"
     printf 'stack_start=%s\n' "$STACK_START"
     printf 'migration_apply=%s\n' "$MIGRATION_APPLY"
-    printf 'pgtap_initial=%s\n' "$PGTAP_INITIAL"
-    printf 'rollback_apply=%s\n' "$ROLLBACK_APPLY"
-    printf 'rollback_probe=%s\n' "$ROLLBACK_PROBE"
-    printf 'forward_reapply=%s\n' "$FORWARD_REAPPLY"
-    printf 'pgtap_forward=%s\n' "$PGTAP_FORWARD"
+    printf 'server_pgtap_initial=%s\n' "$SERVER_PGTAP_INITIAL"
+    printf 'match_start_pgtap_initial=%s\n' "$MATCH_START_PGTAP_INITIAL"
+    printf 'match_start_rollback_apply=%s\n' "$MATCH_START_ROLLBACK_APPLY"
+    printf 'match_start_rollback_probe=%s\n' "$MATCH_START_ROLLBACK_PROBE"
+    printf 'match_start_forward_reapply=%s\n' "$MATCH_START_FORWARD_REAPPLY"
+    printf 'match_start_pgtap_forward=%s\n' "$MATCH_START_PGTAP_FORWARD"
+    printf 'reconnect_rollback_apply=%s\n' "$RECONNECT_ROLLBACK_APPLY"
+    printf 'reconnect_rollback_probe=%s\n' "$RECONNECT_ROLLBACK_PROBE"
+    printf 'reconnect_forward_reapply=%s\n' "$RECONNECT_FORWARD_REAPPLY"
+    printf 'server_pgtap_forward=%s\n' "$SERVER_PGTAP_FORWARD"
     printf 'cleanup=%s\n' "$CLEANUP"
     printf 'three_client_race=UNKNOWN\n'
     printf 'browser_behavior=UNKNOWN\n'
@@ -108,10 +118,14 @@ write_metadata() {
 }
 
 hash_evidence() {
-  find "$EVIDENCE_ROOT" -maxdepth 1 -type f ! -name sha256.txt -print0 \
-    | sort -z \
-    | xargs -0 sha256sum \
-    >"$EVIDENCE_ROOT/sha256.txt"
+  (
+    cd "$EVIDENCE_ROOT" || exit 1
+    find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+      | sort -z \
+      | xargs -0 sha256sum \
+      > sha256.txt
+    sha256sum -c sha256.txt
+  )
 }
 
 cleanup_and_exit() {
@@ -140,14 +154,19 @@ cleanup_and_exit() {
   fi
 
   rm -rf "$WORK_ROOT"
+  unset PGPASSWORD
 
   if [[ "$status" -eq 0 ]]; then
     write_metadata PASS
-    hash_evidence
-    write_classification PASS
+    hash_evidence || status=1
   else
     write_metadata FAIL
-    hash_evidence
+    hash_evidence || true
+  fi
+
+  if [[ "$status" -eq 0 ]]; then
+    write_classification PASS
+  else
     write_classification FAIL
   fi
   exit "$status"
@@ -258,71 +277,126 @@ PY
   if ! run_step migration-ledger psql \
     -h 127.0.0.1 -p 55322 -U postgres -d postgres \
     -v ON_ERROR_STOP=1 -Atc \
-    "select version from supabase_migrations.schema_migrations where version = '20260804083500';"; then
+    "select version from supabase_migrations.schema_migrations where version in ('20260804083500','20260804083600') order by version;"; then
     MIGRATION_APPLY="FAIL"
     FAILURE_STEP="migration-ledger"
     return 1
   fi
-  if ! grep -qx '20260804083500' "$EVIDENCE_ROOT/migration-ledger.stdout.txt"; then
-    MIGRATION_APPLY="FAIL"
-    FAILURE_STEP="migration-ledger-missing-repair"
-    return 1
-  fi
+  for required_version in 20260804083500 20260804083600; do
+    if ! grep -qx "$required_version" "$EVIDENCE_ROOT/migration-ledger.stdout.txt"; then
+      MIGRATION_APPLY="FAIL"
+      FAILURE_STEP="migration-ledger-missing-${required_version}"
+      return 1
+    fi
+  done
 
   if ! (
     cd "$WORK_ROOT" &&
-      run_step pgtap-initial supabase test db \
+      run_step server-pgtap-initial supabase test db \
         supabase/tests/movie_buff_server_phase_machine_test.sql --local
   ); then
-    PGTAP_INITIAL="FAIL"
-    FAILURE_STEP="pgtap-initial"
+    SERVER_PGTAP_INITIAL="FAIL"
+    FAILURE_STEP="server-pgtap-initial"
     return 1
   fi
-  PGTAP_INITIAL="PASS"
+  SERVER_PGTAP_INITIAL="PASS"
 
-  if ! run_step rollback-apply psql \
+  if ! (
+    cd "$WORK_ROOT" &&
+      run_step match-start-pgtap-initial supabase test db \
+        supabase/tests/movie_buff_match_start_handoff_test.sql --local
+  ); then
+    MATCH_START_PGTAP_INITIAL="FAIL"
+    FAILURE_STEP="match-start-pgtap-initial"
+    return 1
+  fi
+  MATCH_START_PGTAP_INITIAL="PASS"
+
+  if ! run_step match-start-rollback-apply \
+    env "PGOPTIONS=-c movie_buff.allow_match_start_containment=on" \
+    psql -h 127.0.0.1 -p 55322 -U postgres -d postgres \
+      -v ON_ERROR_STOP=1 \
+      -f "$WORK_ROOT/supabase/rollbacks/20260804083600_movie_buff_match_start_handoff.rollback.sql"; then
+    MATCH_START_ROLLBACK_APPLY="FAIL"
+    FAILURE_STEP="match-start-rollback-apply"
+    return 1
+  fi
+  MATCH_START_ROLLBACK_APPLY="PASS"
+
+  if ! (
+    cd "$WORK_ROOT" &&
+      run_step match-start-rollback-probe supabase test db \
+        supabase/tests/movie_buff_match_start_handoff_rollback_test.sql --local
+  ); then
+    MATCH_START_ROLLBACK_PROBE="FAIL"
+    FAILURE_STEP="match-start-rollback-probe"
+    return 1
+  fi
+  MATCH_START_ROLLBACK_PROBE="PASS"
+
+  if ! run_step match-start-forward-reapply psql \
+    -h 127.0.0.1 -p 55322 -U postgres -d postgres \
+    -v ON_ERROR_STOP=1 \
+    -f "$WORK_ROOT/supabase/migrations/20260804083600_movie_buff_match_start_handoff.sql"; then
+    MATCH_START_FORWARD_REAPPLY="FAIL"
+    FAILURE_STEP="match-start-forward-reapply"
+    return 1
+  fi
+  MATCH_START_FORWARD_REAPPLY="PASS"
+
+  if ! (
+    cd "$WORK_ROOT" &&
+      run_step match-start-pgtap-forward supabase test db \
+        supabase/tests/movie_buff_match_start_handoff_test.sql --local
+  ); then
+    MATCH_START_PGTAP_FORWARD="FAIL"
+    FAILURE_STEP="match-start-pgtap-forward"
+    return 1
+  fi
+  MATCH_START_PGTAP_FORWARD="PASS"
+
+  if ! run_step reconnect-rollback-apply psql \
     -h 127.0.0.1 -p 55322 -U postgres -d postgres \
     -v ON_ERROR_STOP=1 \
     -f "$WORK_ROOT/supabase/rollbacks/20260804083500_movie_buff_reconnect_buster_boundary_repair.rollback.sql"; then
-    ROLLBACK_APPLY="FAIL"
-    FAILURE_STEP="rollback-apply"
+    RECONNECT_ROLLBACK_APPLY="FAIL"
+    FAILURE_STEP="reconnect-rollback-apply"
     return 1
   fi
-  ROLLBACK_APPLY="PASS"
+  RECONNECT_ROLLBACK_APPLY="PASS"
 
   if ! (
     cd "$WORK_ROOT" &&
-      run_step rollback-probe supabase test db \
+      run_step reconnect-rollback-probe supabase test db \
         supabase/tests/movie_buff_reconnect_buster_rollback_probe.sql --local
   ); then
-    ROLLBACK_PROBE="FAIL"
-    FAILURE_STEP="rollback-probe"
+    RECONNECT_ROLLBACK_PROBE="FAIL"
+    FAILURE_STEP="reconnect-rollback-probe"
     return 1
   fi
-  ROLLBACK_PROBE="PASS"
+  RECONNECT_ROLLBACK_PROBE="PASS"
 
-  if ! run_step forward-reapply psql \
+  if ! run_step reconnect-forward-reapply psql \
     -h 127.0.0.1 -p 55322 -U postgres -d postgres \
     -v ON_ERROR_STOP=1 \
     -f "$WORK_ROOT/supabase/migrations/20260804083500_movie_buff_reconnect_buster_boundary_repair.sql"; then
-    FORWARD_REAPPLY="FAIL"
-    FAILURE_STEP="forward-reapply"
+    RECONNECT_FORWARD_REAPPLY="FAIL"
+    FAILURE_STEP="reconnect-forward-reapply"
     return 1
   fi
-  FORWARD_REAPPLY="PASS"
+  RECONNECT_FORWARD_REAPPLY="PASS"
 
   if ! (
     cd "$WORK_ROOT" &&
-      run_step pgtap-forward supabase test db \
+      run_step server-pgtap-forward supabase test db \
         supabase/tests/movie_buff_server_phase_machine_test.sql --local
   ); then
-    PGTAP_FORWARD="FAIL"
-    FAILURE_STEP="pgtap-forward"
+    SERVER_PGTAP_FORWARD="FAIL"
+    FAILURE_STEP="server-pgtap-forward"
     return 1
   fi
-  PGTAP_FORWARD="PASS"
+  SERVER_PGTAP_FORWARD="PASS"
 
-  unset PGPASSWORD
   if [[ -n "$(git -C "$SOURCE_ROOT" status --porcelain)" ]]; then
     FAILURE_STEP="clean-worktree-postflight"
     return 1
