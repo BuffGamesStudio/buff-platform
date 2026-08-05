@@ -34,20 +34,22 @@ test("visual runtime can never advance gameplay", () => {
 
 test("MOV-17 canonical phases map to passive MOV-18 visual phases", () => {
   const cases = [
-    ["round_intro", null, "round_intro"],
-    ["vip_lock", null, "vip_selection"],
-    ["board_select", null, "board"],
-    ["transition", "tile-7", "film_slate_transition"],
-    ["playback", "tile-7", "playback"],
-    ["answer", "tile-7", "answer"],
-    ["results", "tile-7", "results"],
-    ["finished", null, "match_complete"],
+    ["round_intro", null, null, "round_intro"],
+    ["vip_lock", null, null, "vip_selection"],
+    ["board_select", null, null, "board"],
+    ["transition", "tile-7", "curtain", "curtain_transition"],
+    ["transition", "tile-7", "film_slate", "film_slate_transition"],
+    ["playback", "tile-7", null, "playback"],
+    ["answer", "tile-7", null, "answer"],
+    ["results", "tile-7", null, "results"],
+    ["finished", null, null, "match_complete"],
   ];
 
-  for (const [phase, selectedTileId, expected] of cases) {
+  for (const [phase, selectedTileId, transitionPresentation, expected] of cases) {
     const mapping = mapMovieBuffAuthoritativePhaseToVisualPhase({
       phase,
       selectedTileId,
+      transitionPresentation,
     });
     assert.equal(mapping.valid, true, phase);
     assert.equal(mapping.phase, expected, phase);
@@ -57,17 +59,20 @@ test("MOV-17 canonical phases map to passive MOV-18 visual phases", () => {
 
 test("canonical phase contradictions and terminal failures map to error", () => {
   const cases = [
-    ["board_select", "tile-7", "BOARD_SELECT_HAS_SELECTED_TILE"],
-    ["transition", null, "TRANSITION_MISSING_SELECTED_TILE"],
-    ["abandoned", null, "MATCH_ABANDONED"],
-    ["blocked", null, "MATCH_BLOCKED"],
-    ["invented_phase", null, "UNKNOWN_CANONICAL_PHASE"],
+    ["board_select", "tile-7", null, "BOARD_SELECT_HAS_SELECTED_TILE"],
+    ["transition", null, "curtain", "TRANSITION_MISSING_SELECTED_TILE"],
+    ["transition", "tile-7", null, "TRANSITION_PRESENTATION_MISSING"],
+    ["playback", "tile-7", "film_slate", "TRANSITION_PRESENTATION_OUTSIDE_TRANSITION"],
+    ["abandoned", null, null, "MATCH_ABANDONED"],
+    ["blocked", null, null, "MATCH_BLOCKED"],
+    ["invented_phase", null, null, "UNKNOWN_CANONICAL_PHASE"],
   ];
 
-  for (const [phase, selectedTileId, reason] of cases) {
+  for (const [phase, selectedTileId, transitionPresentation, reason] of cases) {
     const mapping = mapMovieBuffAuthoritativePhaseToVisualPhase({
       phase,
       selectedTileId,
+      transitionPresentation,
     });
     assert.deepEqual(mapping, {
       phase: "error",
