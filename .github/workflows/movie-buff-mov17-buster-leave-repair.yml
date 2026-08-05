@@ -21,8 +21,6 @@ jobs:
     env:
       EXPECTED_SHA: ${{ github.sha }}
       EXPECTED_BRANCH: copilot/MOV-17-shared-phase-machine
-      SOURCE_EVIDENCE: ${{ runner.temp }}/mov17-buster-leave-source
-      DATABASE_EVIDENCE: ${{ runner.temp }}/mov17-buster-leave-database
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
       SUPABASE_SERVICE_ROLE_KEY: local-placeholder
@@ -50,7 +48,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "${SOURCE_EVIDENCE}" "${DATABASE_EVIDENCE}"
+          echo "SOURCE_EVIDENCE=${RUNNER_TEMP}/mov17-buster-leave-source" >> "${GITHUB_ENV}"
+          echo "DATABASE_EVIDENCE=${RUNNER_TEMP}/mov17-buster-leave-database" >> "${GITHUB_ENV}"
+          mkdir -p \
+            "${RUNNER_TEMP}/mov17-buster-leave-source" \
+            "${RUNNER_TEMP}/mov17-buster-leave-database"
           test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
           test -z "$(git status --porcelain)"
