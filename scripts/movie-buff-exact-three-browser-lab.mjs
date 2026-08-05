@@ -25,10 +25,24 @@ if (!["127.0.0.1", "localhost", "::1"].includes(target.hostname)) {
 }
 const checkoutSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 assert.equal(checkoutSha, expectedSha);
-assert.equal(
-  execFileSync("git", ["rev-parse", `${expectedSha}^`], { encoding: "utf8" }).trim(),
-  compositionSha,
-  "validation harness commit must have the immutable composition as its direct parent",
+execFileSync("git", ["merge-base", "--is-ancestor", compositionSha, expectedSha]);
+const harnessDelta = execFileSync(
+  "git",
+  ["diff", "--name-only", `${compositionSha}..${expectedSha}`],
+  { encoding: "utf8" },
+)
+  .trim()
+  .split("\n")
+  .filter(Boolean)
+  .sort();
+assert.deepEqual(
+  harnessDelta,
+  [
+    ".github/workflows/movie-buff-exact-composition-labs.yml",
+    "scripts/movie-buff-exact-local-users.mjs",
+    "scripts/movie-buff-exact-three-browser-lab.mjs",
+  ].sort(),
+  "validation harness must contain only the approved three-file delta above the immutable composition",
 );
 
 fs.mkdirSync(evidenceDir, { recursive: true });
