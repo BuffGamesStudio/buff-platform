@@ -12,17 +12,35 @@ type RouteContext = {
   }>;
 };
 
+const LOOPBACK_HOSTNAMES = new Set([
+  "localhost",
+  "127.0.0.1",
+  "::1",
+  "[::1]",
+]);
+
 function redirectToResolvedAsset(
   request: Request,
   assetUrl: string,
 ) {
+  const requestUrl = new URL(request.url);
+  const resolvedAsset = new URL(assetUrl, requestUrl);
+  const redirectUrl =
+    LOOPBACK_HOSTNAMES.has(requestUrl.hostname) &&
+    LOOPBACK_HOSTNAMES.has(resolvedAsset.hostname)
+      ? new URL(
+          `${resolvedAsset.pathname}${resolvedAsset.search}`,
+          requestUrl.origin,
+        )
+      : resolvedAsset;
+
   return NextResponse.redirect(
-    new URL(assetUrl, request.url),
+    redirectUrl,
     {
       status: 307,
       headers: {
         "Cache-Control": "no-store, max-age=0",
-        "X-Movie-Buff-Asset-Url": assetUrl,
+        "X-Movie-Buff-Asset-Url": `${redirectUrl.pathname}${redirectUrl.search}`,
       },
     },
   );
