@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveMovieBuffBoardAfterRound } from "@/lib/server/movieBuffBoard";
 import {
+  MovieBuffPhaseRouteError,
   movieBuffPhaseErrorResponse,
   requireMovieBuffPhaseMember,
 } from "@/lib/server/movieBuffPhaseRouteAuthorization";
@@ -31,15 +32,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result, { status: 200 });
   } catch (error) {
-    if (
-      error instanceof Error &&
-      [
-        "Authentication required.",
-        "Room access denied.",
-        "Unable to verify Movie Buff membership.",
-        "Movie Buff caller client is unavailable.",
-      ].includes(error.message)
-    ) {
+    if (error instanceof MovieBuffPhaseRouteError) {
       return movieBuffPhaseErrorResponse(error);
     }
 
