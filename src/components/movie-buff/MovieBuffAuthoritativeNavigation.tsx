@@ -28,6 +28,7 @@ const LEGACY_MANUAL_LABELS = new Set([
 const AUTHORITATIVE_PHASE_PATHS = new Set([
   "/games/movie-buff/round-intro",
   "/games/movie-buff/board",
+  "/games/movie-buff/board-preview",
   "/games/movie-buff/play",
   "/games/movie-buff/round-results",
 ]);

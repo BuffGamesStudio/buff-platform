@@ -43,13 +43,21 @@ const replacement = `    await page.waitForFunction(() => {
     });`;
 
 assert.ok(source.includes(anchor), "Round Intro stabilization anchor was not found");
-const transformed = source.replace(anchor, replacement);
+let transformed = source.replace(anchor, replacement);
 assert.notEqual(transformed, source, "Round Intro stabilization was not applied");
 assert.ok(!transformed.includes('body.includes("Private VIP Selection")'));
 
+const legacyBoardRoute = "/\\/games\\/movie-buff\\/board\\?/";
+const canonicalBoardRoute = "/\\/games\\/movie-buff\\/board-preview\\?/";
+const legacyBoardRouteCount = transformed.split(legacyBoardRoute).length - 1;
+assert.equal(legacyBoardRouteCount, 2, "expected exactly two stale board route assertions");
+transformed = transformed.replaceAll(legacyBoardRoute, canonicalBoardRoute);
+assert.equal(transformed.split(legacyBoardRoute).length - 1, 0);
+assert.equal(transformed.split(canonicalBoardRoute).length - 1, 2);
+
 const transformedPath = path.join(
   runnerTemp,
-  `movie-buff-three-client-full-journey-v3-${process.pid}.mjs`,
+  `movie-buff-three-client-full-journey-v4-${process.pid}.mjs`,
 );
 fs.writeFileSync(transformedPath, transformed, "utf8");
 
