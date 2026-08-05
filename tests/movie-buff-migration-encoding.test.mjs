@@ -11,22 +11,21 @@ const validator = path.join(
   "scripts/movie-buff-migration-encoding-check.mjs",
 );
 
-function runValidator(root, outputPath = null) {
+function runValidator(root) {
   return spawnSync(process.execPath, [validator, root], {
     cwd: repositoryRoot,
     encoding: "utf8",
     env: {
       ...process.env,
       MOVIE_BUFF_REPOSITORY_ROOT: repositoryRoot,
-      ...(outputPath
-        ? { MOVIE_BUFF_MIGRATION_ENCODING_OUTPUT: outputPath }
-        : {}),
     },
   });
 }
 
 function withFixture(name, bytes, assertion) {
-  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), `mov14-${name}-`));
+  const fixtureRoot = fs.mkdtempSync(
+    path.join(repositoryRoot, `.mov14-${name}-`),
+  );
   const relativeRoot = path.relative(repositoryRoot, fixtureRoot);
   const sqlPath = path.join(fixtureRoot, "fixture.sql");
   fs.writeFileSync(sqlPath, bytes);
