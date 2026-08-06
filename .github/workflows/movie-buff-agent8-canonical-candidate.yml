@@ -1,0 +1,391 @@
+name: Movie Buff Agent 8 canonical candidate
+
+on:
+  push:
+    branches:
+      - release-candidate/movie-buff-canonical-20260805-agent8-v3
+    paths:
+      - .github/workflows/movie-buff-agent8-canonical-candidate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: release-candidate/movie-buff-canonical-20260805-agent8-v3
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  repository-build:
+    name: Repository and production build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Bind exact candidate
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test -z "$(git status --porcelain)"
+          mkdir -p "$RUNNER_TEMP/repository-build"
+          {
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "branch=${GITHUB_REF_NAME}"
+            echo "sha=$(git rev-parse HEAD)"
+            echo "tree=$(git rev-parse HEAD^{tree})"
+            echo "parents=$(git show -s --format=%P HEAD)"
+          } > "$RUNNER_TEMP/repository-build/identity.txt"
+          git ls-tree -r --full-tree HEAD > "$RUNNER_TEMP/repository-build/file-inventory.txt"
+          find supabase/migrations -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/repository-build/migrations.sha256"
+          find scripts .github/workflows -type f \( -name '*.sh' -o -name '*.ps1' -o -name '*.mjs' -o -name '*.yml' \) -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/repository-build/wrappers.sha256"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Source contracts
+        run: |
+          set -o pipefail
+          node --test tests/movie-buff-*.test.mjs 2>&1 | tee "$RUNNER_TEMP/repository-build/source-tests.tap"
+      - name: TypeScript and build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+          SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+        run: |
+          set -o pipefail
+          npx --no-install tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/repository-build/typescript.txt"
+          npm run build 2>&1 | tee "$RUNNER_TEMP/repository-build/build.txt"
+      - name: Finalize evidence
+        if: always()
+        run: |
+          set -uo pipefail
+          git diff --check > "$RUNNER_TEMP/repository-build/git-diff-check.txt" 2>&1
+          test -z "$(git status --porcelain)"
+          cd "$RUNNER_TEMP/repository-build"
+          find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt
+          sha256sum -c sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent8-repository-build-${{ github.sha }}
+          path: ${{ runner.temp }}/repository-build
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-digital-twin:
+    name: Windows command digital twin
+    runs-on: windows-2025
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Bind exact candidate
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -ne $env:EXPECTED_BRANCH) { throw 'branch mismatch' }
+          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) { throw 'SHA mismatch' }
+          if ((git status --porcelain)) { throw 'dirty preflight' }
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\windows" | Out-Null
+          @(
+            "branch=$env:GITHUB_REF_NAME",
+            "sha=$((git rev-parse HEAD).Trim())",
+            "tree=$((git rev-parse 'HEAD^{tree}').Trim())",
+            "parents=$((git show -s --format=%P HEAD).Trim())"
+          ) | Set-Content "$env:RUNNER_TEMP\windows\identity.txt"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Windows source and build commands
+        shell: pwsh
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+          SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+        run: |
+          node --test tests/movie-buff-*.test.mjs *>&1 | Tee-Object "$env:RUNNER_TEMP\windows\source-tests.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'source tests failed' }
+          npx --no-install tsc --noEmit *>&1 | Tee-Object "$env:RUNNER_TEMP\windows\typescript.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'TypeScript failed' }
+          npm run build *>&1 | Tee-Object "$env:RUNNER_TEMP\windows\build.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+      - name: Finalize evidence
+        if: always()
+        shell: pwsh
+        run: |
+          git diff --check | Set-Content "$env:RUNNER_TEMP\windows\git-diff-check.txt"
+          if ((git status --porcelain)) { throw 'dirty postflight' }
+          Get-ChildItem "$env:RUNNER_TEMP\windows" -File | Sort-Object FullName | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path)" } | Set-Content "$env:RUNNER_TEMP\windows\sha256.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent8-windows-${{ github.sha }}
+          path: ${{ runner.temp }}/windows
+          if-no-files-found: error
+          retention-days: 14
+
+  disposable-database:
+    name: Disposable database application
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Reset and execute pgTAP
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          mkdir -p "$RUNNER_TEMP/database" "$RUNNER_TEMP/database-stack"
+          cp -a supabase "$RUNNER_TEMP/database-stack/supabase"
+          python3 - "$RUNNER_TEMP/database-stack/supabase/config.toml" "agent8-db-${GITHUB_RUN_ID}" <<'PY'
+          import pathlib,re,sys
+          p=pathlib.Path(sys.argv[1]); t=p.read_text(encoding='utf-8'); project=sys.argv[2]
+          t,n=re.subn(r'(?m)^project_id\s*=\s*"[^"]+"\s*$',f'project_id = "{project}"',t,count=1)
+          t,m=re.subn(r'(?ms)(^\[db\.seed\]\s*.*?^enabled\s*=\s*)true(\s*$)',r'\1false\2',t,count=1)
+          if n != 1 or m != 1: raise SystemExit('config rewrite failed')
+          p.write_text(t,encoding='utf-8')
+          PY
+          cd "$RUNNER_TEMP/database-stack"
+          supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor > "$RUNNER_TEMP/database/start.txt" 2>&1
+          trap 'supabase stop --no-backup > "$RUNNER_TEMP/database/cleanup.txt" 2>&1 || true' EXIT
+          supabase db reset --local > "$RUNNER_TEMP/database/reset.txt" 2>&1
+          supabase migration list --local > "$RUNNER_TEMP/database/migration-ledger.txt" 2>&1
+          supabase test db > "$RUNNER_TEMP/database/pgtap.txt" 2>&1
+      - name: Finalize evidence
+        if: always()
+        run: |
+          set -uo pipefail
+          cd "$RUNNER_TEMP/database"
+          find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt
+          sha256sum -c sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent8-database-${{ github.sha }}
+          path: ${{ runner.temp }}/database
+          if-no-files-found: error
+          retention-days: 14
+
+  race-concurrency:
+    name: Race and concurrency contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute focused concurrency contracts
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/race"
+          mapfile -t tests < <(find tests -maxdepth 1 -type f \( -iname '*race*.test.mjs' -o -iname '*reconnect*.test.mjs' -o -iname '*buster*.test.mjs' -o -iname '*matchmaking*.test.mjs' -o -iname '*vip*.test.mjs' -o -iname '*leave*.test.mjs' \) | sort)
+          test "${#tests[@]}" -gt 0
+          node --test "${tests[@]}" 2>&1 | tee "$RUNNER_TEMP/race/concurrency-contracts.tap"
+          printf '%s\n' "${tests[@]}" > "$RUNNER_TEMP/race/test-inventory.txt"
+          echo "Real hosted behavior is not inferred from this job." > "$RUNNER_TEMP/race/scope.txt"
+      - name: Finalize evidence
+        if: always()
+        run: |
+          set -uo pipefail
+          cd "$RUNNER_TEMP/race"
+          find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt
+          sha256sum -c sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent8-race-${{ github.sha }}
+          path: ${{ runner.temp }}/race
+          if-no-files-found: error
+          retention-days: 14
+
+  three-client-browser:
+    name: Three-client browser journey
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install Chromium
+        run: npx --yes playwright@1.54.2 install --with-deps chromium
+      - name: Build and execute existing exact browser evidence
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+          SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+          MOVIE_BUFF_EXPECTED_GIT_SHA: ${{ github.sha }}
+          MOVIE_BUFF_EVIDENCE_OUTPUT: ${{ runner.temp }}/browser
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/browser"
+          npm run build > "$RUNNER_TEMP/browser/build.txt" 2>&1
+          node scripts/movie-buff-mov18-browser-evidence.mjs > "$RUNNER_TEMP/browser/browser.txt" 2>&1
+      - name: Finalize evidence
+        if: always()
+        run: |
+          set -uo pipefail
+          cd "$RUNNER_TEMP/browser"
+          find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt
+          sha256sum -c sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent8-browser-${{ github.sha }}
+          path: ${{ runner.temp }}/browser
+          if-no-files-found: error
+          retention-days: 14
+
+  security-personas:
+    name: Security and persona matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute bearer and persona contracts
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/security"
+          mapfile -t tests < <(find tests -maxdepth 1 -type f \( -iname '*persona*.test.mjs' -o -iname '*auth*.test.mjs' -o -iname '*security*.test.mjs' -o -iname '*bearer*.test.mjs' -o -iname '*board-route*.test.mjs' \) | sort)
+          test "${#tests[@]}" -gt 0
+          node --test "${tests[@]}" 2>&1 | tee "$RUNNER_TEMP/security/personas.tap"
+          printf '%s\n' "${tests[@]}" > "$RUNNER_TEMP/security/test-inventory.txt"
+      - name: Finalize evidence
+        if: always()
+        run: |
+          set -uo pipefail
+          cd "$RUNNER_TEMP/security"
+          find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt
+          sha256sum -c sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent8-security-${{ github.sha }}
+          path: ${{ runner.temp }}/security
+          if-no-files-found: error
+          retention-days: 14
+
+  rollback-reapply:
+    name: Containment rollback and forward reapply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Execute MOV-17 rollback/reapply controller
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/rollback"
+          bash scripts/movie-buff-mov17-buster-leave-evidence.sh "${GITHUB_SHA}" "$RUNNER_TEMP/rollback"
+      - name: Finalize evidence
+        if: always()
+        run: |
+          set -uo pipefail
+          cd "$RUNNER_TEMP/rollback"
+          find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt
+          sha256sum -c sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent8-rollback-${{ github.sha }}
+          path: ${{ runner.temp }}/rollback
+          if-no-files-found: error
+          retention-days: 14
+
+  artifact-integrity:
+    name: Artifact integrity and redaction
+    if: always()
+    needs:
+      - repository-build
+      - windows-digital-twin
+      - disposable-database
+      - race-concurrency
+      - three-client-browser
+      - security-personas
+      - rollback-reapply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: agent8-*-${{ github.sha }}
+          path: ${{ runner.temp }}/all-artifacts
+      - name: Verify portable manifests and scan secrets
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/integrity"
+          find "$RUNNER_TEMP/all-artifacts" -type f -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/integrity/all-files.sha256"
+          if grep -RIlE 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|sb_(secret|publishable)_[A-Za-z0-9_-]+|postgres(ql)?://[^/[:space:]]+:[^@[:space:]]+@|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' "$RUNNER_TEMP/all-artifacts" > "$RUNNER_TEMP/integrity/secret-scan.txt"; then
+            echo FAIL >> "$RUNNER_TEMP/integrity/secret-scan.txt"
+            exit 1
+          fi
+          echo PASS > "$RUNNER_TEMP/integrity/secret-scan.txt"
+          {
+            echo "candidate_sha=${GITHUB_SHA}"
+            echo "candidate_branch=${GITHUB_REF_NAME}"
+            echo "repository_build=${{ needs.repository-build.result }}"
+            echo "windows=${{ needs.windows-digital-twin.result }}"
+            echo "database=${{ needs.disposable-database.result }}"
+            echo "race=${{ needs.race-concurrency.result }}"
+            echo "browser=${{ needs.three-client-browser.result }}"
+            echo "security=${{ needs.security-personas.result }}"
+            echo "rollback=${{ needs.rollback-reapply.result }}"
+          } > "$RUNNER_TEMP/integrity/job-results.txt"
+          cd "$RUNNER_TEMP/integrity"
+          find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt
+          sha256sum -c sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent8-integrity-${{ github.sha }}
+          path: ${{ runner.temp }}/integrity
+          if-no-files-found: error
+          retention-days: 14
