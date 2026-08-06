@@ -38,7 +38,8 @@ PY
 
 python3 - "${SOURCE_SCRIPT}" "${DERIVED_SCRIPT}" "${DERIVED_GUARD}" <<'PY'
 import pathlib, shlex, sys
-source = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")nderived_guard = shlex.quote(sys.argv[3])
+source = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+derived_guard = shlex.quote(sys.argv[3])
 substitutions = [
     (
 '''if "p_required_player_ids" not in source:
