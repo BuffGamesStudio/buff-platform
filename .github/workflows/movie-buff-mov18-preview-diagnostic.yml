@@ -1,0 +1,101 @@
+name: MOV-18 preview browser diagnostic
+
+on:
+  push:
+    branches: [validation/movie-buff-mov18-preview-diagnostic-v1]
+    paths:
+      - ".github/workflows/movie-buff-mov18-preview-diagnostic.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Bind exact diagnostic ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "validation/movie-buff-mov18-preview-diagnostic-v1"
+          git merge-base --is-ancestor b7a635c4eb543555e864c7b65f6b959df99bd52c HEAD
+          node --check scripts/movie-buff-mov18-browser-evidence.mjs
+          test -z "$(git status --porcelain)"
+      - name: Install and build
+        shell: bash
+        env:
+          NEXT_PUBLIC_APP_URL: http://127.0.0.1:3001
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:55321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-browser-publishable-placeholder
+          SUPABASE_SERVICE_ROLE_KEY: local-browser-service-placeholder
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+          npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.54.2
+          npx playwright install --with-deps chromium
+          test -z "$(git status --porcelain)"
+      - name: Execute diagnostic browser run
+        shell: bash
+        env:
+          NEXT_PUBLIC_APP_URL: http://127.0.0.1:3001
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:55321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-browser-publishable-placeholder
+          SUPABASE_SERVICE_ROLE_KEY: local-browser-service-placeholder
+        run: |
+          set +e
+          evidence="${RUNNER_TEMP}/mov18-preview-diagnostic"
+          mkdir -p "$evidence"
+          npm run start -- --hostname 127.0.0.1 --port 3001 >"$evidence/application.log" 2>&1 &
+          app_pid=$!
+          healthy=1
+          for _ in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:3001/games/movie-buff/visual-runtime-preview >/dev/null; then healthy=0; break; fi
+            sleep 1
+          done
+          echo "$healthy" >"$evidence/application-health.exit"
+          if [ "$healthy" -eq 0 ]; then
+            MOVIE_BUFF_APP_URL=http://127.0.0.1:3001 \
+            MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
+            MOVIE_BUFF_EVIDENCE_DIR="$evidence" \
+              node scripts/movie-buff-mov18-browser-evidence.mjs >"$evidence/browser.stdout.log" 2>"$evidence/browser.stderr.log"
+            browser_exit=$?
+          else
+            browser_exit=125
+          fi
+          echo "$browser_exit" >"$evidence/browser.exit"
+          kill "$app_pid" >/dev/null 2>&1 || true
+          wait "$app_pid" >/dev/null 2>&1 || true
+          echo "--- browser stdout ---"
+          cat "$evidence/browser.stdout.log" 2>/dev/null || true
+          echo "--- browser stderr ---"
+          cat "$evidence/browser.stderr.log" 2>/dev/null || true
+          echo "--- browser evidence ---"
+          cat "$evidence/browser-evidence.json" 2>/dev/null || true
+          echo "--- application tail ---"
+          tail -200 "$evidence/application.log" 2>/dev/null || true
+          exit 0
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov18-preview-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/mov18-preview-diagnostic
+          if-no-files-found: error
+          retention-days: 7
+      - name: Verify clean postflight
+        if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
