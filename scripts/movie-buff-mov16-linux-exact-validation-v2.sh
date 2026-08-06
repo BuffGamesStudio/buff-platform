@@ -122,8 +122,8 @@ if source.count(old_encoding) != 1:
     raise SystemExit("Expected exactly one encoding-composition block.")
 source = source.replace(old_encoding, new_encoding)
 guard_call = "node scripts/movie-buff-mov16-evidence-guard.mjs"
-if source.count(guard_call) < 3:
-    raise SystemExit("Expected MOV-16 guard calls were not found.")
+if source.count(guard_call) != 2:
+    raise SystemExit(f"Expected exactly two MOV-16 guard calls, observed {source.count(guard_call)}.")
 source = source.replace(guard_call, f"node {derived_guard}")
 pathlib.Path(sys.argv[2]).write_text(source, encoding="utf-8")
 PY
