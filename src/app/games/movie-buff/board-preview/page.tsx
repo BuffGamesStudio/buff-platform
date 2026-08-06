@@ -11,17 +11,11 @@ export default async function MovieBuffBoardPreviewPage({
 }) {
   const resolved = searchParams ? await searchParams : undefined;
   const roomIdValue = resolved?.roomId;
-  const roomId =
-    typeof roomIdValue === "string" ? roomIdValue.trim() : "";
-  const roundValue = resolved?.round;
-  const round =
-    typeof roundValue === "string" && roundValue.trim()
-      ? roundValue.trim()
-      : null;
+  const roomId = typeof roomIdValue === "string" ? roomIdValue.trim() : "";
 
   if (!roomId) {
     redirect("/games/movie-buff/lobby");
   }
 
-  return <MovieBuffBoardRoomClient roomId={roomId} round={round} />;
+  return <MovieBuffBoardRoomClient roomId={roomId} />;
 }
