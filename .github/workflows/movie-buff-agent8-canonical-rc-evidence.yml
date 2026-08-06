@@ -1,0 +1,393 @@
+name: Movie Buff Agent 8 canonical RC evidence
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-agent8-canonical-rc-v1-20260805
+    paths:
+      - .github/workflows/movie-buff-agent8-canonical-rc-evidence.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-agent8-canonical-rc-v1-20260805
+  FUNCTIONAL_SHA: 5802b4b51f19d755a3380e2c717e6a10dcdeb8c1
+  FUNCTIONAL_TREE: 653f1bbb2f0e6d1851ead8c5f59dcec3fe0fcf12
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  repository-build:
+    name: Repository and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Bind exact controller and inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git rev-parse HEAD^)" = "${FUNCTIONAL_SHA}"
+          test "$(git rev-parse "${FUNCTIONAL_SHA}^{tree}")" = "${FUNCTIONAL_TREE}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          mapfile -t changed < <(git diff --name-only "${FUNCTIONAL_SHA}" HEAD)
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = ".github/workflows/movie-buff-agent8-canonical-rc-evidence.yml"
+          test -z "$(git status --porcelain)"
+      - name: Execute repository, source and build matrix
+        shell: bash
+        env:
+          NEXT_PUBLIC_APP_URL: http://127.0.0.1:3001
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:55321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-publishable-placeholder
+          SUPABASE_SERVICE_ROLE_KEY: local-service-placeholder
+        run: |
+          set +e
+          evidence="${RUNNER_TEMP}/agent8-repository-build"
+          mkdir -p "$evidence"
+          git rev-list --parents -n1 "${FUNCTIONAL_SHA}" >"$evidence/functional-parent-sequence.txt"
+          git ls-tree -r --full-tree "${FUNCTIONAL_SHA}" >"$evidence/file-inventory.txt"
+          find supabase/migrations -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum >"$evidence/migration-sha256.txt"
+          find scripts -maxdepth 1 -type f \( -name '*.sh' -o -name '*.mjs' -o -name '*.ps1' -o -name '*.py' \) -print0 | sort -z | xargs -0 sha256sum >"$evidence/wrapper-sha256.txt"
+          npm ci --ignore-scripts --no-audit --no-fund >"$evidence/npm-ci.log" 2>&1; ci=$?
+          node --test tests/movie-buff-*.test.mjs >"$evidence/node-tests.log" 2>&1; tests=$?
+          npx --no-install tsc --noEmit >"$evidence/typescript.log" 2>&1; typescript=$?
+          npm run build >"$evidence/build.log" 2>&1; build=$?
+          git diff --check >"$evidence/git-diff-check.log" 2>&1; diffcheck=$?
+          status=0
+          test -z "$(git status --porcelain)" || status=1
+          overall=0
+          for code in "$ci" "$tests" "$typescript" "$build" "$diffcheck" "$status"; do test "$code" -eq 0 || overall=1; done
+          {
+            echo "classification=$([[ $overall -eq 0 ]] && echo PASS || echo FAIL)"
+            echo "controller_sha=${GITHUB_SHA}"
+            echo "controller_tree=$(git rev-parse HEAD^{tree})"
+            echo "functional_sha=${FUNCTIONAL_SHA}"
+            echo "functional_tree=${FUNCTIONAL_TREE}"
+            echo "npm_ci_exit=$ci"
+            echo "node_tests_exit=$tests"
+            echo "typescript_exit=$typescript"
+            echo "build_exit=$build"
+            echo "git_diff_check_exit=$diffcheck"
+            echo "worktree_clean_exit=$status"
+            echo "hosted_state=UNTOUCHED"
+            echo "production_state=UNTOUCHED"
+            echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"$evidence/metadata.txt"
+          (cd "$evidence" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt)
+          exit "$overall"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent8-repository-build-${{ github.sha }}
+          path: ${{ runner.temp }}/agent8-repository-build
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-digital-twin:
+    name: Windows command digital twin
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Bind exact identity
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -ne $env:EXPECTED_BRANCH) { throw 'wrong branch' }
+          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) { throw 'wrong SHA' }
+          if ((git rev-parse HEAD^).Trim() -ne $env:FUNCTIONAL_SHA) { throw 'wrong functional parent' }
+          if ((git rev-parse "$env:FUNCTIONAL_SHA^{tree}").Trim() -ne $env:FUNCTIONAL_TREE) { throw 'wrong functional tree' }
+          if (git status --porcelain) { throw 'dirty checkout' }
+      - name: Execute Windows evidence drivers
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'agent8-windows'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $overall = 0
+          try { & scripts/movie-buff-mov15-windows-digital-twin.ps1 -ExpectedSha $env:GITHUB_SHA -EvidenceRoot (Join-Path $root 'mov15') } catch { $_ | Out-File (Join-Path $root 'mov15-error.txt'); $overall = 1 }
+          try { & scripts/movie-buff-mov17-windows-digital-twin.ps1 -ExpectedSha $env:GITHUB_SHA -EvidenceRoot (Join-Path $root 'mov17') } catch { $_ | Out-File (Join-Path $root 'mov17-error.txt'); $overall = 1 }
+          "classification=$(if ($overall -eq 0) {'PASS'} else {'FAIL'})" | Out-File (Join-Path $root 'metadata.txt')
+          "controller_sha=$env:GITHUB_SHA" | Add-Content (Join-Path $root 'metadata.txt')
+          "functional_sha=$env:FUNCTIONAL_SHA" | Add-Content (Join-Path $root 'metadata.txt')
+          Get-ChildItem -Path $root -File -Recurse | Sort-Object FullName | ForEach-Object { $hash = Get-FileHash $_.FullName -Algorithm SHA256; "$($hash.Hash.ToLower())  $($_.FullName.Substring($root.Length + 1).Replace('\','/'))" } | Out-File (Join-Path $root 'sha256.txt')
+          if (git status --porcelain) { $overall = 1 }
+          exit $overall
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent8-windows-${{ github.sha }}
+          path: ${{ runner.temp }}/agent8-windows
+          if-no-files-found: error
+          retention-days: 14
+
+  disposable-database:
+    name: Disposable database
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Bind and execute exact local Supabase rehearsal
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "${FUNCTIONAL_SHA}"
+          test "$(git rev-parse "${FUNCTIONAL_SHA}^{tree}")" = "${FUNCTIONAL_TREE}"
+          test -z "$(git status --porcelain)"
+          bash scripts/movie-buff-mov17-local-supabase-evidence.sh "${GITHUB_SHA}" "${RUNNER_TEMP}/agent8-database"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent8-database-${{ github.sha }}
+          path: ${{ runner.temp }}/agent8-database
+          if-no-files-found: error
+          retention-days: 14
+
+  race-concurrency:
+    name: Race and concurrency
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Adapt frozen exact-SHA race driver to RC identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          lab="${RUNNER_TEMP}/agent8-race-browser.sh"
+          cp scripts/movie-buff-core-v6-race-browser.sh "$lab"
+          python3 - "$lab" <<'PY'
+          import pathlib,sys
+          p=pathlib.Path(sys.argv[1]); s=p.read_text()
+          s=s.replace('BRANCH="validation/movie-buff-core-v6"','BRANCH="validation/movie-buff-agent8-canonical-rc-v1-20260805"')
+          s=s.replace('RAW_COMPOSITION="61a7ab96904323e1cb6dfae0e54e900d12a83db0"','RAW_COMPOSITION="5802b4b51f19d755a3380e2c717e6a10dcdeb8c1"')
+          s=s.replace('RAW_TREE="167191fe2a143bae2f197218949fbe5b2195726a"','RAW_TREE="653f1bbb2f0e6d1851ead8c5f59dcec3fe0fcf12"')
+          p.write_text(s)
+          PY
+          bash -n "$lab"
+          bash "$lab" race "${GITHUB_SHA}" "$(git rev-parse HEAD^{tree})" "${RUNNER_TEMP}/agent8-race"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent8-race-${{ github.sha }}
+          path: ${{ runner.temp }}/agent8-race
+          if-no-files-found: error
+          retention-days: 14
+
+  three-client-browser:
+    name: Three-client browser
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Adapt frozen exact-SHA browser driver to RC identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          lab="${RUNNER_TEMP}/agent8-race-browser.sh"
+          cp scripts/movie-buff-core-v6-race-browser.sh "$lab"
+          python3 - "$lab" <<'PY'
+          import pathlib,sys
+          p=pathlib.Path(sys.argv[1]); s=p.read_text()
+          s=s.replace('BRANCH="validation/movie-buff-core-v6"','BRANCH="validation/movie-buff-agent8-canonical-rc-v1-20260805"')
+          s=s.replace('RAW_COMPOSITION="61a7ab96904323e1cb6dfae0e54e900d12a83db0"','RAW_COMPOSITION="5802b4b51f19d755a3380e2c717e6a10dcdeb8c1"')
+          s=s.replace('RAW_TREE="167191fe2a143bae2f197218949fbe5b2195726a"','RAW_TREE="653f1bbb2f0e6d1851ead8c5f59dcec3fe0fcf12"')
+          p.write_text(s)
+          PY
+          bash -n "$lab"
+          bash "$lab" browser "${GITHUB_SHA}" "$(git rev-parse HEAD^{tree})" "${RUNNER_TEMP}/agent8-browser"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent8-browser-${{ github.sha }}
+          path: ${{ runner.temp }}/agent8-browser
+          if-no-files-found: error
+          retention-days: 14
+
+  security-personas:
+    name: Security and personas
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Execute security contracts and persona guards
+        shell: bash
+        run: |
+          set +e
+          evidence="${RUNNER_TEMP}/agent8-security"
+          mkdir -p "$evidence"
+          npm ci --ignore-scripts --no-audit --no-fund >"$evidence/npm-ci.log" 2>&1; ci=$?
+          node --test tests/movie-buff-board-route-personas.test.mjs tests/movie-buff-vip-authority.test.mjs tests/movie-buff-vip-finalize-contract.test.mjs tests/movie-buff-public-matchmaking-contract.test.mjs >"$evidence/security-tests.log" 2>&1; tests=$?
+          node --check scripts/movie-buff-mov16-evidence-guard.mjs >"$evidence/mov16-guard-parse.log" 2>&1; guard=$?
+          node scripts/movie-buff-migration-encoding-check.mjs >"$evidence/encoding.log" 2>&1; encoding=$?
+          overall=0; for code in "$ci" "$tests" "$guard" "$encoding"; do test "$code" -eq 0 || overall=1; done
+          {
+            echo "classification=$([[ $overall -eq 0 ]] && echo PASS || echo FAIL)"
+            echo "npm_ci_exit=$ci"
+            echo "security_tests_exit=$tests"
+            echo "mov16_guard_parse_exit=$guard"
+            echo "encoding_exit=$encoding"
+            echo "hosted_security=UNKNOWN"
+            echo "production_state=UNTOUCHED"
+          } >"$evidence/metadata.txt"
+          (cd "$evidence" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt)
+          test -z "$(git status --porcelain)" || overall=1
+          exit "$overall"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent8-security-${{ github.sha }}
+          path: ${{ runner.temp }}/agent8-security
+          if-no-files-found: error
+          retention-days: 14
+
+  rollback-forward-reapply:
+    name: Rollback and forward reapply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Execute guarded rollback and reapply rehearsal
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "${FUNCTIONAL_SHA}"
+          bash scripts/movie-buff-mov17-buster-leave-evidence.sh "${GITHUB_SHA}" "${RUNNER_TEMP}/agent8-rollback"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent8-rollback-${{ github.sha }}
+          path: ${{ runner.temp }}/agent8-rollback
+          if-no-files-found: error
+          retention-days: 14
+
+  artifact-integrity:
+    name: Artifact integrity
+    if: always()
+    needs:
+      - repository-build
+      - windows-digital-twin
+      - disposable-database
+      - race-concurrency
+      - three-client-browser
+      - security-personas
+      - rollback-forward-reapply
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: agent8-*-${{ github.sha }}
+          path: ${{ runner.temp }}/agent8-all
+      - name: Verify portable hashes and aggregate classifications
+        shell: bash
+        run: |
+          set +e
+          root="${RUNNER_TEMP}/agent8-all"
+          mkdir -p "$root/final"
+          overall=0
+          verified=0
+          while IFS= read -r manifest; do
+            dir="$(dirname "$manifest")"
+            (cd "$dir" && sha256sum -c "$(basename "$manifest")") >>"$root/final/hash-verification.log" 2>&1
+            code=$?; test "$code" -eq 0 || overall=1; verified=$((verified+1))
+          done < <(find "$root" -type f -name sha256.txt ! -path '*/final/*' | sort)
+          test "$verified" -gt 0 || overall=1
+          cat >"$root/final/job-results.txt" <<EOF
+          repository-build=${{ needs.repository-build.result }}
+          windows-digital-twin=${{ needs.windows-digital-twin.result }}
+          disposable-database=${{ needs.disposable-database.result }}
+          race-concurrency=${{ needs.race-concurrency.result }}
+          three-client-browser=${{ needs.three-client-browser.result }}
+          security-personas=${{ needs.security-personas.result }}
+          rollback-forward-reapply=${{ needs.rollback-forward-reapply.result }}
+          EOF
+          for result in \
+            "${{ needs.repository-build.result }}" \
+            "${{ needs.windows-digital-twin.result }}" \
+            "${{ needs.disposable-database.result }}" \
+            "${{ needs.race-concurrency.result }}" \
+            "${{ needs.three-client-browser.result }}" \
+            "${{ needs.security-personas.result }}" \
+            "${{ needs.rollback-forward-reapply.result }}"; do
+            test "$result" = success || overall=1
+          done
+          {
+            echo "classification=$([[ $overall -eq 0 ]] && echo PASS || echo FAIL)"
+            echo "controller_sha=${GITHUB_SHA}"
+            echo "functional_sha=${FUNCTIONAL_SHA}"
+            echo "verified_manifests=$verified"
+            echo "hosted_state=UNTOUCHED"
+            echo "production_state=UNTOUCHED"
+            echo "mov19_status=NOT_RUN_BY_AGENT8"
+          } >"$root/final/metadata.txt"
+          (cd "$root/final" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt)
+          exit "$overall"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent8-artifact-integrity-${{ github.sha }}
+          path: ${{ runner.temp }}/agent8-all/final
+          if-no-files-found: error
+          retention-days: 14
