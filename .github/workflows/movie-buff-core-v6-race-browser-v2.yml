@@ -1,9 +1,9 @@
-name: Movie Buff release-train combined runtime via registered controller
+name: Movie Buff release-train combined runtime via runner base
 
 on:
   push:
     branches:
-      - validation/movie-buff-release-train-runtime-20260806
+      - validation/movie-buff-release-train-runner-trigger-20260806
     paths:
       - ".github/workflows/movie-buff-core-v6-race-browser-v2.yml"
       - ".github/workflows/movie-buff-release-train-combined-runtime.yml"
@@ -13,7 +13,7 @@ on:
       - "docs/validation/movie-buff-release-train-combined-runtime.manifest.json"
   pull_request:
     branches:
-      - integration/movie-buff
+      - validation/movie-buff-release-train-runner-base-20260806
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 env:
-  EXPECTED_BRANCH: validation/movie-buff-release-train-runtime-20260806
+  EXPECTED_BRANCH: validation/movie-buff-release-train-runner-trigger-20260806
   PRODUCT_SHA: c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6
   PRODUCT_TREE: a995a9aeb2fca76d2c1b216ece3a2645c2393c71
   SUPABASE_TELEMETRY_DISABLED: "1"
@@ -57,7 +57,7 @@ jobs:
         with:
           version: 2.111.0
 
-      - name: Verify registered-controller identity
+      - name: Verify runner-base identity
         shell: bash
         run: |
           set -euo pipefail
