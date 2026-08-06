@@ -61,9 +61,10 @@ New-Item -ItemType Directory -Force -Path $EvidenceDirectory | Out-Null
 Invoke-Checked "guard syntax" {
   node --check scripts/movie-buff-mov16-evidence-guard.mjs
 }
-Invoke-Checked "deadline race syntax" {
+Invoke-Checked "behavior wrapper syntax" {
   node --check scripts/movie-buff-mov16-deadline-release-race.mjs
   node --check scripts/movie-buff-mov16-deadline-release-race-v2.mjs
+  node --check scripts/movie-buff-mov16-adversarial-v3-wrapper.mjs
 }
 Invoke-Checked "negative-path self-test" {
   node scripts/movie-buff-mov16-evidence-guard.mjs --self-test |
