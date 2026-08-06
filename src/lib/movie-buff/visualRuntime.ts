@@ -195,22 +195,35 @@ export function mapMovieBuffAuthoritativePhaseToVisualPhase(
         phaseVersion: source.phaseVersion,
       };
     case "playback":
-    case "answer":
-    case "results": {
       if (source.selectedTileId === null) {
-        return invalidVisualPhase(
-          source,
-          `${source.phase.toUpperCase()}_MISSING_SELECTED_TILE`,
-        );
+        return invalidVisualPhase(source, "PLAYBACK_MISSING_SELECTED_TILE");
       }
-      const phase: "playback" | "answer" | "results" = source.phase;
       return {
-        phase,
+        phase: "playback",
         valid: true,
         reason: null,
         phaseVersion: source.phaseVersion,
       };
-    }
+    case "answer":
+      if (source.selectedTileId === null) {
+        return invalidVisualPhase(source, "ANSWER_MISSING_SELECTED_TILE");
+      }
+      return {
+        phase: "answer",
+        valid: true,
+        reason: null,
+        phaseVersion: source.phaseVersion,
+      };
+    case "results":
+      if (source.selectedTileId === null) {
+        return invalidVisualPhase(source, "RESULTS_MISSING_SELECTED_TILE");
+      }
+      return {
+        phase: "results",
+        valid: true,
+        reason: null,
+        phaseVersion: source.phaseVersion,
+      };
     case "finished":
       return {
         phase: "match_complete",
