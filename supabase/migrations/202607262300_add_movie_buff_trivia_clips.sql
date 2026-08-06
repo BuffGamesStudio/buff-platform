@@ -1,4 +1,4 @@
-﻿insert into public.clips (
+insert into public.clips (
   id,
   movie_id,
   clip_type,
