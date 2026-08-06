@@ -1,0 +1,58 @@
+name: MOV-18 final preview browser evidence diagnostic
+
+on:
+  push:
+    branches: [validation/movie-buff-mov18-preview-diagnostic-v2]
+    paths: [".github/workflows/movie-buff-mov18-preview-diagnostic-v2.yml"]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect-artifact:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind diagnostic ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 5f02493eb4abd0e0047ea25940adda1fe44ce730 HEAD
+          test -z "$(git status --porcelain)"
+      - uses: actions/download-artifact@v4
+        with:
+          name: mov18-browser-evidence-5f02493eb4abd0e0047ea25940adda1fe44ce730
+          path: ${{ runner.temp }}/mov18-preview-artifact
+          run-id: 31063340632
+          github-token: ${{ github.token }}
+      - name: Print sanitized classification evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/mov18-preview-artifact"
+          echo "--- metadata ---"
+          cat "$root/metadata.txt"
+          echo "--- browser exit ---"
+          cat "$root/browser.exit"
+          echo "--- browser stdout ---"
+          cat "$root/browser.stdout.log"
+          echo "--- browser stderr ---"
+          cat "$root/browser.stderr.log"
+          echo "--- browser JSON ---"
+          cat "$root/browser-evidence.json"
+          echo "--- application tail ---"
+          tail -200 "$root/application.log"
+          echo "--- internal manifest ---"
+          (cd "$root" && sha256sum -c sha256.txt)
+      - name: Verify clean postflight
+        if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
