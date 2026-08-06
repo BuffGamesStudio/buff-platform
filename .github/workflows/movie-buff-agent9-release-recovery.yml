@@ -27,6 +27,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Capture exact tree
         id: identity
@@ -42,7 +43,7 @@ jobs:
           ./scripts/movie-buff-agent9-staging-rehearsal.ps1 `
             -Mode Preflight `
             -ExpectedBranch '${{ github.head_ref || github.ref_name }}' `
-            -ExpectedSha '${{ github.sha }}' `
+            -ExpectedSha '${{ github.event.pull_request.head.sha || github.sha }}' `
             -ExpectedTree '${{ steps.identity.outputs.tree }}' `
             -EvidenceDirectory $env:EVIDENCE_DIR `
             -PackageOnly
@@ -51,6 +52,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: movie-buff-agent9-preflight-${{ runner.os }}-${{ github.sha }}
+          name: movie-buff-agent9-preflight-${{ runner.os }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/movie-buff-agent9-${{ runner.os }}-${{ github.run_id }}
           if-no-files-found: error
