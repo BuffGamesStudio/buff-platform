@@ -136,7 +136,7 @@ jobs:
           git diff --check
           test -z "$(git status --porcelain)"
 
-      - name: Write exact-SHA artifact metadata
+      - name: Write and verify portable exact-SHA artifact metadata
         if: always()
         shell: bash
         env:
@@ -147,20 +147,31 @@ jobs:
           {
             echo "lane=MOV-19"
             echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
             echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
             echo "runner_os=${RUNNER_OS}"
             echo "node_version=$(node --version)"
             echo "npm_version=$(npm --version)"
-            echo "target_kind=repository-static-and-local-build"
+            echo "target_kind=mov19-validator-source-and-local-build"
+            echo "collector_target=$(pwd)"
             echo "build_supabase_target=http://127.0.0.1:54321"
             echo "workflow_run_id=${GITHUB_RUN_ID}"
             echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
             echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } > "${EVIDENCE_DIR}/metadata.txt"
-          find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0 \
-            | sort -z \
-            | xargs -0 sha256sum \
-            > "${EVIDENCE_DIR}/sha256.txt"
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -maxdepth 1 -type f ! -name sha256.txt -printf '%P\0' \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > sha256.txt
+            test -s sha256.txt
+            if grep -Eq '(^|[[:space:]])(/|[A-Za-z]:[\\/])' sha256.txt; then
+              echo "Absolute path found in portable hash manifest." >&2
+              exit 1
+            fi
+            sha256sum -c sha256.txt
+          )
 
       - name: Upload exact-SHA validation artifact
         if: always()

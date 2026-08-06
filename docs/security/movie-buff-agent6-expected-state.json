@@ -1,5 +1,5 @@
 {
-  "manifestVersion": 3,
+  "manifestVersion": 4,
   "classificationVocabulary": ["PASS", "FAIL", "UNKNOWN", "NOT APPLICABLE"],
   "repository": "BuffGamesStudio/buff-platform",
   "agent6Branch": "security/movie-buff-rls-acl-staging",
@@ -8,9 +8,11 @@
     "tree": "12f425f4c56fb3f3c66df6f3a6543d7fd8b6ef34"
   },
   "productComposition": {
-    "source": "Agent 5 draft PR #107",
-    "sha": "2be790c88bc7f34969fe607bb78fd7535b621190",
-    "tree": "cbd8061c9c4da410e39363beee02bf53194ed53f"
+    "source": "Agent 5 draft PR #107 candidate v5",
+    "sha": "520a06c9c79e6a2b0ef9ce7816abd70514cba922",
+    "tree": "6f9ec763ed2256266af63d0e023eeef7e277e452",
+    "controllerSha": "cdc1184ef57180dd30f7a959a59b00dfcffcca52",
+    "controllerTree": "4e6a4abee263674d45933c3cc0f32da27de9723c"
   },
   "forwardOrder": [
     "supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql",
