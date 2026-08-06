@@ -6,6 +6,7 @@ on:
       - copilot/MOV-17-shared-phase-machine
     paths:
       - ".github/workflows/movie-buff-mov17-validation.yml"
+      - ".github/workflows/movie-buff-mov17-local-supabase.yml"
       - ".github/workflows/movie-buff-mov17-windows-digital-twin.yml"
       - "scripts/movie-buff-mov17-windows-digital-twin.ps1"
       - "scripts/movie-buff-three-client-phase-proof.mjs"
@@ -27,6 +28,7 @@ on:
       - integration/movie-buff
     paths:
       - ".github/workflows/movie-buff-mov17-validation.yml"
+      - ".github/workflows/movie-buff-mov17-local-supabase.yml"
       - ".github/workflows/movie-buff-mov17-windows-digital-twin.yml"
       - "scripts/movie-buff-mov17-windows-digital-twin.ps1"
       - "scripts/movie-buff-three-client-phase-proof.mjs"
