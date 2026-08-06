@@ -56,7 +56,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
 
-      - name: Bind exact candidate and record static identity
+      - name: Bind exact candidate and record identity
         shell: bash
         run: |
           set -euo pipefail
@@ -68,7 +68,6 @@ jobs:
           git merge-base --is-ancestor "${TARGET_PARENT}" HEAD
           test -z "$(git status --porcelain)"
           node --check scripts/movie-buff-three-client-full-journey-v2.mjs
-          node --check scripts/movie-buff-three-client-full-journey-v3-runner.mjs
           test "$(supabase --version)" = "2.111.0"
           {
             echo "repository=${TARGET_REPOSITORY}"
@@ -103,7 +102,7 @@ jobs:
       - name: Install exact dependency graph
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Extract reviewed unmodified browser laboratory
+      - name: Extract reviewed unmodified laboratory block
         shell: bash
         run: |
           set -euo pipefail
@@ -112,54 +111,19 @@ jobs:
           python3 - "${archived}" "${output}" <<'PY'
           from pathlib import Path
           import sys
-
           source = Path(sys.argv[1])
           output = Path(sys.argv[2])
           lines = source.read_text(encoding="utf-8").splitlines()
           marker = "- name: Execute disposable exact-SHA browser journey v2"
           start = next(i for i, line in enumerate(lines) if line.strip() == marker)
           run_line = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == "run: |")
-          run_indent = len(lines[run_line]) - len(lines[run_line].lstrip())
+          indent = len(lines[run_line]) - len(lines[run_line].lstrip())
           body = []
           for line in lines[run_line + 1:]:
-              if line.strip() and len(line) - len(line.lstrip()) <= run_indent:
+              if line.strip() and len(line) - len(line.lstrip()) <= indent:
                   break
-              body.append(line[run_indent + 2:] if line.strip() else "")
-          execute = "\n".join(body) + "\n"
-
-          pid_anchor = "            app_pid=$!\n"
-          pid_insert = """            app_pid=$!
-            echo "${app_pid}" >"${raw}/application.pid"
-            printf '%s\\n' 'npm run start -- --hostname 127.0.0.1 --port 3001' >"${raw}/server-start-command.txt"
-            ps -p "${app_pid}" -o pid=,ppid=,lstart=,args= >"${raw}/application-process.txt" 2>&1 || true
-"""
-          if execute.count(pid_anchor) != 1:
-              raise SystemExit("application PID anchor missing")
-          execute = execute.replace(pid_anchor, pid_insert)
-
-          health_anchor = "            echo \"${app_health}\" >\"${raw}/application-health.exit\"\n"
-          health_insert = """            echo "${app_health}" >"${raw}/application-health.exit"
-            ss -ltnp >"${raw}/listening-ports.txt" 2>&1 || true
-            curl --silent --show-error --dump-header "${raw}/sign-in.headers" http://127.0.0.1:3001/sign-in -o /dev/null || true
-"""
-          if execute.count(health_anchor) != 1:
-              raise SystemExit("application health anchor missing")
-          execute = execute.replace(health_anchor, health_insert)
-
-          version_anchor = "            playwright_exit=$?; echo \"${playwright_exit}\" >\"${raw}/playwright-install.exit\"\n"
-          version_insert = """            playwright_exit=$?; echo "${playwright_exit}" >"${raw}/playwright-install.exit"
-            if [ "${playwright_exit}" -eq 0 ]; then
-              (cd "${playwright_root}" && npx playwright --version) >"${raw}/playwright-version.txt" 2>&1
-              browser_path="$(node -e \"const {chromium}=require('${playwright_root}/node_modules/playwright');process.stdout.write(chromium.executablePath())\")"
-              printf '%s\\n' "${browser_path}" >"${raw}/browser-executable.txt"
-              "${browser_path}" --version >"${raw}/browser-version.txt" 2>&1 || true
-            fi
-"""
-          if execute.count(version_anchor) != 1:
-              raise SystemExit("Playwright version anchor missing")
-          execute = execute.replace(version_anchor, version_insert)
-
-          output.write_text(execute, encoding="utf-8")
+              body.append(line[indent + 2:] if line.strip() else "")
+          output.write_text("\n".join(body) + "\n", encoding="utf-8")
           PY
           bash -n "${output}"
           sha256sum "${archived}" scripts/movie-buff-three-client-full-journey-v2.mjs "${output}" \
@@ -168,13 +132,50 @@ jobs:
       - name: Execute exact candidate browser journey
         shell: bash
         run: |
-          set -o pipefail
+          set +e
+          set -uo pipefail
+          identity="${RUNNER_TEMP}/movie-buff-agent7-controller"
+          playwright_root="${RUNNER_TEMP}/movie-buff-three-client-full-v2-playwright"
+          monitor_identity() {
+            process_done=0
+            browser_done=0
+            for attempt in $(seq 1 900); do
+              if [ "${process_done}" -eq 0 ]; then
+                ss -ltnp 2>/dev/null | grep ':3001' >"${identity}/listening-port.txt" 2>/dev/null || true
+                pid="$(sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' "${identity}/listening-port.txt" | head -1)"
+                if [ -n "${pid}" ]; then
+                  echo "${pid}" >"${identity}/process.pid"
+                  ps -p "${pid}" -o pid=,ppid=,lstart=,args= >"${identity}/process.txt" 2>&1 || true
+                  process_done=1
+                fi
+              fi
+              if [ "${browser_done}" -eq 0 ] && [ -f "${playwright_root}/node_modules/playwright/package.json" ]; then
+                node -p "require('${playwright_root}/node_modules/playwright/package.json').version" \
+                  >"${identity}/playwright-version.txt" 2>&1 || true
+                browser_path="$(node -e "const {chromium}=require('${playwright_root}/node_modules/playwright');process.stdout.write(chromium.executablePath())" 2>/dev/null || true)"
+                if [ -n "${browser_path}" ] && [ -x "${browser_path}" ]; then
+                  echo "${browser_path}" >"${identity}/browser-executable.txt"
+                  "${browser_path}" --version >"${identity}/browser-version.txt" 2>&1 || true
+                  browser_done=1
+                fi
+              fi
+              if [ "${process_done}" -eq 1 ] && [ "${browser_done}" -eq 1 ]; then return 0; fi
+              sleep 1
+            done
+            return 0
+          }
+          monitor_identity &
+          monitor_pid=$!
           env \
             GITHUB_REF_NAME="${TARGET_BRANCH}" \
             GITHUB_SHA="${TARGET_SHA}" \
             EXPECTED_BRANCH="${TARGET_BRANCH}" \
             PARENT_SHA="${TARGET_PARENT}" \
             bash "${RUNNER_TEMP}/movie-buff-agent7-execute.sh"
+          journey_exit=$?
+          wait "${monitor_pid}" >/dev/null 2>&1 || true
+          echo "${journey_exit}" >"${identity}/journey.exit"
+          exit "${journey_exit}"
 
       - name: Finalize Agent 7 evidence and scenario ledger
         if: always()
@@ -193,33 +194,11 @@ jobs:
           cat >"${evidence}/agent7-controller/scenario-ledger-initial.md" <<'EOF'
           # Agent 7 scenario ledger
 
-          Classification is evidence-driven. This primary run executes only the exact checked-in unmodified v2 harness. A scenario not explicitly exercised by that harness remains UNKNOWN, regardless of related passing behavior.
+          This run executes only the exact checked-in unmodified v2 harness. Any scenario not explicitly executed remains UNKNOWN.
 
-          - complete three-player automatic journey: PENDING_ARTIFACT_INSPECTION
-          - strict-three matchmaking / no 2+1 split: PENDING_ARTIFACT_INSPECTION
-          - private VIP lock/pass and aggregate-only visibility: PENDING_ARTIFACT_INSPECTION
-          - synchronized board / selector authority / transition / playback / answer / results / next round: PENDING_ARTIFACT_INSPECTION
-          - playback refresh: PENDING_ARTIFACT_INSPECTION
-          - playback offline reconnect: PENDING_ARTIFACT_INSPECTION
-          - refresh during Round Intro: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - refresh during VIP: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - refresh during board: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - refresh during results: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - reconnect immediately before VIP expiry: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - reconnect immediately after VIP expiry: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - concurrent reconnect and expiry finalization: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - selector disconnect: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - nonselector disconnect: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - duplicate expiry workers: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - browser back / forward: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - multiple tabs for one player: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - stale build/client rejection: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - clock skew: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - keyboard-only / modal focus / visible focus: UNKNOWN_NOT_FULLY_EXECUTED_BY_PRIMARY_HARNESS
-          - screen-reader names / responsive widths / reduced motion: PENDING_ARTIFACT_INSPECTION
-          - missing visual asset fallback: PENDING_ARTIFACT_INSPECTION
-          - WebGL failure: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
-          - hydration / console / failed network / unhandled rejection: PENDING_ARTIFACT_INSPECTION
+          Main journey, strict-three matchmaking, VIP privacy, board authority, playback, results, next-round automation, playback refresh, offline reconnect, responsive widths, reduced motion, fallback responses, console/network/runtime checks: PENDING_ARTIFACT_INSPECTION.
+
+          Round Intro/VIP/board/results refresh; VIP-expiry boundary reconnects; concurrent reconnect/finalization; selector and nonselector disconnect; duplicate expiry workers; browser back/forward; multiple tabs; stale-client rejection; clock skew; full keyboard/modal-focus proof; WebGL failure: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS.
           EOF
           {
             echo "finished_time_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
