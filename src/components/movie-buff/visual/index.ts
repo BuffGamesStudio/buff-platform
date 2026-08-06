@@ -2,6 +2,7 @@ export {
   MovieBuffBusterReplacement,
   type MovieBuffBusterVisualState,
 } from "./MovieBuffBusterReplacement";
+export { MovieBuffAuthoritativePhaseVisualAdapter } from "./MovieBuffAuthoritativePhaseVisualAdapter";
 export { MovieBuffCanonicalVisualAdapter } from "./MovieBuffCanonicalVisualAdapter";
 export { MovieBuffGameMenu } from "./MovieBuffGameMenu";
 export { MovieBuffMotionRuntime } from "./MovieBuffMotionRuntime";
