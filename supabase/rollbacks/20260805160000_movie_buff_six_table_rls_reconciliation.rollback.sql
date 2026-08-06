@@ -1,5 +1,6 @@
 -- Fail-closed containment rollback. RLS and FORCE RLS remain enabled.
 begin;
+
 do $drop_policies$
 declare v_policy record;
 begin
@@ -13,7 +14,12 @@ begin
         'movie_buff_board_tiles','movie_buff_board_events'
       )
   loop
-    execute pg_catalog.format('drop policy %I on %I.%I', v_policy.policyname, v_policy.schemaname, v_policy.tablename);
+    execute pg_catalog.format(
+      'drop policy %I on %I.%I',
+      v_policy.policyname,
+      v_policy.schemaname,
+      v_policy.tablename
+    );
   end loop;
 end;
 $drop_policies$;
@@ -44,5 +50,20 @@ alter table public.movie_buff_board_tiles enable row level security;
 alter table public.movie_buff_board_tiles force row level security;
 alter table public.movie_buff_board_events enable row level security;
 alter table public.movie_buff_board_events force row level security;
+
+revoke all on function movie_buff_security.active_round_member(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function movie_buff_security.active_board_member(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function movie_buff_security.active_room_member(uuid)
+  from public, anon, authenticated, service_role;
+
+drop function if exists movie_buff_security.active_round_member(uuid);
+drop function if exists movie_buff_security.active_board_member(uuid);
+drop function if exists movie_buff_security.active_room_member(uuid);
+
+revoke all on schema movie_buff_security from public, anon, authenticated, service_role;
+drop schema if exists movie_buff_security;
+
 notify pgrst, 'reload schema';
 commit;
