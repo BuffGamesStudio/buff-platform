@@ -248,6 +248,19 @@ test("the rendered browser workflow is bound to both visual contract suites", as
   assert.match(workflow, /Run focused visual contracts/);
 });
 
+test("adapter evidence classification is derived from recorded exits", async () => {
+  const workflow = await source(
+    "../.github/workflows/movie-buff-mov18-authoritative-adapter-evidence.yml",
+  );
+
+  assert.match(workflow, /contracts\.exit/);
+  assert.match(workflow, /typescript\.exit/);
+  assert.match(workflow, /build\.exit/);
+  assert.match(workflow, /classification=\$classification/);
+  assert.match(workflow, /Classify exact adapter evidence/);
+  assert.doesNotMatch(workflow, /echo "classification=PASS"/);
+});
+
 test("the authoritative visual adapter remains read-only", async () => {
   const [adapter, component] = await Promise.all([
     source("../src/lib/movie-buff/authoritativeVisualAdapter.ts"),
