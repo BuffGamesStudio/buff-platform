@@ -8,12 +8,19 @@ const {
   mapMovieBuffAuthoritativePhaseToVisualPhase,
   mayMovieBuffVisualRuntimeAdvanceGameplay,
 } = await import("../src/lib/movie-buff/visualRuntime.ts");
-const { adaptMovieBuffAuthoritativePhaseViewToVisualSource } = await import(
-  "../src/lib/movie-buff/authoritativeVisualAdapter.ts"
-);
+const {
+  adaptMovieBuffAuthoritativePhaseViewToVisualSource: adaptAuthoritativeViewRaw,
+  MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION,
+} = await import("../src/lib/movie-buff/authoritativeVisualAdapter.ts");
 const { movieBuffVisualAssets } = await import(
   "../src/lib/movie-buff/visualAssetMap.ts"
 );
+
+const adaptMovieBuffAuthoritativePhaseViewToVisualSource = (input) =>
+  adaptAuthoritativeViewRaw({
+    schemaVersion: MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION,
+    ...input,
+  });
 
 const baseInput = {
   phase: "board",
