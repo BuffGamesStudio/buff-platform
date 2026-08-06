@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-08-06T04:18:45Z",
+  "release": "NO-GO",
+  "repo": {
+    "fullName": "BuffGamesStudio/buff-platform",
+    "integrationBranch": "integration/movie-buff",
+    "integrationSha": "bf316a15a2120e32d8a32e479df2ae439081f9a1",
+    "integrationTreeSha": "12f425f4c56fb3f3c66df6f3a6543d7fd8b6ef34",
+    "operationsBranch": "operations/movie-buff-release-recovery"
+  },
+  "currentHeads": [
+    ["MOV-15",9,"dc9804cdae03d8627a89980dbcdf2292d2055372","86db75f79444b02c972ba4771244950cbec41b38","UNKNOWN"],
+    ["MOV-16",6,"4a5e5591113b005f69fd34361becb2fd8d024897","5d0fc27b1c5240196d76eabddee3d59186cda1d3","PASS"],
+    ["MOV-17",10,"f17234debfb8942e1998306a12dc33301c1c5440","56c63df56f085c256289a8e4510ba05cbea3d9d1","PASS"],
+    ["SECURITY",105,"413d06836239fe92bbee4b5b1f4e70a61233d15b","3af64604907b7d977db903fbb20922540e22be4d","UNKNOWN"]
+  ],
+  "candidate": {
+    "classification": "UNKNOWN",
+    "reason": "No immutable candidate currently binds MOV-16 4a5e559…, Agent 6 PR #105, and all other accepted heads. PR #100 is historical because it binds MOV-16 12c3a8….",
+    "historicalInput": {
+      "pr": 100,
+      "branch": "release-candidate/movie-buff-canonical-20260805-agent8-v3",
+      "sha": "4c27ae357e16a48ccc5d8885d11cc5411643b218",
+      "treeSha": "ab9c6301eba48d4119ffa4f0909ac4c4452ec14c",
+      "evidenceState": "stale for current heads"
+    }
+  },
+  "targets": {
+    "supabaseStaging": ["movie-buff-staging","eddwkxcillhzkvwmavsc","tleuzztdjpajaltwcclj","us-east-1","ACTIVE_HEALTHY"],
+    "supabaseProduction": [null,"UNKNOWN"],
+    "backupOrPitr": [null,"UNKNOWN"],
+    "vercelTeam": "team_B5DU86UM8Cb77BUCK3rbijw6",
+    "vercelStaging": ["app","prj_qTI4u8AW6ukAJXf6zgGdssM2t1ls",null,"UNKNOWN"],
+    "vercelProduction": [null,null,null,"UNKNOWN"]
+  },
+  "migrationColumns": ["order","laneCode","sourceHead","migrationFile","migrationSha256","expectedLedgerName","dependencyOrders","rollbackFile","rollbackSha256","containmentCode","executionClassification","rollbackGap"],
+  "containmentActions": {
+    "MOV16": "Callable containment is supplied by supabase/rollbacks/20260804073310_movie_buff_vip_callable_containment.rollback.sql (SHA-256 b99efb42f860a1bb90f3f2963f72f4262136be7d3f775d8f7df39176b5da1846); destructive rollback is not the approved default.",
+    "MOV15": "Apply the MOV-15 non-destructive admission/readiness containment in owning-lane order; preserve data and service-role diagnostics.",
+    "MOV17": "Use MOV-17 phase/reconnect/Buster containment in reverse dependency order; do not roll back through an active unsafe phase.",
+    "SEC": "Apply fail-closed security containment in reverse order 161000 -> 160500 -> 160000 -> 155000, preserving RLS and least privilege."
+  },
+  "verificationQueryTemplate": "select version, name from supabase_migrations.schema_migrations where name = :expectedLedgerName;",
+  "migrations": [
+    [1,"MOV16","4a5e5591113b005f69fd34361becb2fd8d024897","supabase/migrations/20260804073000_movie_buff_vip_authority.sql","a5587c7dfbb0b86105c51d6fed1a2096dfd4be303feeaab5fcb8f77f4dab95e5","20260804073000_movie_buff_vip_authority",[],"supabase/rollbacks/20260804073000_movie_buff_vip_authority.rollback.sql","117d17cbf74bd1694dc948b3b6c35bcc5145b77d716e3810f4f758b04f3bafc7","MOV16","UNKNOWN",null],
+    [2,"MOV16","4a5e5591113b005f69fd34361becb2fd8d024897","supabase/migrations/20260804073100_movie_buff_vip_null_category_fail_closed.sql","bd945c07caf4be946523fdf36a262fe53f0f97f30e75bfac9466181a1fa09f7e","20260804073100_movie_buff_vip_null_category_fail_closed",[1],null,null,"MOV16","UNKNOWN","No dedicated rollback file was present in the exact candidate manifest; owning-lane written disposition required."],
+    [3,"MOV16","4a5e5591113b005f69fd34361becb2fd8d024897","supabase/migrations/20260804073200_movie_buff_vip_snapshot_release_hardening.sql","0e93bb7aeb97ddc193079f0647fba62502bb993ce6a05439ea3c4eb18a88e8cf","20260804073200_movie_buff_vip_snapshot_release_hardening",[2],"supabase/rollbacks/20260804073200_movie_buff_vip_snapshot_release_hardening.rollback.sql","4b7384fe1d9fa791f4b57a894626e8984258a205aae197c702a2e424947dc113","MOV16","UNKNOWN",null],
+    [4,"MOV16","4a5e5591113b005f69fd34361becb2fd8d024897","supabase/migrations/20260804073300_movie_buff_vip_deadline_finalize.sql","9458baa2a019dc6f90a84d9e90f683e4d123337edfd41e042af20777842e6619","20260804073300_movie_buff_vip_deadline_finalize",[3],"supabase/rollbacks/20260804073300_movie_buff_vip_deadline_finalize.rollback.sql","f9a04e1fe2258cfbb8b7571eae8fcb8fdf2b398b228c45c21e9e3718dba5ef39","MOV16","UNKNOWN",null],
+    [5,"MOV15","dc9804cdae03d8627a89980dbcdf2292d2055372","supabase/migrations/20260804081500_movie_buff_atomic_three_player_matchmaking.sql","c9bbaea060821b05bf929a4c5d75249a339e58ad4db683d999bdb6fc7ae54348","20260804081500_movie_buff_atomic_three_player_matchmaking",[4],"supabase/rollbacks/20260804081500_movie_buff_atomic_three_player_matchmaking.rollback.sql","431ecd73265224bbc265589619404d755a56ec0e3ee66be004d3e2b59b80dbd5","MOV15","UNKNOWN",null],
+    [6,"MOV15","dc9804cdae03d8627a89980dbcdf2292d2055372","supabase/migrations/20260804081600_movie_buff_admission_phase_handoff.sql","e9599b0d8dc6967ac755efd7b27727a86307520d5faf715da5e45bbb90dde7bc","20260804081600_movie_buff_admission_phase_handoff",[5],"supabase/rollbacks/20260804081600_movie_buff_admission_phase_handoff.rollback.sql","86d563894400b25e3a7788e6abc50af0364f190c54ce9dfdb6a47abc61291e8f","MOV15","UNKNOWN",null],
+    [7,"MOV17","f17234debfb8942e1998306a12dc33301c1c5440","supabase/migrations/20260804083000_movie_buff_server_phase_machine.sql","c8ad7625ad07a99b49d80d8daa37c98e3b9b54e4d4dae43d6832b6703e6047e7","20260804083000_movie_buff_server_phase_machine",[6],"supabase/rollbacks/20260804083000_movie_buff_server_phase_machine.rollback.sql","95c2c4193dce2ba25a925b5cfb26698a10f450eadba497aebb30040a4a207735","MOV17","UNKNOWN",null],
+    [8,"MOV17","f17234debfb8942e1998306a12dc33301c1c5440","supabase/migrations/20260804083100_movie_buff_server_phase_machine_hardening.sql","602d64cf2c7de8135ec4d21b29f587e5420945d6eb3339b91b3a9fc028b9ab8f","20260804083100_movie_buff_server_phase_machine_hardening",[7],null,null,"MOV17","UNKNOWN","No dedicated rollback file was present in the exact candidate manifest; owning-lane written disposition required."],
+    [9,"MOV17","f17234debfb8942e1998306a12dc33301c1c5440","supabase/migrations/20260804083200_movie_buff_buster_safe_boundary.sql","22002840ece2494b559df5dd80cc293cd4006e207742d1f7a027979c21b65e72","20260804083200_movie_buff_buster_safe_boundary",[8],"supabase/rollbacks/20260804083200_movie_buff_buster_safe_boundary.rollback.sql","97517212565a562bf9eecd216c3f6eaa2eec4d13594a7048b9142e53062d2ad4","MOV17","UNKNOWN",null],
+    [10,"MOV17","f17234debfb8942e1998306a12dc33301c1c5440","supabase/migrations/20260804083300_movie_buff_phase_tile_mutation_guard.sql","14182e32b5680612b75755445ae9141ab1d29c2598a9502739f4738a941e253f","20260804083300_movie_buff_phase_tile_mutation_guard",[9],"supabase/rollbacks/20260804083300_movie_buff_phase_tile_mutation_guard.rollback.sql","62a4ed0a34f352a3f71403845a2666eacb5f9351c9706e24bef3c38a520fd49e","MOV17","UNKNOWN",null],
+    [11,"MOV17","f17234debfb8942e1998306a12dc33301c1c5440","supabase/migrations/20260804083400_movie_buff_phase_contract_alignment.sql","4dde65852eac7ef06aec9721ae3e0ae0636f707ee1faaba84bf6117dbf139508","20260804083400_movie_buff_phase_contract_alignment",[10],"supabase/rollbacks/20260804083400_movie_buff_phase_contract_alignment.rollback.sql","62ecc8c7dac07eeb287ab5b6690bdf896f1bc8f696635dd3f60b901b726a4748","MOV17","UNKNOWN",null],
+    [12,"MOV17","f17234debfb8942e1998306a12dc33301c1c5440","supabase/migrations/20260804083500_movie_buff_reconnect_buster_boundary_repair.sql","3ef0391b49d73a64d9c79f4275523a43511aa240139f0df1ed3e1040ddb69607","20260804083500_movie_buff_reconnect_buster_boundary_repair",[11],"supabase/rollbacks/20260804083500_movie_buff_reconnect_buster_boundary_repair.rollback.sql","53b28146cd558be5d29fd71b17e43475054fbd38f5aac20bc82625c9dd5285d0","MOV17","UNKNOWN",null],
+    [13,"MOV17","f17234debfb8942e1998306a12dc33301c1c5440","supabase/migrations/20260804083600_movie_buff_match_start_handoff.sql","9cf1e69dff9404875922f66e3b210ce8b47fcfd60e8954ade1e2abccd88b67fa","20260804083600_movie_buff_match_start_handoff",[12],"supabase/rollbacks/20260804083600_movie_buff_match_start_handoff.rollback.sql","16be6030226aef65dab7132e940f4272e9d249ae38a5c0b0701224100c1e576b","MOV17","UNKNOWN",null],
+    [14,"MOV17","f17234debfb8942e1998306a12dc33301c1c5440","supabase/migrations/20260804083610_movie_buff_phase_digest_schema_repair.sql","a6bc5cc50cc93d1c2bf347333167e3ff12ca2b888f7b2bf292987706bac13151","20260804083610_movie_buff_phase_digest_schema_repair",[13],"supabase/rollbacks/20260804083610_movie_buff_phase_digest_schema_repair.rollback.sql","0816ded2a216a394a2a810cc44e978b9ec169295bcd128a44c59b788756b3b5b","MOV17","UNKNOWN",null],
+    [15,"MOV17","f17234debfb8942e1998306a12dc33301c1c5440","supabase/migrations/20260804083700_movie_buff_active_leave_and_buster_boundary.sql","81984c41122455e3073e4a7c474bfed095aa5e9de6e9dc4291de6506809204ed","20260804083700_movie_buff_active_leave_and_buster_boundary",[14],"supabase/rollbacks/20260804083700_movie_buff_active_leave_and_buster_boundary.rollback.sql","e3d0b2ee9103f1f5bf29fd3f50ebf1ef6b0920bc120d66c9b02b6db41a8721ed","MOV17","UNKNOWN",null],
+    [16,"SEC","413d06836239fe92bbee4b5b1f4e70a61233d15b","supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql","b8609829797fb5b64274f4127e4fb5b827b8d2be1d480801143e0c81d4985f0b","20260805155000_movie_buff_function_security_finalizer",[15],"supabase/rollbacks/20260805155000_movie_buff_function_security_finalizer.rollback.sql","14d3b92612cd6340fb26a789a1de250606a3014a81f01bb0e4b1b3206f3a42ba","SEC","UNKNOWN",null],
+    [17,"SEC","413d06836239fe92bbee4b5b1f4e70a61233d15b","supabase/migrations/20260805160000_movie_buff_six_table_rls_reconciliation.sql","c35a8e6c2bcf271eb905c87f5d1409e1b4ba2020d85654436738f5a7bc42edc0","20260805160000_movie_buff_six_table_rls_reconciliation",[16],"supabase/rollbacks/20260805160000_movie_buff_six_table_rls_reconciliation.rollback.sql","0556d501fb7fbeee75cc2540b55af895e59f887af055f754d5ef8aa4641aa89f","SEC","UNKNOWN",null],
+    [18,"SEC","413d06836239fe92bbee4b5b1f4e70a61233d15b","supabase/migrations/20260805160500_public_rls_auto_enable_event_trigger_contract.sql","d51d7fa85c69a938bd488dd23f3d8992443d39b36f8a8b435b3a521611757598","20260805160500_public_rls_auto_enable_event_trigger_contract",[17],"supabase/rollbacks/20260805160500_public_rls_auto_enable_event_trigger_contract.rollback.sql","0a89276d00049f1fd2c562b6372cd80af081aa1f007384ef4f5cc23af26f552c","SEC","UNKNOWN",null],
+    [19,"SEC","413d06836239fe92bbee4b5b1f4e70a61233d15b","supabase/migrations/20260805161000_public_rls_auto_enable_acl_lockdown.sql","bbb27ff3f7646fbae8c39c3d78d22ae647d39ea7846843f825aeab4bf2f5d69c","20260805161000_public_rls_auto_enable_acl_lockdown",[18],"supabase/rollbacks/20260805161000_public_rls_auto_enable_acl_lockdown.rollback.sql","c3f7fb5342eb0bb23a192d85f055ce33f015f2457c2548c2e4d9d949405f79b4","SEC","UNKNOWN",null]
+  ],
+  "authorities": {
+    "operator": null,
+    "independentObserver": null,
+    "rollbackAuthority": null,
+    "containmentAuthority": null,
+    "maintenanceWindowUtc": null,
+    "authorizationExpiryUtc": null,
+    "classification": "UNKNOWN"
+  },
+  "blockers": [
+    "Freeze one immutable current-head composition SHA and tree.",
+    "Receive Agent 6's clean ownership-safe migration/rollback handoff and expected-state manifest.",
+    "Resolve missing dedicated rollback dispositions for 20260804073100 and 20260804083100.",
+    "Execute the complete ordered rollback, containment, and forward reapply against the exact candidate in disposable local and isolated staging.",
+    "Verify final schema, migration ledger, RLS, FORCE RLS, policies, ACLs, owners, search paths, functions, and personas.",
+    "Create an immutable deployment in designated Vercel staging project app and verify its visible build marker.",
+    "Identify exact production Supabase and Vercel targets without mutation.",
+    "Record connected backup/PITR identity for the exact production target.",
+    "Name operator, independent observer, rollback authority, containment authority, maintenance window, stop conditions, and authorization expiry.",
+    "Obtain independent MOV-19 acceptance."
+  ]
+}
