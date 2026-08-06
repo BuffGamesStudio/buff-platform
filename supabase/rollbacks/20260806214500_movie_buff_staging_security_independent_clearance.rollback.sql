@@ -1,25 +1,16 @@
--- Restore the exact pre-clearance staging posture for the additive migration.
--- This rollback is containment evidence only; it is not the desired final state.
+-- Restore the exact pre-clearance staging posture observed immediately before
+-- the successful additive migration. Containment evidence only; this is not the
+-- desired final security state.
 
 begin;
 
--- Restore direct authenticated execution on the three legacy helpers.
-revoke all on function public.get_movie_buff_round_completion(uuid,uuid,timestamptz,integer)
-  from public, anon, authenticated, service_role;
-grant execute on function public.get_movie_buff_round_completion(uuid,uuid,timestamptz,integer)
-  to authenticated, service_role;
+revoke all on function public.get_movie_buff_round_completion(uuid,uuid,timestamptz,integer) from public, anon, authenticated, service_role;
+grant execute on function public.get_movie_buff_round_completion(uuid,uuid,timestamptz,integer) to authenticated, service_role;
+revoke all on function public.get_movie_buff_round_player_time_left(uuid,uuid,timestamptz,integer) from public, anon, authenticated, service_role;
+grant execute on function public.get_movie_buff_round_player_time_left(uuid,uuid,timestamptz,integer) to authenticated, service_role;
+revoke all on function public.is_movie_buff_round_player_finished(uuid,uuid,timestamptz,integer) from public, anon, authenticated, service_role;
+grant execute on function public.is_movie_buff_round_player_finished(uuid,uuid,timestamptz,integer) to authenticated, service_role;
 
-revoke all on function public.get_movie_buff_round_player_time_left(uuid,uuid,timestamptz,integer)
-  from public, anon, authenticated, service_role;
-grant execute on function public.get_movie_buff_round_player_time_left(uuid,uuid,timestamptz,integer)
-  to authenticated, service_role;
-
-revoke all on function public.is_movie_buff_round_player_finished(uuid,uuid,timestamptz,integer)
-  from public, anon, authenticated, service_role;
-grant execute on function public.is_movie_buff_round_player_finished(uuid,uuid,timestamptz,integer)
-  to authenticated, service_role;
-
--- Restore the original media-ready implementation that checked sign-in only.
 create or replace function public.mark_movie_buff_round_media_ready(p_room_id uuid)
 returns table(
   result_match_id uuid,
@@ -67,84 +58,67 @@ begin
   end if;
 
   insert into public.match_round_player_playback (
-    round_id,
-    player_id,
-    started_at,
-    play_requested_at,
-    playback_started_at
+    round_id, player_id, started_at, play_requested_at, playback_started_at
   )
-  values (
-    v_round_id,
-    auth.uid(),
-    now(),
-    null,
-    null
-  )
+  values (v_round_id, auth.uid(), now(), null, null)
   on conflict (round_id, player_id) do update
   set started_at = coalesce(
     public.match_round_player_playback.started_at,
     excluded.started_at
   );
 
-  return query
-  select *
-  from public.get_movie_buff_round(p_room_id);
+  return query select * from public.get_movie_buff_round(p_room_id);
 end;
 $function$;
 
 alter function public.mark_movie_buff_round_media_ready(uuid) owner to postgres;
-alter function public.mark_movie_buff_round_media_ready(uuid)
-  set search_path = pg_catalog, public;
-revoke all on function public.mark_movie_buff_round_media_ready(uuid)
-  from public, anon, authenticated, service_role;
-grant execute on function public.mark_movie_buff_round_media_ready(uuid)
-  to authenticated, service_role;
+alter function public.mark_movie_buff_round_media_ready(uuid) set search_path = pg_catalog, public;
+revoke all on function public.mark_movie_buff_round_media_ready(uuid) from public, anon, authenticated, service_role;
+grant execute on function public.mark_movie_buff_round_media_ready(uuid) to authenticated, service_role;
 
--- Restore the inherited content-manager ACL/search path observed before repair.
 alter function public.is_buff_content_manager() owner to postgres;
 alter function public.is_buff_content_manager() set search_path = public;
-revoke all on function public.is_buff_content_manager()
-  from public, anon, authenticated, service_role;
+revoke all on function public.is_buff_content_manager() from public, anon, authenticated, service_role;
 grant execute on function public.is_buff_content_manager() to authenticated;
 
--- Remove the explicit internal-table policies. Restore the prior FORCE RLS
--- flags exactly: three legacy round tables were not forced; all others were.
+-- Prior FORCE RLS posture at the frozen staging snapshot:
+-- five current server ledgers were forced; ten were RLS-enabled but not forced.
 do $restore_internal_tables$
 declare
   v_table text;
   v_forced_tables constant text[] := array[
-    'movie_buff_abandonment_ledger',
+    'movie_buff_active_leave_penalty_ledger',
+    'movie_buff_active_leave_policies',
+    'movie_buff_active_leave_quotes',
     'movie_buff_board_events',
+    'movie_buff_match_abandonment_events'
+  ];
+  v_not_forced_tables constant text[] := array[
     'movie_buff_match_participant_seats',
-    'movie_buff_match_playbacks',
-    'movie_buff_match_rounds',
-    'movie_buff_match_state',
-    'movie_buff_penalty_config',
-    'movie_buff_phase_idempotency',
-    'movie_buff_rounds',
-    'movie_buff_selection_idempotency',
+    'movie_buff_match_phase_actions',
+    'movie_buff_match_phase_events',
+    'movie_buff_match_phase_state',
+    'movie_buff_vip_consumptions',
+    'movie_buff_vip_definitions',
+    'movie_buff_vip_inventory',
+    'movie_buff_vip_round_locks',
     'movie_buff_vip_round_required_players',
     'movie_buff_vip_round_windows'
   ];
-  v_not_forced_tables constant text[] := array[
-    'movie_buff_round_player_answers',
-    'movie_buff_round_player_media',
-    'movie_buff_round_results'
-  ];
 begin
   foreach v_table in array v_forced_tables loop
-    execute pg_catalog.format(
-      'drop policy if exists movie_buff_internal_browser_deny on public.%I',
-      v_table
-    );
+    if pg_catalog.to_regclass(pg_catalog.format('public.%I', v_table)) is null then
+      raise exception 'required rollback table is absent: public.%', v_table;
+    end if;
+    execute pg_catalog.format('drop policy if exists movie_buff_internal_browser_deny on public.%I', v_table);
     execute pg_catalog.format('alter table public.%I force row level security', v_table);
   end loop;
 
   foreach v_table in array v_not_forced_tables loop
-    execute pg_catalog.format(
-      'drop policy if exists movie_buff_internal_browser_deny on public.%I',
-      v_table
-    );
+    if pg_catalog.to_regclass(pg_catalog.format('public.%I', v_table)) is null then
+      raise exception 'required rollback table is absent: public.%', v_table;
+    end if;
+    execute pg_catalog.format('drop policy if exists movie_buff_internal_browser_deny on public.%I', v_table);
     execute pg_catalog.format('alter table public.%I no force row level security', v_table);
   end loop;
 end;
