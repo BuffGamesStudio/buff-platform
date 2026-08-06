@@ -5,8 +5,10 @@ on:
     branches:
       - copilot/MOV-17-shared-phase-machine
       - work/movie-buff-mov17-buster-leave-repair-20260805
+      - validation/movie-buff-full-candidate-v3-canonical-mov17
     paths:
       - ".github/workflows/movie-buff-mov17-local-supabase.yml"
+      - ".github/workflows/movie-buff-three-client-full-journey-v9.yml"
       - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
       - "scripts/movie-buff-mov17-buster-leave-evidence.sh"
       - "scripts/movie-buff-redact-evidence.py"
@@ -25,6 +27,7 @@ on:
       - integration/movie-buff
     paths:
       - ".github/workflows/movie-buff-mov17-local-supabase.yml"
+      - ".github/workflows/movie-buff-three-client-full-journey-v9.yml"
       - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
       - "scripts/movie-buff-mov17-buster-leave-evidence.sh"
       - "scripts/movie-buff-redact-evidence.py"
