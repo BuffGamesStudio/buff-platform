@@ -70,20 +70,26 @@ jobs:
       - name: Run focused passive-adapter contracts
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
           set -o pipefail
           node --test \
             tests/movie-buff-authoritative-visual-adapter.test.mjs \
             tests/movie-buff-visual-runtime.test.mjs \
             2>&1 | tee "${RUNNER_TEMP}/mov18-authoritative-adapter/contracts.tap"
+          code=${PIPESTATUS[0]}
+          echo "$code" >"${RUNNER_TEMP}/mov18-authoritative-adapter/contracts.exit"
+          exit 0
 
       - name: Run TypeScript
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
           set -o pipefail
           npx --no-install tsc --noEmit \
             2>&1 | tee "${RUNNER_TEMP}/mov18-authoritative-adapter/typescript.txt"
+          code=${PIPESTATUS[0]}
+          echo "$code" >"${RUNNER_TEMP}/mov18-authoritative-adapter/typescript.exit"
+          exit 0
 
       - name: Build exact source with localhost placeholders
         shell: bash
@@ -93,10 +99,13 @@ jobs:
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-adapter-publishable-placeholder
           SUPABASE_SERVICE_ROLE_KEY: local-adapter-service-placeholder
         run: |
-          set -euo pipefail
+          set +e
           set -o pipefail
           npm run build \
             2>&1 | tee "${RUNNER_TEMP}/mov18-authoritative-adapter/build.txt"
+          code=${PIPESTATUS[0]}
+          echo "$code" >"${RUNNER_TEMP}/mov18-authoritative-adapter/build.exit"
+          exit 0
 
       - name: Build portable evidence manifest
         if: always()
@@ -110,9 +119,17 @@ jobs:
           git status --porcelain >"$evidence/git-status.txt"
           test ! -s "$evidence/git-status.txt"
 
+          contracts_exit=$(cat "$evidence/contracts.exit" 2>/dev/null || echo 99)
+          typescript_exit=$(cat "$evidence/typescript.exit" 2>/dev/null || echo 99)
+          build_exit=$(cat "$evidence/build.exit" 2>/dev/null || echo 99)
+          classification=FAIL
+          if [[ "$contracts_exit" = 0 && "$typescript_exit" = 0 && "$build_exit" = 0 ]]; then
+            classification=PASS
+          fi
+
           {
             echo "lane=MOV-18-authoritative-visual-adapter"
-            echo "classification=PASS"
+            echo "classification=$classification"
             echo "repository=BuffGamesStudio/buff-platform"
             echo "source_ref=${GITHUB_REF_NAME}"
             echo "source_sha=$(git rev-parse HEAD)"
@@ -121,6 +138,9 @@ jobs:
             echo "reviewed_mov17_sha=${REVIEWED_MOV17_SHA}"
             echo "workflow_run_id=${GITHUB_RUN_ID}"
             echo "workflow_job=${GITHUB_JOB}"
+            echo "contracts_exit=$contracts_exit"
+            echo "typescript_exit=$typescript_exit"
+            echo "build_exit=$build_exit"
             echo "gameplay_authority=ABSENT"
             echo "hosted_state=UNTOUCHED"
             echo "integrated_three_client_browser=UNKNOWN"
@@ -145,6 +165,7 @@ jobs:
             echo "Secret-like material detected in evidence." >&2
             exit 1
           fi
+          echo "secret_scan=PASS" >"$evidence/secret-scan.txt"
 
           (
             cd "$evidence"
@@ -161,6 +182,17 @@ jobs:
           path: ${{ runner.temp }}/mov18-authoritative-adapter
           if-no-files-found: error
           retention-days: 7
+
+      - name: Classify exact adapter evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/mov18-authoritative-adapter"
+          test "$(cat "$evidence/contracts.exit")" = 0
+          test "$(cat "$evidence/typescript.exit")" = 0
+          test "$(cat "$evidence/build.exit")" = 0
+          grep -Fxq "classification=PASS" "$evidence/metadata.txt"
 
       - name: Verify clean postflight
         if: always()

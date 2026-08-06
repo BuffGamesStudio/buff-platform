@@ -4,7 +4,6 @@ import type {
   MovieBuffTransitionPresentation,
   MovieBuffVisualControllerType,
 } from "./visualRuntime";
-import { mapMovieBuffAuthoritativePhaseToVisualPhase } from "./visualRuntime";
 
 export const MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION = 1 as const;
 
@@ -89,6 +88,10 @@ function isKnownPhase(
   return Object.prototype.hasOwnProperty.call(phaseRoutes, phase);
 }
 
+function isPositiveVersion(value: number): boolean {
+  return Number.isSafeInteger(value) && value > 0;
+}
+
 function isValidAuthoritativeTimestamp(value: unknown): value is string {
   return (
     typeof value === "string" &&
@@ -134,6 +137,18 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
     return invalidAdapterResult(view, "UNKNOWN_CANONICAL_PHASE");
   }
 
+  if (!isPositiveVersion(view.phaseVersion)) {
+    return invalidAdapterResult(view, "INVALID_PHASE_VERSION");
+  }
+
+  if (
+    lastAcceptedPhaseVersion !== null &&
+    (!isPositiveVersion(lastAcceptedPhaseVersion) ||
+      view.phaseVersion < lastAcceptedPhaseVersion)
+  ) {
+    return invalidAdapterResult(view, "STALE_PHASE_VERSION");
+  }
+
   if (!isValidAuthoritativeTimestamp(view.serverNow)) {
     return invalidAdapterResult(view, "SERVER_NOW_MISSING_OR_INVALID");
   }
@@ -153,14 +168,15 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
     return invalidAdapterResult(view, "CONTRADICTORY_ROUTE_AND_PHASE");
   }
 
+  if (view.phase === "transition" && transitionPresentation === null) {
+    return invalidAdapterResult(view, "TRANSITION_PRESENTATION_MISSING");
+  }
+
   if (
     view.phase === "transition" &&
     !isTransitionPresentation(transitionPresentation)
   ) {
-    return invalidAdapterResult(
-      view,
-      "TRANSITION_PRESENTATION_MISSING_OR_INVALID",
-    );
+    return invalidAdapterResult(view, "TRANSITION_PRESENTATION_INVALID");
   }
 
   if (view.phase !== "transition" && transitionPresentation !== null) {
@@ -168,6 +184,65 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
       view,
       "TRANSITION_PRESENTATION_OUTSIDE_TRANSITION",
     );
+  }
+
+  if (
+    view.selectorControllerType === "buster" &&
+    (view.selectorPlayerId !== null || view.callerIsSelector)
+  ) {
+    return invalidAdapterResult(view, "CONTRADICTORY_BUSTER_IDENTITY");
+  }
+
+  if (
+    view.callerIsSelector &&
+    (view.selectorControllerType !== "human" || view.selectorPlayerId === null)
+  ) {
+    return invalidAdapterResult(view, "CONTRADICTORY_CALLER_SELECTOR_STATE");
+  }
+
+  if (
+    view.selectorControllerType === null &&
+    view.selectorPlayerId !== null
+  ) {
+    return invalidAdapterResult(view, "SELECTOR_IDENTITY_WITHOUT_CONTROLLER");
+  }
+
+  if (
+    view.selectorControllerType === "human" &&
+    view.selectorPlayerId === null &&
+    ["board_select", "transition", "playback", "answer", "results"].includes(
+      view.phase,
+    )
+  ) {
+    return invalidAdapterResult(view, "HUMAN_SELECTOR_IDENTITY_MISSING");
+  }
+
+  if (
+    ["round_intro", "vip_lock", "board_select"].includes(view.phase) &&
+    view.selectedTileId !== null
+  ) {
+    const reason =
+      view.phase === "round_intro"
+        ? "ROUND_INTRO_HAS_SELECTED_TILE"
+        : view.phase === "vip_lock"
+          ? "VIP_LOCK_HAS_SELECTED_TILE"
+          : "BOARD_SELECT_HAS_SELECTED_TILE";
+    return invalidAdapterResult(view, reason);
+  }
+
+  if (
+    ["transition", "playback", "answer", "results"].includes(view.phase) &&
+    view.selectedTileId === null
+  ) {
+    const reason =
+      view.phase === "transition"
+        ? "TRANSITION_MISSING_SELECTED_TILE"
+        : view.phase === "playback"
+          ? "PLAYBACK_MISSING_SELECTED_TILE"
+          : view.phase === "answer"
+            ? "ANSWER_MISSING_SELECTED_TILE"
+            : "RESULTS_MISSING_SELECTED_TILE";
+    return invalidAdapterResult(view, reason);
   }
 
   if (
@@ -197,42 +272,21 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
     return invalidAdapterResult(view, "BLOCKED_REASON_OUTSIDE_BLOCKED_PHASE");
   }
 
-  if (
-    view.selectorControllerType === "buster" &&
-    (view.selectorPlayerId !== null || view.callerIsSelector)
-  ) {
-    return invalidAdapterResult(view, "CONTRADICTORY_BUSTER_IDENTITY");
-  }
-
-  if (
-    view.callerIsSelector &&
-    (view.selectorControllerType !== "human" || view.selectorPlayerId === null)
-  ) {
-    return invalidAdapterResult(view, "CONTRADICTORY_CALLER_SELECTOR_STATE");
-  }
-
-  const source: MovieBuffCanonicalVisualSource = {
-    phase: view.phase,
-    phaseVersion: view.phaseVersion,
-    lastAcceptedPhaseVersion,
-    selectedTileId: view.selectedTileId,
-    transitionPresentation,
-    selectorControllerType: view.selectorControllerType,
-    selectorPlayerId: view.selectorPlayerId,
-    terminalFallback:
-      view.phase === "abandoned" || view.phase === "blocked"
-        ? "match_status"
-        : null,
-  };
-
-  const mapping = mapMovieBuffAuthoritativePhaseToVisualPhase(source);
-  if (!mapping.valid) {
-    return invalidAdapterResult(view, mapping.reason ?? "INVALID_VISUAL_MAPPING");
-  }
-
   return {
     valid: true,
     reason: null,
-    source,
+    source: {
+      phase: view.phase,
+      phaseVersion: view.phaseVersion,
+      lastAcceptedPhaseVersion,
+      selectedTileId: view.selectedTileId,
+      transitionPresentation,
+      selectorControllerType: view.selectorControllerType,
+      selectorPlayerId: view.selectorPlayerId,
+      terminalFallback:
+        view.phase === "abandoned" || view.phase === "blocked"
+          ? "match_status"
+          : null,
+    },
   };
 }

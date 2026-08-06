@@ -11,6 +11,7 @@ on:
       - src/lib/movie-buff/**
       - src/app/games/movie-buff/visual-runtime-preview/**
       - tests/movie-buff-visual-runtime.test.mjs
+      - tests/movie-buff-authoritative-visual-adapter.test.mjs
       - package.json
       - package-lock.json
   workflow_dispatch:
@@ -62,7 +63,10 @@ jobs:
 
       - name: Run focused visual contracts
         shell: bash
-        run: node --test tests/movie-buff-visual-runtime.test.mjs
+        run: >-
+          node --test
+          tests/movie-buff-visual-runtime.test.mjs
+          tests/movie-buff-authoritative-visual-adapter.test.mjs
 
       - name: Run TypeScript
         shell: bash
@@ -149,7 +153,8 @@ jobs:
           evidence="${RUNNER_TEMP}/mov18-browser-evidence"
           mkdir -p "$evidence"
           cp scripts/movie-buff-mov18-browser-evidence.mjs "$evidence/driver.mjs"
-          cp tests/movie-buff-visual-runtime.test.mjs "$evidence/contracts.test.mjs"
+          cp tests/movie-buff-visual-runtime.test.mjs "$evidence/visual-runtime-contracts.test.mjs"
+          cp tests/movie-buff-authoritative-visual-adapter.test.mjs "$evidence/authoritative-adapter-contracts.test.mjs"
           {
             echo "classification=$([[ -f "$evidence/browser.exit" && "$(cat "$evidence/browser.exit")" = 0 ]] && echo PASS || echo FAIL)"
             echo "repository=BuffGamesStudio/buff-platform"

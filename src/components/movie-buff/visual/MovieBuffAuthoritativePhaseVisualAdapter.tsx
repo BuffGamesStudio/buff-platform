@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import {
   adaptMovieBuffAuthoritativePhaseViewToVisualSource,
+  MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION,
   type MovieBuffAuthoritativePhaseViewForVisuals,
 } from "@/lib/movie-buff/authoritativeVisualAdapter";
 import type { MovieBuffTransitionPresentation } from "@/lib/movie-buff/visualRuntime";
@@ -15,17 +16,20 @@ export function MovieBuffAuthoritativePhaseVisualAdapter({
   view,
   lastAcceptedPhaseVersion,
   transitionPresentation = null,
+  schemaVersion = MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION,
   children,
 }: {
   view: MovieBuffAuthoritativePhaseViewForVisuals;
   lastAcceptedPhaseVersion: number | null;
   transitionPresentation?: MovieBuffTransitionPresentation | null;
+  schemaVersion?: number;
   children: ReactNode;
 }) {
   const adapted = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
     view,
     lastAcceptedPhaseVersion,
     transitionPresentation,
+    schemaVersion,
   });
 
   if (!adapted.valid) {
@@ -37,6 +41,7 @@ export function MovieBuffAuthoritativePhaseVisualAdapter({
         <div
           role="status"
           data-movie-buff-authoritative-adapter-error={adapted.reason}
+          data-movie-buff-authoritative-schema-version={schemaVersion}
           data-movie-buff-phase-version={adapted.phaseVersion}
           className="rounded-2xl border border-red-500/30 bg-red-950/25 px-5 py-4 text-sm font-bold text-red-100"
         >
@@ -50,6 +55,7 @@ export function MovieBuffAuthoritativePhaseVisualAdapter({
     <MovieBuffCanonicalVisualAdapter source={adapted.source}>
       <div
         data-movie-buff-authoritative-view="read-only"
+        data-movie-buff-authoritative-schema-version={schemaVersion}
         data-movie-buff-phase-route={view.phaseRoute}
         data-movie-buff-authoritative-server-now={view.serverNow}
       >

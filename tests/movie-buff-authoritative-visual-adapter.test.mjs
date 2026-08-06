@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const { adaptMovieBuffAuthoritativePhaseViewToVisualSource } = await import(
-  "../src/lib/movie-buff/authoritativeVisualAdapter.ts"
-);
+const {
+  adaptMovieBuffAuthoritativePhaseViewToVisualSource,
+  MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION,
+} = await import("../src/lib/movie-buff/authoritativeVisualAdapter.ts");
 
 const authoritativeView = (overrides = {}) => ({
   roomId: "00000000-0000-4000-8000-000000000001",
@@ -33,21 +34,54 @@ const authoritativeView = (overrides = {}) => ({
   ...overrides,
 });
 
+const activeSceneView = (phase, overrides = {}) =>
+  authoritativeView({
+    phase,
+    phaseVersion: 8,
+    phaseRoute:
+      phase === "results"
+        ? "/games/movie-buff/round-results"
+        : "/games/movie-buff/play",
+    callerIsSelector: false,
+    selectedTileId: "tile-7",
+    selectedClipId: "clip-7",
+    selectionSource: "human",
+    playbackStartsAt: "2026-08-06T11:00:08.000Z",
+    answerDeadlineAt: "2026-08-06T11:00:38.000Z",
+    resultsEndAt: "2026-08-06T11:00:46.000Z",
+    ...overrides,
+  });
+
 async function source(relativePath) {
   return readFile(new URL(relativePath, import.meta.url), "utf8");
 }
 
-test("exact current MOV-17 timing shape remains passively adaptable", () => {
+test("exact current MOV-17 timing shape remains passively adaptable as pinned schema v1", () => {
   const adapted = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
     view: authoritativeView(),
     lastAcceptedPhaseVersion: 6,
   });
 
+  assert.equal(MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION, 1);
   assert.equal(adapted.valid, true);
   assert.equal(adapted.reason, null);
   assert.equal(adapted.source.phase, "board_select");
   assert.equal(adapted.source.phaseVersion, 7);
   assert.equal(adapted.source.lastAcceptedPhaseVersion, 6);
+});
+
+test("unknown authoritative visual schema versions fail closed", () => {
+  for (const schemaVersion of [0, 2, 999]) {
+    const adapted = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+      view: authoritativeView(),
+      lastAcceptedPhaseVersion: 6,
+      schemaVersion,
+    });
+
+    assert.equal(adapted.valid, false);
+    assert.equal(adapted.reason, "UNKNOWN_AUTHORITATIVE_SCHEMA_VERSION");
+    assert.equal(adapted.source, null);
+  }
 });
 
 test("missing or malformed authoritative server time fails closed", () => {
@@ -95,6 +129,87 @@ test("every supplied authoritative deadline must parse as a timestamp", () => {
   }
 });
 
+test("playback requires the authoritative shared playback epoch", () => {
+  const adapted = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+    view: activeSceneView("playback", { playbackStartsAt: null }),
+    lastAcceptedPhaseVersion: 7,
+  });
+
+  assert.equal(adapted.valid, false);
+  assert.equal(adapted.reason, "PLAYBACK_STARTS_AT_MISSING");
+});
+
+test("answer requires the authoritative answer deadline", () => {
+  const adapted = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+    view: activeSceneView("answer", { answerDeadlineAt: null }),
+    lastAcceptedPhaseVersion: 7,
+  });
+
+  assert.equal(adapted.valid, false);
+  assert.equal(adapted.reason, "ANSWER_DEADLINE_AT_MISSING");
+});
+
+test("results requires authoritative results state", () => {
+  const adapted = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+    view: activeSceneView("results", { resultsEndAt: null }),
+    lastAcceptedPhaseVersion: 7,
+  });
+
+  assert.equal(adapted.valid, false);
+  assert.equal(adapted.reason, "AUTHORITATIVE_RESULTS_STATE_MISSING");
+});
+
+test("active scene phases require a canonical clip identity", () => {
+  for (const phase of ["transition", "playback", "answer", "results"]) {
+    const adapted = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+      view: activeSceneView(phase, { selectedClipId: null }),
+      lastAcceptedPhaseVersion: 7,
+      transitionPresentation: phase === "transition" ? "curtain" : null,
+    });
+
+    assert.equal(adapted.valid, false, phase);
+    assert.equal(adapted.reason, "ACTIVE_SCENE_CLIP_MISSING", phase);
+  }
+});
+
+test("transition presentation distinguishes missing and invalid values", () => {
+  const missing = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+    view: activeSceneView("transition"),
+    lastAcceptedPhaseVersion: 7,
+    transitionPresentation: null,
+  });
+  assert.equal(missing.valid, false);
+  assert.equal(missing.reason, "TRANSITION_PRESENTATION_MISSING");
+
+  for (const transitionPresentation of ["fade", "unknown"]) {
+    const adapted = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+      view: activeSceneView("transition"),
+      lastAcceptedPhaseVersion: 7,
+      transitionPresentation,
+    });
+
+    assert.equal(adapted.valid, false);
+    assert.equal(adapted.reason, "TRANSITION_PRESENTATION_INVALID");
+  }
+});
+
+test("stale and selected-tile contradictions fail in the first adapter", () => {
+  const stale = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+    view: authoritativeView({ phaseVersion: 5 }),
+    lastAcceptedPhaseVersion: 6,
+  });
+  assert.equal(stale.valid, false);
+  assert.equal(stale.reason, "STALE_PHASE_VERSION");
+
+  const selectedBeforeTransition =
+    adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+      view: authoritativeView({ selectedTileId: "tile-7" }),
+      lastAcceptedPhaseVersion: 6,
+    });
+  assert.equal(selectedBeforeTransition.valid, false);
+  assert.equal(selectedBeforeTransition.reason, "BOARD_SELECT_HAS_SELECTED_TILE");
+});
+
 test("caller selector state cannot contradict the authoritative controller", () => {
   for (const overrides of [
     { callerIsSelector: true, selectorControllerType: null },
@@ -120,6 +235,32 @@ test("caller selector state cannot contradict the authoritative controller", () 
   }
 });
 
+test("the rendered browser workflow is bound to both visual contract suites", async () => {
+  const workflow = await source(
+    "../.github/workflows/movie-buff-mov18-browser-evidence.yml",
+  );
+
+  assert.match(
+    workflow,
+    /tests\/movie-buff-authoritative-visual-adapter\.test\.mjs/,
+  );
+  assert.match(workflow, /tests\/movie-buff-visual-runtime\.test\.mjs/);
+  assert.match(workflow, /Run focused visual contracts/);
+});
+
+test("adapter evidence classification is derived from recorded exits", async () => {
+  const workflow = await source(
+    "../.github/workflows/movie-buff-mov18-authoritative-adapter-evidence.yml",
+  );
+
+  assert.match(workflow, /contracts\.exit/);
+  assert.match(workflow, /typescript\.exit/);
+  assert.match(workflow, /build\.exit/);
+  assert.match(workflow, /classification=\$classification/);
+  assert.match(workflow, /Classify exact adapter evidence/);
+  assert.doesNotMatch(workflow, /echo "classification=PASS"/);
+});
+
 test("the authoritative visual adapter remains read-only", async () => {
   const [adapter, component] = await Promise.all([
     source("../src/lib/movie-buff/authoritativeVisualAdapter.ts"),
@@ -136,4 +277,7 @@ test("the authoritative visual adapter remains read-only", async () => {
     assert.doesNotMatch(implementation, /window\.location/);
     assert.doesNotMatch(implementation, /useStateMachineInput/);
   }
+
+  assert.match(component, /data-movie-buff-authoritative-schema-version/);
+  assert.match(component, /data-movie-buff-authoritative-server-now/);
 });
