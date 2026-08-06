@@ -87,7 +87,7 @@ jobs:
           set -euo pipefail
           resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           test "${resolved_ref}" = "${VALIDATION_REF}"
-          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
             test "${resolved_ref}" = "${OWNER_BRANCH}"
           fi
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
