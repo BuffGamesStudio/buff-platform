@@ -54,12 +54,153 @@ substitutions = [
     ),
     (
 '''if require_ready; then
+  snapshot_vip_data "${RAW}/vip-data-before.txt"
+  record_exit "snapshot-before" $?
+fi
+''',
+'''if require_ready; then
+  sha256sum \
+    supabase/rollbacks/20260804073100_movie_buff_vip_null_category_fail_closed.rollback.sql \
+    >"${RAW}/mov16-73100-rollback-sha256.txt"
+  record_exit "mov16-73100-rollback-sha256" $?
+fi
+
+if require_ready; then
+  snapshot_vip_data "${RAW}/vip-data-before-73100-rollback.txt"
+  record_exit "snapshot-before-73100-rollback" $?
+fi
+
+if require_ready; then
+  psql "${database_url}" -X -Atq -v ON_ERROR_STOP=1 -c "
+    select pg_catalog.pg_get_functiondef(
+      'public.movie_buff_vip_ineligibility_reason(uuid,uuid,uuid,uuid,uuid,timestamptz)'::pg_catalog.regprocedure
+    );
+  " >"${RAW}/helper-before-73100-rollback.sql" \
+    2>"${RAW}/helper-before-73100-rollback.error"
+  record_exit "helper-before-73100-rollback" $?
+fi
+
+if require_ready; then
+  psql "${database_url}" -X -v ON_ERROR_STOP=1 \
+    -f supabase/rollbacks/20260804073100_movie_buff_vip_null_category_fail_closed.rollback.sql \
+    >"${RAW}/rollback-73100.log" 2>&1
+  record_exit "rollback-73100" $?
+fi
+
+if require_ready; then
+  psql "${database_url}" -X -Atq -v ON_ERROR_STOP=1 -c "
+    select case
+      when pg_catalog.count(*) = 1
+       and pg_catalog.bool_and(r.rolname = 'postgres')
+       and pg_catalog.bool_and(p.prosecdef)
+       and pg_catalog.bool_and(
+         p.proconfig = array['search_path=pg_catalog']::text[]
+       )
+       and pg_catalog.bool_and(
+         not pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+       )
+       and pg_catalog.bool_and(
+         not pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+       )
+       and pg_catalog.bool_and(
+         not pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')
+       )
+       and pg_catalog.bool_and(
+         not exists (
+           select 1
+           from pg_catalog.aclexplode(
+             pg_catalog.coalesce(
+               p.proacl,
+               pg_catalog.acldefault('f', p.proowner)
+             )
+           ) as acl
+           where acl.grantee = 0
+             and acl.privilege_type = 'EXECUTE'
+         )
+       )
+       and pg_catalog.bool_and(
+         pg_catalog.position(
+           'v_match.category_id is null'
+           in pg_catalog.pg_get_functiondef(p.oid)
+         ) = 0
+       )
+       and pg_catalog.bool_and(
+         pg_catalog.position(
+           'and not (v_match.category_id = any(v_definition.allowed_category_ids)) then'
+           in pg_catalog.pg_get_functiondef(p.oid)
+         ) > 0
+       )
+      then 'PASS'
+      else 'FAIL'
+    end
+    from pg_catalog.pg_proc as p
+    join pg_catalog.pg_namespace as n on n.oid = p.pronamespace
+    join pg_catalog.pg_roles as r on r.oid = p.proowner
+    where n.nspname = 'public'
+      and p.oid =
+        'public.movie_buff_vip_ineligibility_reason(uuid,uuid,uuid,uuid,uuid,timestamptz)'::pg_catalog.regprocedure;
+  " >"${RAW}/rollback-73100-probe.txt" \
+    2>"${RAW}/rollback-73100-probe.error"
+  code=$?
+  if [[ "${code}" -eq 0 && "$(cat "${RAW}/rollback-73100-probe.txt")" == "PASS" ]]; then
+    record_exit "rollback-73100-probe" 0
+  else
+    record_exit "rollback-73100-probe" 1
+  fi
+fi
+
+if require_ready; then
+  psql "${database_url}" -X -v ON_ERROR_STOP=1 \
+    -f supabase/migrations/20260804073100_movie_buff_vip_null_category_fail_closed.sql \
+    >"${RAW}/reapply-73100.log" 2>&1
+  record_exit "reapply-73100" $?
+fi
+
+if require_ready; then
+  psql "${database_url}" -X -Atq -v ON_ERROR_STOP=1 -c "
+    select pg_catalog.pg_get_functiondef(
+      'public.movie_buff_vip_ineligibility_reason(uuid,uuid,uuid,uuid,uuid,timestamptz)'::pg_catalog.regprocedure
+    );
+  " >"${RAW}/helper-after-73100-reapply.sql" \
+    2>"${RAW}/helper-after-73100-reapply.error"
+  code=$?
+  if [[ "${code}" -eq 0 ]]; then
+    diff -u \
+      "${RAW}/helper-before-73100-rollback.sql" \
+      "${RAW}/helper-after-73100-reapply.sql" \
+      >"${RAW}/helper-73100-reapply-diff.log" 2>&1
+    code=$?
+  fi
+  record_exit "helper-73100-reapply-equality" "${code}"
+fi
+
+if require_ready; then
+  snapshot_vip_data "${RAW}/vip-data-after-73100-reapply.txt"
+  code=$?
+  if [[ "${code}" -eq 0 ]]; then
+    diff -u \
+      "${RAW}/vip-data-before-73100-rollback.txt" \
+      "${RAW}/vip-data-after-73100-reapply.txt" \
+      >"${RAW}/rollback-73100-data-diff.log" 2>&1
+    code=$?
+  fi
+  record_exit "rollback-73100-data-equality" "${code}"
+fi
+
+if require_ready; then
+  snapshot_vip_data "${RAW}/vip-data-before.txt"
+  record_exit "snapshot-before" $?
+fi
+'''
+    ),
+    (
+'''if require_ready; then
   run_pgtap "pgtap-after-reapply"
 fi
 ''',
 '''if require_ready; then
-  psql "${database_url}" -X -v ON_ERROR_STOP=1 \\
-    -v room_id="${room_id}" -v definition_id="${definition_id}" <<'SQL' \\
+  psql "${database_url}" -X -v ON_ERROR_STOP=1 \
+    -v room_id="${room_id}" -v definition_id="${definition_id}" <<'SQL' \
     >"${RAW}/sentinel-data-pre-pgtap-cleanup.log" 2>&1
 begin;
 delete from public.game_rooms where id=:'room_id'::uuid;

@@ -65,6 +65,8 @@ Invoke-Checked "behavior wrapper syntax" {
   node --check scripts/movie-buff-mov16-deadline-release-race.mjs
   node --check scripts/movie-buff-mov16-deadline-release-race-v2.mjs
   node --check scripts/movie-buff-mov16-adversarial-v3-wrapper.mjs
+  node --check scripts/movie-buff-vip-authority-personas.mjs
+  node --check scripts/movie-buff-vip-authority-personas-impl.mjs
 }
 Invoke-Checked "negative-path self-test" {
   node scripts/movie-buff-mov16-evidence-guard.mjs --self-test |
@@ -74,9 +76,34 @@ Invoke-Checked "MOV-16 source contracts" {
   node --test `
     tests/movie-buff-vip-authority.test.mjs `
     tests/movie-buff-vip-finalize-contract.test.mjs `
+    tests/movie-buff-vip-null-category-rollback-contract.test.mjs `
     tests/movie-buff-vip-phase-policy.test.mjs |
     Tee-Object -FilePath (Join-Path $EvidenceDirectory "node-tests.log")
 }
+
+$sourcePaths = @(
+  "supabase/migrations/20260804073000_movie_buff_vip_authority.sql"
+  "supabase/migrations/20260804073100_movie_buff_vip_null_category_fail_closed.sql"
+  "supabase/migrations/20260804073200_movie_buff_vip_snapshot_release_hardening.sql"
+  "supabase/migrations/20260804073300_movie_buff_vip_deadline_finalize.sql"
+  "supabase/rollbacks/20260804073000_movie_buff_vip_authority.rollback.sql"
+  "supabase/rollbacks/20260804073100_movie_buff_vip_null_category_fail_closed.rollback.sql"
+  "supabase/rollbacks/20260804073200_movie_buff_vip_snapshot_release_hardening.rollback.sql"
+  "supabase/rollbacks/20260804073300_movie_buff_vip_deadline_finalize.rollback.sql"
+  "supabase/rollbacks/20260804073310_movie_buff_vip_callable_containment.rollback.sql"
+)
+foreach ($sourcePath in $sourcePaths) {
+  if (-not (Test-Path $sourcePath -PathType Leaf)) {
+    throw "Required MOV-16 source artifact is missing: $sourcePath"
+  }
+}
+$sourcePaths |
+  ForEach-Object {
+    $hash = (Get-FileHash -Algorithm SHA256 -Path $_).Hash.ToLowerInvariant()
+    "$hash  ./$($_ -replace '\\','/')"
+  } |
+  Out-File -FilePath (Join-Path $EvidenceDirectory "mov16-source-sha256.txt") -Encoding ascii
+
 Invoke-Checked "TypeScript" {
   npx tsc --noEmit 2>&1 |
     Tee-Object -FilePath (Join-Path $EvidenceDirectory "typescript.log")
