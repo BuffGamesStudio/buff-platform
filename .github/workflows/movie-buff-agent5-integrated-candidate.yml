@@ -18,9 +18,9 @@ env:
 
 jobs:
   linux-source-build:
-    name: Exact identity, focused tests, TypeScript, build, and integrity
+    name: Exact identity, contracts, TypeScript, build, and integrity
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       SUPABASE_URL: http://127.0.0.1:54321
@@ -43,13 +43,14 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Initialize external evidence and verify exact identity
+      - name: Verify identity, manifest, marker, components, and ownership
         shell: bash
         run: |
           set -euo pipefail
           EVIDENCE_DIR="$RUNNER_TEMP/movie-buff-agent5-linux-evidence"
           echo "EVIDENCE_DIR=$EVIDENCE_DIR" >> "$GITHUB_ENV"
           mkdir -p "$EVIDENCE_DIR"
+
           remote="$(git remote get-url origin)"
           [[ "$remote" =~ BuffGamesStudio/buff-platform(\.git)?$ ]] || { echo 'Wrong repository remote'; exit 1; }
           [[ "$GITHUB_REF_NAME" == "$EXPECTED_BRANCH" ]] || { echo 'Wrong branch'; exit 1; }
@@ -57,6 +58,7 @@ jobs:
           git cat-file -e "${PRODUCT_SHA}^{commit}"
           [[ "$(git show -s --format=%T "$PRODUCT_SHA")" == "$PRODUCT_TREE" ]] || { echo 'Product tree mismatch'; exit 1; }
           [[ -z "$(git status --porcelain --untracked-files=all)" ]] || { echo 'Dirty checkout'; exit 1; }
+
           {
             echo "repository=BuffGamesStudio/buff-platform"
             echo "branch=$EXPECTED_BRANCH"
@@ -67,10 +69,6 @@ jobs:
             echo "captured_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } | tee "$EVIDENCE_DIR/identity.txt"
 
-      - name: Verify manifest, marker, and NO-GO classification
-        shell: bash
-        run: |
-          set -euo pipefail
           node <<'NODE'
           const fs = require('node:fs');
           const manifest = JSON.parse(fs.readFileSync('docs/validation/movie-buff-integrated-candidate-v1.manifest.json', 'utf8'));
@@ -80,10 +78,6 @@ jobs:
           if (manifest.releaseClassification !== 'NO-GO' || marker.releaseClassification !== 'NO-GO') throw new Error('Candidate must remain NO-GO');
           NODE
 
-      - name: Record component identities and merge bases
-        shell: bash
-        run: |
-          set -euo pipefail
           cat > "$EVIDENCE_DIR/components.tsv" <<'EOF'
           integration	bf316a15a2120e32d8a32e479df2ae439081f9a1
           pr3_visuals	f692e82a5d524c950011e0300908c9cbec2389cb
@@ -103,10 +97,6 @@ jobs:
             printf '%s\t%s\t%s\t%s\n' "$name" "$sha" "$tree" "$merge_base" | tee -a "$EVIDENCE_DIR/merge-bases.tsv"
           done < "$EVIDENCE_DIR/components.tsv"
 
-      - name: Verify protected blobs and exact current lane deltas
-        shell: bash
-        run: |
-          set -euo pipefail
           check_blob() {
             local path="$1" expected="$2" actual
             actual="$(git rev-parse "$PRODUCT_SHA:$path")"
@@ -127,10 +117,6 @@ jobs:
           check_blob 'scripts/movie-buff-migration-bom-only-check.mjs' '67123ea020c9ed245c4dacf9c5cdbce1c3ea0a64'
           check_blob 'tests/movie-buff-migration-encoding.test.mjs' 'a88adaffe01d00a3af38c0a48da255f526199ce6'
 
-      - name: Verify product and controller ownership boundaries
-        shell: bash
-        run: |
-          set -euo pipefail
           cat > "$EVIDENCE_DIR/allowed-product-delta.txt" <<'EOF'
           .github/workflows/movie-buff-mov16-exact-validation.yml
           .github/workflows/movie-buff-mov19-validation.yml
@@ -156,6 +142,7 @@ jobs:
           git diff --name-only "$RECONCILIATION_BASE_SHA" "$PRODUCT_SHA" | sort > "$EVIDENCE_DIR/actual-product-delta.txt"
           sort -o "$EVIDENCE_DIR/allowed-product-delta.txt" "$EVIDENCE_DIR/allowed-product-delta.txt"
           diff -u "$EVIDENCE_DIR/allowed-product-delta.txt" "$EVIDENCE_DIR/actual-product-delta.txt"
+
           git diff --name-only "$PRODUCT_SHA" "$GITHUB_SHA" | sort > "$EVIDENCE_DIR/controller-delta.txt"
           while IFS= read -r path; do
             case "$path" in
@@ -168,9 +155,11 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Run focused contracts from every included lane
+        id: focused
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          set -o pipefail
           node --test \
             tests/movie-buff-public-matchmaking-contract.test.mjs \
             tests/movie-buff-public-matchmaking-handoff.test.mjs \
@@ -186,13 +175,19 @@ jobs:
             2>&1 | tee "$EVIDENCE_DIR/focused-tests.log"
 
       - name: Run TypeScript
-        shell: bash
-        run: npx tsc --noEmit 2>&1 | tee "$EVIDENCE_DIR/typescript.log"
-
-      - name: Reject BOM-bearing SQL
+        id: typescript
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          set -o pipefail
+          npx tsc --noEmit 2>&1 | tee "$EVIDENCE_DIR/typescript.log"
+
+      - name: Reject BOM-bearing SQL
+        id: encoding
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
           node <<'NODE' | tee "$EVIDENCE_DIR/sql-encoding.log"
           const fs = require('node:fs');
           const path = require('node:path');
@@ -215,6 +210,8 @@ jobs:
           NODE
 
       - name: Scan for obvious secret material
+        id: secrets
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -225,10 +222,13 @@ jobs:
           echo 'obvious_secret_patterns=PASS' | tee "$EVIDENCE_DIR/secret-scan.txt"
 
       - name: Build with localhost placeholders and runtime marker
+        id: build
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          set -o pipefail
           cp public/movie-buff-build-marker.json "$EVIDENCE_DIR/source-build-marker.json"
+          trap 'git checkout -- public/movie-buff-build-marker.json >/dev/null 2>&1 || true' EXIT
           node <<'NODE'
           const fs = require('node:fs');
           const file = 'public/movie-buff-build-marker.json';
@@ -241,24 +241,40 @@ jobs:
           fs.copyFileSync(file, process.env.EVIDENCE_DIR + '/runtime-build-marker.json');
           NODE
           npm run build 2>&1 | tee "$EVIDENCE_DIR/production-build.log"
-          git checkout -- public/movie-buff-build-marker.json
 
-      - name: Clean-worktree postflight and evidence hashes
+      - name: Finalize classifications and hashes
+        if: always()
         shell: bash
+        env:
+          FOCUSED_OUTCOME: ${{ steps.focused.outcome }}
+          TYPESCRIPT_OUTCOME: ${{ steps.typescript.outcome }}
+          ENCODING_OUTCOME: ${{ steps.encoding.outcome }}
+          SECRETS_OUTCOME: ${{ steps.secrets.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
         run: |
-          set -euo pipefail
-          git diff --check
-          [[ -z "$(git status --porcelain --untracked-files=all)" ]] || { git status --short; exit 1; }
+          set -u
+          EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/movie-buff-agent5-linux-evidence}"
+          mkdir -p "$EVIDENCE_DIR"
+          git checkout -- public/movie-buff-build-marker.json >/dev/null 2>&1 || true
+
+          classify() {
+            [[ "$1" == 'success' ]] && printf 'PASS' || printf 'FAIL'
+          }
+
+          clean='PASS'
+          git diff --check || clean='FAIL'
+          [[ -z "$(git status --porcelain --untracked-files=all)" ]] || clean='FAIL'
+
           {
             echo 'source_assembly=PASS'
             echo 'dependency_install=PASS'
-            echo 'focused_static_tests=PASS'
-            echo 'typescript=PASS'
-            echo 'production_build=PASS'
-            echo 'sql_encoding=PASS'
+            echo "focused_static_tests=$(classify "$FOCUSED_OUTCOME")"
+            echo "typescript=$(classify "$TYPESCRIPT_OUTCOME")"
+            echo "production_build=$(classify "$BUILD_OUTCOME")"
+            echo "sql_encoding=$(classify "$ENCODING_OUTCOME")"
             echo 'changed_file_ownership=PASS'
-            echo 'secret_scan=PASS'
-            echo 'clean_worktree=PASS'
+            echo "secret_scan=$(classify "$SECRETS_OUTCOME")"
+            echo "clean_worktree=$clean"
             echo 'database=UNKNOWN'
             echo 'browser=UNKNOWN'
             echo 'hosted_security=FAIL'
@@ -266,7 +282,15 @@ jobs:
             echo 'rollback=UNKNOWN'
             echo 'release=NO-GO'
           } | tee "$EVIDENCE_DIR/status.txt"
+
           find "$EVIDENCE_DIR" -maxdepth 1 -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > "$EVIDENCE_DIR/sha256.txt"
+
+          failed=0
+          for outcome in "$FOCUSED_OUTCOME" "$TYPESCRIPT_OUTCOME" "$ENCODING_OUTCOME" "$SECRETS_OUTCOME" "$BUILD_OUTCOME"; do
+            [[ "$outcome" == 'success' ]] || failed=1
+          done
+          [[ "$clean" == 'PASS' ]] || failed=1
+          exit "$failed"
 
       - name: Upload Linux evidence
         if: always()
