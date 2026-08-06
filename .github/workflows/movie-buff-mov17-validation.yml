@@ -55,7 +55,8 @@ jobs:
     timeout-minutes: 25
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EXPECTED_BRANCH: copilot/MOV-17-shared-phase-machine
+      OWNER_BRANCH: copilot/MOV-17-shared-phase-machine
+      VALIDATION_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
     steps:
       - name: Check out exact MOV-17 SHA
@@ -76,8 +77,15 @@ jobs:
         run: |
           set -euo pipefail
           resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
-          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
+          test "${resolved_ref}" = "${VALIDATION_REF}"
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            test "${resolved_ref}" = "${OWNER_BRANCH}"
+          fi
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          case "$(git remote get-url origin)" in
+            https://github.com/BuffGamesStudio/buff-platform|https://github.com/BuffGamesStudio/buff-platform.git) ;;
+            *) exit 1 ;;
+          esac
           test -z "$(git status --porcelain)"
           node --version
           npm --version
@@ -143,10 +151,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "${EVIDENCE_DIR}"
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           {
             echo "lane=MOV-17"
             echo "source_sha=$(git rev-parse HEAD)"
-            echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "source_ref=${resolved_ref}"
+            echo "owner_branch=${OWNER_BRANCH}"
+            echo "validation_ref=${VALIDATION_REF}"
+            echo "event_name=${GITHUB_EVENT_NAME}"
             echo "runner_os=${RUNNER_OS}"
             echo "node_version=$(node --version)"
             echo "npm_version=$(npm --version)"
