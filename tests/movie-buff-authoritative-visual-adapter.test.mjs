@@ -172,8 +172,16 @@ test("active scene phases require a canonical clip identity", () => {
   }
 });
 
-test("transition presentation accepts only the approved explicit values", () => {
-  for (const transitionPresentation of [null, "fade", "unknown"]) {
+test("transition presentation distinguishes missing and invalid values", () => {
+  const missing = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+    view: activeSceneView("transition"),
+    lastAcceptedPhaseVersion: 7,
+    transitionPresentation: null,
+  });
+  assert.equal(missing.valid, false);
+  assert.equal(missing.reason, "TRANSITION_PRESENTATION_MISSING");
+
+  for (const transitionPresentation of ["fade", "unknown"]) {
     const adapted = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
       view: activeSceneView("transition"),
       lastAcceptedPhaseVersion: 7,
@@ -181,10 +189,7 @@ test("transition presentation accepts only the approved explicit values", () => 
     });
 
     assert.equal(adapted.valid, false);
-    assert.equal(
-      adapted.reason,
-      "TRANSITION_PRESENTATION_MISSING_OR_INVALID",
-    );
+    assert.equal(adapted.reason, "TRANSITION_PRESENTATION_INVALID");
   }
 });
 
