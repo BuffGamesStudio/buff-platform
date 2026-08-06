@@ -32,17 +32,29 @@ from pathlib import Path
 import re, sys
 wrapper=Path(sys.argv[1]); mode=sys.argv[2]; temp=Path(sys.argv[3])
 text=wrapper.read_text(encoding='utf-8')
-replacements={
-  'BRANCH="validation/movie-buff-core-v6"':'BRANCH="validation/MOV-17-encoding-twin-v2"',
-  'RAW_COMPOSITION="91b8b65f85d53a950eae15544af39e2efd108c5c"':'RAW_COMPOSITION="d70d758c730d32d71525c9381b9f98b80e0e1e83"',
-  'RAW_TREE="40d72195ced550771ad257054a6325c51f183a28"':'RAW_TREE="b0e9cfa1963d8fbca9c72dfe7fc64a9dbe2cbe8f"',
-}
-for old,new in replacements.items():
-  if text.count(old)!=1: raise SystemExit(f'identity anchor mismatch: {old}')
-  text=text.replace(old,new)
+assignments=[
+  (r'(?m)^BRANCH="[^"]+"$', 'BRANCH="validation/MOV-17-encoding-twin-v2"'),
+  (r'(?m)^RAW_COMPOSITION="[0-9a-f]{40}"$', 'RAW_COMPOSITION="d70d758c730d32d71525c9381b9f98b80e0e1e83"'),
+  (r'(?m)^RAW_TREE="[0-9a-f]{40}"$', 'RAW_TREE="b0e9cfa1963d8fbca9c72dfe7fc64a9dbe2cbe8f"'),
+]
+for pattern,replacement in assignments:
+  text,n=re.subn(pattern,replacement,text,count=1)
+  if n!=1: raise SystemExit(f'identity assignment mismatch: {pattern}')
 
-block=re.compile(r'''    MOVIE_BUFF_ALLOW_LOCAL_DELETIONS=YES \\\n    MOVIE_BUFF_EXPECTED_GIT_SHA="\$EXPECTED_SHA" \\\n    MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-vip-authority-adversarial\.mjs" \\\n    MOVIE_BUFF_VIP_TEST_USERS="\$users_json" \\\n    MOVIE_BUFF_EVIDENCE_OUTPUT="\$EVIDENCE_ROOT/mov16-vip-authority\.json" \\\n      run_step mov16-vip-authority node "\$SOURCE_ROOT/scripts/movie-buff-vip-authority-adversarial\.mjs" \|\| \{ fail mov16-vip-authority; return 1; \}
-''')
+start_marker='''    MOVIE_BUFF_ALLOW_LOCAL_DELETIONS=YES \\
+    MOVIE_BUFF_EXPECTED_GIT_SHA="$EXPECTED_SHA" \\
+    MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-vip-authority-adversarial.mjs" \\
+'''
+next_marker='''
+    MOVIE_BUFF_ALLOW_LOCAL_DELETIONS=YES \\
+    MOVIE_BUFF_EXPECTED_GIT_SHA="$EXPECTED_SHA" \\
+    MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-vip-finalize-adversarial.mjs" \\
+'''
+start=text.find(start_marker)
+if start<0: raise SystemExit('MOV-16 start marker missing')
+end=text.find(next_marker,start)
+if end<0: raise SystemExit('MOV-16 end marker missing')
+
 if mode=='mov16-diagnostic':
   diag=temp/'movie-buff-vip-authority-adversarial-diagnostic.mjs'
   source=Path('scripts/movie-buff-vip-authority-adversarial.mjs').read_text(encoding='utf-8')
@@ -63,8 +75,7 @@ else:
 JSON
     printf '0\n' >"$EVIDENCE_ROOT/mov16-vip-authority-skipped.exit.txt"
 '''
-text,n=block.subn(replacement,text,count=1)
-if n!=1: raise SystemExit('MOV-16 wrapper block mismatch')
+text=text[:start]+replacement+text[end:]
 wrapper.write_text(text,encoding='utf-8')
 PY
 patch_code=$?
@@ -73,6 +84,9 @@ if [[ "$patch_code" -ne 0 ]]; then
   exit "$patch_code"
 fi
 
+if [[ "$MODE" == "mov16-diagnostic" ]]; then
+  ln -sfn "$SOURCE_ROOT/node_modules" "$RUNNER_TEMP/node_modules"
+fi
 chmod +x "$WORK_WRAPPER"
 bash -n "$WORK_WRAPPER" || exit $?
 sha256sum "$WORK_WRAPPER" >"$EVIDENCE_ROOT/patched-wrapper.sha256.txt"
