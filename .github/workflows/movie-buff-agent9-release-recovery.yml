@@ -1,0 +1,56 @@
+name: Movie Buff Agent 9 release recovery preflight
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - "operations/movie-buff/**"
+      - "docs/operations/**"
+      - "scripts/movie-buff-agent9-staging-rehearsal.ps1"
+      - ".github/workflows/movie-buff-agent9-release-recovery.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Agent 9 preflight (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Capture exact tree
+        id: identity
+        shell: pwsh
+        run: |
+          "tree=$(git rev-parse 'HEAD^{tree}')" >> $env:GITHUB_OUTPUT
+
+      - name: Run fail-closed preflight
+        shell: pwsh
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-agent9-${{ runner.os }}-${{ github.run_id }}
+        run: |
+          ./scripts/movie-buff-agent9-staging-rehearsal.ps1 `
+            -Mode Preflight `
+            -ExpectedBranch '${{ github.head_ref || github.ref_name }}' `
+            -ExpectedSha '${{ github.sha }}' `
+            -ExpectedTree '${{ steps.identity.outputs.tree }}' `
+            -EvidenceDirectory $env:EVIDENCE_DIR `
+            -PackageOnly
+
+      - name: Upload preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-agent9-preflight-${{ runner.os }}-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-agent9-${{ runner.os }}-${{ github.run_id }}
+          if-no-files-found: error
