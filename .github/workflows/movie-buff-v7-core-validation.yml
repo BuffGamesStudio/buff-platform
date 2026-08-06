@@ -1,0 +1,265 @@
+name: Movie Buff successor v7 exact core validation
+
+on:
+  pull_request:
+    branches:
+      - validation/movie-buff-v7-runner-base
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_CONTROLLER_BRANCH: validation/movie-buff-v7-controller
+  CONTROLLER_SHA: 85a02cc073c951fde09da25a706597ff40df463a
+  CONTROLLER_TREE: 9eafeaaf9dcc0f3762c5a6320485f7b0ab8c2e7c
+  PRODUCT_SHA: 886b914ef83398b6384ce49e18955e026103a27c
+  PRODUCT_TREE: 7e1fe5b4cdc4787976b8929664e966b2aa09d83d
+  PREVIOUS_PRODUCT_SHA: c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  linux-source-build:
+    name: Linux source, contracts and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-mock-publishable-key
+      SUPABASE_SERVICE_ROLE_KEY: local-mock-service-role-key
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Bind exact controller and product
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_HEAD_REF}" = "${EXPECTED_CONTROLLER_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${CONTROLLER_SHA}"
+          test "$(git rev-parse HEAD^{tree})" = "${CONTROLLER_TREE}"
+          test "$(git rev-parse HEAD^)" = "${PRODUCT_SHA}"
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Execute exact Linux controller
+        shell: bash
+        run: |
+          evidence="${RUNNER_TEMP}/movie-buff-v7-linux"
+          mkdir -p "${evidence}"
+          ./scripts/movie-buff-agent5-linux-exact-validation.sh \
+            "${CONTROLLER_SHA}" \
+            "${EXPECTED_CONTROLLER_BRANCH}" \
+            "${PRODUCT_SHA}" \
+            "${PRODUCT_TREE}" \
+            "${PREVIOUS_PRODUCT_SHA}" \
+            "${evidence}"
+      - name: Upload Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-v7-linux-${{ env.CONTROLLER_SHA }}
+          path: ${{ runner.temp }}/movie-buff-v7-linux
+          if-no-files-found: error
+          retention-days: 14
+      - name: Clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+  windows-digital-twin:
+    name: Windows command digital twin
+    runs-on: windows-2025
+    timeout-minutes: 50
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-mock-publishable-key
+      SUPABASE_SERVICE_ROLE_KEY: local-mock-service-role-key
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Bind exact controller and product
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:GITHUB_HEAD_REF -ne $env:EXPECTED_CONTROLLER_BRANCH) { throw "wrong head branch" }
+          if ((git rev-parse HEAD).Trim() -ne $env:CONTROLLER_SHA) { throw "wrong controller SHA" }
+          if ((git rev-parse 'HEAD^{tree}').Trim() -ne $env:CONTROLLER_TREE) { throw "wrong controller tree" }
+          if ((git rev-parse HEAD^).Trim() -ne $env:PRODUCT_SHA) { throw "wrong product parent" }
+          if ((git rev-parse "$env:PRODUCT_SHA`^{tree}").Trim() -ne $env:PRODUCT_TREE) { throw "wrong product tree" }
+          if ((git status --porcelain --untracked-files=all) -join "") { throw "dirty checkout" }
+      - name: Install committed dependency graph
+        shell: pwsh
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute Windows digital twin
+        shell: pwsh
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP "movie-buff-v7-windows"
+          New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+          ./scripts/movie-buff-agent5-windows-digital-twin.ps1 `
+            -ExpectedSha $env:CONTROLLER_SHA `
+            -ExpectedBranch $env:EXPECTED_CONTROLLER_BRANCH `
+            -ProductSha $env:PRODUCT_SHA `
+            -ProductTree $env:PRODUCT_TREE `
+            -EvidenceDirectory $evidence
+          exit $LASTEXITCODE
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-v7-windows-${{ env.CONTROLLER_SHA }}
+          path: ${{ runner.temp }}\movie-buff-v7-windows
+          if-no-files-found: error
+          retention-days: 14
+      - name: Clean postflight
+        if: always()
+        shell: pwsh
+        run: |
+          git diff --check
+          if ((git status --porcelain --untracked-files=all) -join "") { throw "dirty postflight" }
+
+  disposable-security-rollback:
+    name: Disposable security, personas, containment and reapply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Execute exact security and recovery package
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${CONTROLLER_SHA}"
+          evidence="${RUNNER_TEMP}/movie-buff-v7-security"
+          ./scripts/movie-buff-agent6-security-package.sh \
+            "${CONTROLLER_SHA}" \
+            "${CONTROLLER_TREE}" \
+            "${PRODUCT_SHA}" \
+            "${PRODUCT_TREE}" \
+            "${evidence}"
+      - name: Upload security and rollback evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-v7-security-${{ env.CONTROLLER_SHA }}
+          path: ${{ runner.temp }}/movie-buff-v7-security
+          if-no-files-found: error
+          retention-days: 14
+      - name: Clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+  combined-runtime:
+    name: Disposable database and race synchronization matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Execute exact disposable runtime matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${CONTROLLER_SHA}"
+          test "${GITHUB_HEAD_REF}" = "${EXPECTED_CONTROLLER_BRANCH}"
+          bash scripts/movie-buff-release-train-combined-runtime-lab.sh \
+            "${CONTROLLER_SHA}" \
+            "${PRODUCT_SHA}" \
+            "${PRODUCT_TREE}" \
+            "${EXPECTED_CONTROLLER_BRANCH}" \
+            "${RUNNER_TEMP}/movie-buff-v7-runtime" \
+            "${RUNNER_TEMP}/movie-buff-v7-runtime-stack" \
+            "${RUNNER_TEMP}/movie-buff-v7-runtime-worktree" \
+            "${RUNNER_TEMP}/movie-buff-v7-runtime-users.json"
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-v7-runtime-${{ env.CONTROLLER_SHA }}
+          path: ${{ runner.temp }}/movie-buff-v7-runtime
+          if-no-files-found: error
+          retention-days: 14
+      - name: Clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+  artifact-integrity:
+    name: Aggregate portable evidence
+    if: always()
+    needs: [linux-source-build, windows-digital-twin, disposable-security-rollback, combined-runtime]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download available artifacts
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/movie-buff-v7-core-artifacts
+      - name: Hash and classify aggregate
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/movie-buff-v7-core-artifacts"
+          out="${RUNNER_TEMP}/movie-buff-v7-core-aggregate"
+          mkdir -p "${root}" "${out}"
+          find "${root}" -type f -print0 | sort -z | xargs -0 -r sha256sum >"${out}/downloaded-files.sha256"
+          {
+            echo "product_sha=${PRODUCT_SHA}"
+            echo "product_tree=${PRODUCT_TREE}"
+            echo "controller_sha=${CONTROLLER_SHA}"
+            echo "controller_tree=${CONTROLLER_TREE}"
+            echo "linux_result=${{ needs.linux-source-build.result }}"
+            echo "windows_result=${{ needs.windows-digital-twin.result }}"
+            echo "security_rollback_result=${{ needs.disposable-security-rollback.result }}"
+            echo "runtime_result=${{ needs.combined-runtime.result }}"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"${out}/aggregate-metadata.txt"
+          (cd "${out}" && sha256sum aggregate-metadata.txt downloaded-files.sha256 >sha256.txt && sha256sum -c sha256.txt)
+      - name: Upload aggregate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-v7-core-aggregate-${{ env.CONTROLLER_SHA }}
+          path: ${{ runner.temp }}/movie-buff-v7-core-aggregate
+          if-no-files-found: error
+          retention-days: 14
