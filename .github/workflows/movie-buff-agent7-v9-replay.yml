@@ -1,0 +1,237 @@
+name: Movie Buff Agent 7 candidate-owned v9 browser replay
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-agent7-browser-lab-f6ce058
+    paths:
+      - .github/workflows/movie-buff-agent7-v9-replay.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_REPOSITORY: BuffGamesStudio/buff-platform
+  TARGET_BRANCH: validation/movie-buff-full-candidate-v3-canonical-mov17
+  TARGET_SHA: f6ce05803567e71ab16752d583451721092a13ed
+  TARGET_TREE: 079eb809e32147fb2a16f8b8419c8c497e967cbc
+  TARGET_PARENT: bf316a15a2120e32d8a32e479df2ae439081f9a1
+  V9_WORKFLOW_BLOB: af18cfbe812dc23b1a9da9b39378776423171bf7
+  V2_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
+  MOVIE_BUFF_V2_HARNESS_BLOB: 3b08204937f26af9287f303906509dc057b399dc
+  MOVIE_BUFF_WRAPPER_BLOB: 53e9ab8816bd25fae84505dbb9477dce2947608c
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  candidate-owned-v9:
+    name: Candidate-owned full journey v9
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Install deterministic media tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Bind exact candidate and candidate-owned v9 laboratory
+        shell: bash
+        run: |
+          set -euo pipefail
+          identity="${RUNNER_TEMP}/movie-buff-agent7-v9-controller"
+          mkdir -p "${identity}"
+          test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
+          test "$(git rev-parse HEAD^{tree})" = "${TARGET_TREE}"
+          test "$(git remote get-url origin)" = "https://github.com/${TARGET_REPOSITORY}"
+          git merge-base --is-ancestor "${TARGET_PARENT}" HEAD
+          test "$(git rev-parse HEAD:.github/workflows/movie-buff-three-client-full-journey-v9.yml)" = "${V9_WORKFLOW_BLOB}"
+          test "$(git rev-parse HEAD:.github/validation-archive/movie-buff-three-client-full-journey-v2.yml)" = "${V2_WORKFLOW_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-three-client-full-journey-v2.mjs)" = "${MOVIE_BUFF_V2_HARNESS_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-three-client-full-journey-v3-runner.mjs)" = "${MOVIE_BUFF_WRAPPER_BLOB}"
+          test -z "$(git status --porcelain)"
+          {
+            echo "repository=${TARGET_REPOSITORY}"
+            echo "branch=${TARGET_BRANCH}"
+            echo "sha=${TARGET_SHA}"
+            echo "tree=${TARGET_TREE}"
+            echo "integration_baseline=${TARGET_PARENT}"
+            echo "v9_workflow_blob=${V9_WORKFLOW_BLOB}"
+            echo "v2_workflow_blob=${V2_WORKFLOW_BLOB}"
+            echo "v2_harness_blob=${MOVIE_BUFF_V2_HARNESS_BLOB}"
+            echo "v3_wrapper_blob=${MOVIE_BUFF_WRAPPER_BLOB}"
+            echo "environment_classification=ephemeral-disposable-localhost"
+            echo "localhost_url=http://127.0.0.1:3001"
+            echo "server_start_command=npm run start -- --hostname 127.0.0.1 --port 3001"
+            echo "node_version=$(node --version)"
+            echo "npm_version=$(npm --version)"
+            echo "supabase_cli_version=$(supabase --version)"
+            echo "operating_system=$(uname -a)"
+            echo "start_time_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "controller_workflow_run_id=${GITHUB_RUN_ID}"
+            echo "controller_commit=${GITHUB_SHA}"
+          } >"${identity}/identity.txt"
+          cat /etc/os-release >"${identity}/os-release.txt"
+          git show -s --format=fuller HEAD >"${identity}/candidate-commit.txt"
+
+      - name: Extract exact candidate-owned v9 blocks
+        shell: bash
+        run: |
+          set -euo pipefail
+          source=".github/workflows/movie-buff-three-client-full-journey-v9.yml"
+          python3 - "${source}" "${RUNNER_TEMP}" <<'PY'
+          from pathlib import Path
+          import sys
+          source=Path(sys.argv[1]); output=Path(sys.argv[2])
+          lines=source.read_text(encoding='utf-8').splitlines()
+          def extract(step):
+              marker=f'- name: {step}'
+              start=next(i for i,l in enumerate(lines) if l.strip()==marker)
+              run_line=next(i for i in range(start+1,len(lines)) if lines[i].strip()=='run: |')
+              indent=len(lines[run_line])-len(lines[run_line].lstrip())
+              body=[]
+              for line in lines[run_line+1:]:
+                  if line.strip() and len(line)-len(line.lstrip())<=indent: break
+                  body.append(line[indent+2:] if line.strip() else '')
+              return '\n'.join(body)+'\n'
+          output.joinpath('agent7-v9-extract.sh').write_text(extract('Extract exact reviewed laboratory blocks'),encoding='utf-8')
+          output.joinpath('agent7-v9-preflight-wrapper.sh').write_text(extract('Bind exact source and validate harness'),encoding='utf-8')
+          output.joinpath('agent7-v9-execute-wrapper.sh').write_text(extract('Execute disposable exact-SHA browser journey v9'),encoding='utf-8')
+          PY
+          bash -n "${RUNNER_TEMP}/agent7-v9-extract.sh"
+          bash -n "${RUNNER_TEMP}/agent7-v9-preflight-wrapper.sh"
+          bash -n "${RUNNER_TEMP}/agent7-v9-execute-wrapper.sh"
+          env \
+            V2_WORKFLOW_BLOB="${V2_WORKFLOW_BLOB}" \
+            MOVIE_BUFF_V2_HARNESS_BLOB="${MOVIE_BUFF_V2_HARNESS_BLOB}" \
+            MOVIE_BUFF_WRAPPER_BLOB="${MOVIE_BUFF_WRAPPER_BLOB}" \
+            bash "${RUNNER_TEMP}/agent7-v9-extract.sh"
+          bash -n "${RUNNER_TEMP}/movie-buff-v9-preflight.sh"
+          bash -n "${RUNNER_TEMP}/movie-buff-v9-execute.sh"
+          sha256sum "${source}" "${RUNNER_TEMP}"/movie-buff-v9-*.sh \
+            >"${RUNNER_TEMP}/movie-buff-agent7-v9-controller/laboratory-input-sha256.txt"
+
+      - name: Run candidate-owned v9 preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          env \
+            GITHUB_REF_NAME="${TARGET_BRANCH}" \
+            GITHUB_SHA="${TARGET_SHA}" \
+            EXPECTED_BRANCH="${TARGET_BRANCH}" \
+            PARENT_SHA="${TARGET_PARENT}" \
+            bash "${RUNNER_TEMP}/movie-buff-v9-preflight.sh"
+          node --test tests/movie-buff-round-media-route.test.mjs
+
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Execute candidate-owned exact-SHA browser journey v9
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          identity="${RUNNER_TEMP}/movie-buff-agent7-v9-controller"
+          playwright_root="${RUNNER_TEMP}/movie-buff-three-client-full-v2-playwright"
+          monitor_identity() {
+            process_done=0; browser_done=0
+            for attempt in $(seq 1 900); do
+              if [ "${process_done}" -eq 0 ]; then
+                ss -ltnp 2>/dev/null | grep ':3001' >"${identity}/listening-port.txt" 2>/dev/null || true
+                pid="$(sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' "${identity}/listening-port.txt" | head -1)"
+                if [ -n "${pid}" ]; then
+                  echo "${pid}" >"${identity}/process.pid"
+                  ps -p "${pid}" -o pid=,ppid=,lstart=,args= >"${identity}/process.txt" 2>&1 || true
+                  process_done=1
+                fi
+              fi
+              if [ "${browser_done}" -eq 0 ] && [ -f "${playwright_root}/node_modules/playwright/package.json" ]; then
+                node -p "require('${playwright_root}/node_modules/playwright/package.json').version" >"${identity}/playwright-version.txt" 2>&1 || true
+                browser_path="$(node -e "const {chromium}=require('${playwright_root}/node_modules/playwright');process.stdout.write(chromium.executablePath())" 2>/dev/null || true)"
+                if [ -n "${browser_path}" ]; then
+                  echo "${browser_path}" >"${identity}/browser-executable.txt"
+                  google-chrome --version >"${identity}/browser-version.txt" 2>&1 || true
+                  browser_done=1
+                fi
+              fi
+              if [ "${process_done}" -eq 1 ] && [ "${browser_done}" -eq 1 ]; then return 0; fi
+              sleep 1
+            done
+          }
+          monitor_identity & monitor_pid=$!
+          env \
+            GITHUB_REF_NAME="${TARGET_BRANCH}" \
+            GITHUB_SHA="${TARGET_SHA}" \
+            EXPECTED_BRANCH="${TARGET_BRANCH}" \
+            PARENT_SHA="${TARGET_PARENT}" \
+            MOVIE_BUFF_V2_HARNESS_BLOB="${MOVIE_BUFF_V2_HARNESS_BLOB}" \
+            MOVIE_BUFF_WRAPPER_BLOB="${MOVIE_BUFF_WRAPPER_BLOB}" \
+            bash "${RUNNER_TEMP}/movie-buff-v9-execute.sh"
+          journey_exit=$?
+          wait "${monitor_pid}" >/dev/null 2>&1 || true
+          echo "${journey_exit}" >"${identity}/journey.exit"
+          exit "${journey_exit}"
+
+      - name: Finalize Agent 7 v9 evidence
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          raw="${RUNNER_TEMP}/movie-buff-three-client-full-v2-raw"
+          identity="${RUNNER_TEMP}/movie-buff-agent7-v9-controller"
+          mkdir -p "${evidence}/agent7-v9-controller"
+          cp -a "${identity}/." "${evidence}/agent7-v9-controller/" 2>/dev/null || true
+          if [ -d "${raw}" ]; then
+            mkdir -p "${evidence}/agent7-v9-controller/raw"
+            cp -a "${raw}/." "${evidence}/agent7-v9-controller/raw/" 2>/dev/null || true
+          fi
+          {
+            echo "finished_time_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hosted_staging=UNTOUCHED"
+            echo "production=UNTOUCHED"
+            echo "candidate_source_modified=NO"
+          } >>"${evidence}/agent7-v9-controller/identity.txt"
+          (
+            cd "${evidence}" || exit 1
+            find . -type f ! -name agent7-v9-sha256.txt -print0 | sort -z | xargs -0 sha256sum >agent7-v9-sha256.txt
+            sha256sum -c agent7-v9-sha256.txt
+          )
+
+      - name: Upload Agent 7 v9 browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-agent7-v9-${{ env.TARGET_SHA }}
+          path: ${{ runner.temp }}/movie-buff-three-client-full-v2
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify exact candidate postflight
+        if: always()
+        run: |
+          git diff --check
+          test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
+          test "$(git rev-parse HEAD^{tree})" = "${TARGET_TREE}"
