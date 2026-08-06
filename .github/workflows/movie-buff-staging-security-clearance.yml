@@ -50,7 +50,7 @@ jobs:
         with:
           version: 2.111.0
 
-      - name: Bind exact source and wrapper
+      - name: Bind exact source and prepare fail-closed execution copy
         shell: bash
         run: |
           set -euo pipefail
@@ -63,7 +63,28 @@ jobs:
           echo "SOURCE_TREE=$(git rev-parse HEAD^{tree})" >> "${GITHUB_ENV}"
           git fetch --no-tags --depth=1 origin "${PRODUCT_SHA}"
           test "$(git rev-parse ${PRODUCT_SHA}^{tree})" = "${PRODUCT_TREE}"
-          bash -n scripts/movie-buff-staging-security-clearance-v2.sh
+
+          checked_in=scripts/movie-buff-staging-security-clearance-v2.sh
+          executable="${RUNNER_TEMP}/movie-buff-staging-security-clearance-v2-exec.sh"
+          bash -n "${checked_in}"
+          python3 - "${checked_in}" "${executable}" <<'PY'
+          from pathlib import Path
+          import sys
+          source=Path(sys.argv[1]).read_text(encoding='utf-8')
+          old='''if ! main; then
+            [[ -n "${FAILURE_STEP}" ]] || FAILURE_STEP=unclassified
+            exit 1
+          fi
+          '''
+          if source.count(old) != 1:
+              raise SystemExit('expected exactly one wrapper control-flow tail')
+          Path(sys.argv[2]).write_text(source.replace(old,'main\n'),encoding='utf-8')
+          PY
+          chmod +x "${executable}"
+          bash -n "${executable}"
+          echo "EXECUTABLE_WRAPPER=${executable}" >> "${GITHUB_ENV}"
+          sha256sum "${checked_in}" "${executable}"
+
           python3 - <<'PY'
           from pathlib import Path
           for path in [
@@ -85,25 +106,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          wrapper=scripts/movie-buff-staging-security-clearance-v2.sh
           valid="${RUNNER_TEMP}/clearance-v2-valid"
-          bash "${wrapper}" "${EXPECTED_SHA}" "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${valid}" preflight
+          bash "${EXECUTABLE_WRAPPER}" "${EXPECTED_SHA}" "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${valid}" preflight
 
           wrong_sha="${RUNNER_TEMP}/clearance-v2-wrong-sha"
-          if bash "${wrapper}" 0000000000000000000000000000000000000000 "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${wrong_sha}" preflight; then
+          if bash "${EXECUTABLE_WRAPPER}" 0000000000000000000000000000000000000000 "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${wrong_sha}" preflight; then
             echo "wrong-SHA preflight unexpectedly succeeded" >&2; exit 1
           fi
           grep -q '^failure_step=exact-source-sha$' "${wrong_sha}/metadata.txt"
 
           wrong_tree="${RUNNER_TEMP}/clearance-v2-wrong-tree"
-          if bash "${wrapper}" "${EXPECTED_SHA}" 0000000000000000000000000000000000000000 "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${wrong_tree}" preflight; then
+          if bash "${EXECUTABLE_WRAPPER}" "${EXPECTED_SHA}" 0000000000000000000000000000000000000000 "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${wrong_tree}" preflight; then
             echo "wrong-tree preflight unexpectedly succeeded" >&2; exit 1
           fi
           grep -q '^failure_step=exact-source-tree$' "${wrong_tree}/metadata.txt"
 
           touch .clearance-dirty-negative-path
           dirty="${RUNNER_TEMP}/clearance-v2-dirty"
-          if bash "${wrapper}" "${EXPECTED_SHA}" "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${dirty}" preflight; then
+          if bash "${EXECUTABLE_WRAPPER}" "${EXPECTED_SHA}" "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${dirty}" preflight; then
             rm -f .clearance-dirty-negative-path
             echo "dirty-worktree preflight unexpectedly succeeded" >&2; exit 1
           fi
@@ -115,9 +135,11 @@ jobs:
         shell: bash
         run: |
           evidence="${RUNNER_TEMP}/movie-buff-staging-security-clearance-evidence"
-          bash scripts/movie-buff-staging-security-clearance-v2.sh \
+          bash "${EXECUTABLE_WRAPPER}" \
             "${EXPECTED_SHA}" "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" \
             "${evidence}" full
+          sha256sum "${EXECUTABLE_WRAPPER}" >"${evidence}/executed-wrapper.sha256.txt"
+          (cd "${evidence}" && find . -maxdepth 1 -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt)
 
       - name: Upload exact clearance evidence
         if: always()
