@@ -1,0 +1,191 @@
+name: Movie Buff immutable RC-2 evidence
+
+on:
+  push:
+    branches:
+      - release/movie-buff-rc-2026-08-06-01-rc2
+    paths:
+      - ".github/workflows/movie-buff-rc2-evidence.yml"
+      - "docs/release/movie-buff-rc-2026-08-06-01-rc2.manifest.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-product-source-and-ledger:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PRODUCT_SHA: 2c36032f32ed84711312045d65506af1313e3f40
+      PRODUCT_TREE: 9fe62aba99c4710a59e39f60b8ecd5a5a70ae9c0
+      VALIDATOR_SHA: e2d14447d7036cf9dc645514c4713bd4d8e42db1
+      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-rc2-evidence
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: local-placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: local-placeholder-service-role-key
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+      MOVIE_BUFF_BUILD_SHA: 2c36032f32ed84711312045d65506af1313e3f40
+      NODE_OPTIONS: --max-old-space-size=4096
+
+    steps:
+      - name: Check out exact product
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify immutable identity and approved boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${PRODUCT_SHA}"
+          test "$(git rev-parse HEAD^{tree})" = "${PRODUCT_TREE}"
+          test -z "$(git status --porcelain)"
+
+          test "$(git rev-parse HEAD:src/app/games/movie-buff/lobby/LobbyAuthBootstrap.tsx)" = "0b8f21a92c6a739e3bd8f853b9e4426f5c5aa957"
+          test "$(git rev-parse HEAD:tests/movie-buff-lobby-auth-bootstrap.test.mjs)" = "6cd6ecd46bcf7b368c72d981db735a2d86f2fa5d"
+          test "$(git rev-parse HEAD:src/app/api/movie-buff/match/view/route.ts)" = "44f47d7f2aa3266d139a9c0e4246818b3f18e31d"
+          test "$(git rev-parse HEAD:src/lib/game/movieBuffAuthoritativePhaseClient.ts)" = "505ce6445c0b9bff1c80e62807c860d25000e257"
+          test "$(git rev-parse HEAD:supabase/migrations/20260806214500_movie_buff_staging_security_independent_clearance.sql)" = "82afe9c28bf8c2ff058bd90a3dfae9ec599b126d"
+          test "$(git rev-parse HEAD:supabase/rollbacks/20260806214500_movie_buff_staging_security_independent_clearance.rollback.sql)" = "09c44f69180a99530434b0e18d231abb58fb5527"
+          test "$(git rev-parse HEAD:supabase/tests/movie_buff_staging_security_independent_clearance_test.sql)" = "e49a2888772f67392af8cb62ff80d37673096c17"
+
+          for path in \
+            .github/workflows/movie-buff-mov19-validation.yml \
+            .github/workflows/movie-buff-mov19-windows-digital-twin.yml \
+            docs/security/movie-buff-go-no-go-v1.md \
+            docs/security/movie-buff-independent-validation-matrix-v1.md \
+            docs/security/movie-buff-rollback-readiness-v1.md \
+            scripts/movie-buff-mov19-windows-digital-twin.ps1 \
+            scripts/movie-buff-security-evidence.mjs \
+            scripts/movie-buff-three-client-validation.mjs \
+            supabase/tests/movie_buff_security_validation_test.sql \
+            tests/movie-buff-independent-security-validation.test.mjs \
+            tests/movie-buff-release-evidence-integrity.test.mjs; do
+            test ! -e "$path"
+          done
+
+      - name: Generate complete migration and rollback SHA-256 ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          from datetime import datetime, timezone
+
+          def git_blob(path):
+              return subprocess.check_output(["git", "hash-object", str(path)], text=True).strip()
+
+          def records(root):
+              result = []
+              for path in sorted(pathlib.Path(root).glob("*.sql")):
+                  data = path.read_bytes()
+                  result.append({
+                      "path": path.as_posix(),
+                      "gitBlob": git_blob(path),
+                      "sha256": hashlib.sha256(data).hexdigest(),
+                      "bytes": len(data),
+                  })
+              return result
+
+          migrations = records("supabase/migrations")
+          rollbacks = records("supabase/rollbacks")
+          migration_names = {pathlib.Path(x["path"]).stem for x in migrations}
+          rollback_names = {pathlib.Path(x["path"]).name.removesuffix(".rollback.sql") for x in rollbacks}
+          scoped = sorted(x for x in migration_names if x.startswith(("2026080407", "2026080408", "2026080515", "2026080516", "20260806214500")))
+          missing_scoped = sorted(set(scoped) - rollback_names)
+
+          payload = {
+              "schemaVersion": 1,
+              "generatedAtUtc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+              "productSha": os.environ["PRODUCT_SHA"],
+              "productTree": os.environ["PRODUCT_TREE"],
+              "validatorSha": os.environ["VALIDATOR_SHA"],
+              "migrationCount": len(migrations),
+              "rollbackCount": len(rollbacks),
+              "migrations": migrations,
+              "rollbacks": rollbacks,
+              "releaseScopedMissingRollbacks": missing_scoped,
+          }
+          target = pathlib.Path(os.environ["EVIDENCE_DIR"], "migration-rollback-ledger.json")
+          target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+          pathlib.Path(os.environ["EVIDENCE_DIR"], "release-gate.txt").write_text(
+              "FAIL\n" if missing_scoped else "PASS\n", encoding="utf-8"
+          )
+          print(json.dumps({"migrationCount": len(migrations), "rollbackCount": len(rollbacks), "missing": missing_scoped}, indent=2))
+          PY
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts
+
+      - name: Run focused product contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            tests/movie-buff-lobby-auth-bootstrap.test.mjs \
+            tests/movie-buff-authoritative-phase-runtime.test.mjs \
+            tests/movie-buff-authoritative-visual-adapter.test.mjs \
+            tests/movie-buff-current-hardening-reconciliation.test.mjs \
+            tests/movie-buff-public-matchmaking-contract.test.mjs \
+            tests/movie-buff-vip-authority.test.mjs \
+            2>&1 | tee "${EVIDENCE_DIR}/focused-contracts.log"
+
+      - name: TypeScript
+        run: npx tsc --noEmit 2>&1 | tee "${EVIDENCE_DIR}/typescript.log"
+
+      - name: Production build with localhost placeholders
+        run: npm run build 2>&1 | tee "${EVIDENCE_DIR}/build.log"
+
+      - name: Write portable evidence metadata and hashes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          {
+            echo "candidate=RC-2"
+            echo "product_sha=${PRODUCT_SHA}"
+            echo "product_tree=${PRODUCT_TREE}"
+            echo "validator_sha=${VALIDATOR_SHA}"
+            echo "controller_sha=${GITHUB_SHA}"
+            echo "workflow_run_id=${GITHUB_RUN_ID}"
+            echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${EVIDENCE_DIR}/metadata.txt"
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -type f ! -name sha256.txt -printf '%P\0' | sort -z | xargs -0 sha256sum > sha256.txt
+            test -s sha256.txt
+            sha256sum -c sha256.txt
+          )
+          if grep -R -E '(eyJhbGciOi|sbp_[A-Za-z0-9]|SUPABASE_SERVICE_ROLE_KEY=|postgres(ql)?://[^[:space:]]+:[^[:space:]]+@)' "${EVIDENCE_DIR}"; then
+            echo "Potential secret pattern detected in evidence." >&2
+            exit 1
+          fi
+          test -z "$(git status --porcelain)"
+
+      - name: Upload portable evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-rc2-source-ledger-${{ github.run_id }}
+          path: ${{ runner.temp }}/movie-buff-rc2-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce unresolved rollback hard stop
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat "${EVIDENCE_DIR}/release-gate.txt")" = "PASS"
