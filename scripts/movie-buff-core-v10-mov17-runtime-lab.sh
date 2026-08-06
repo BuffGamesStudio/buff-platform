@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# candidate-v6 execution trigger: 2026-08-06T23:15:00Z
 set -euo pipefail
 
 EXPECTED_SHA="${1:?expected SHA required}"
