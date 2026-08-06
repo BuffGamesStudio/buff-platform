@@ -1,4 +1,4 @@
-﻿create or replace function public.advance_movie_buff_round(
+create or replace function public.advance_movie_buff_round(
   p_room_id uuid
 )
 returns table (
