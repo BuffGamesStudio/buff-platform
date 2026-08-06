@@ -194,6 +194,13 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
   }
 
   if (
+    view.callerIsSelector &&
+    (view.selectorControllerType !== "human" || view.selectorPlayerId === null)
+  ) {
+    return invalidAdapterResult(view, "CONTRADICTORY_CALLER_SELECTOR_STATE");
+  }
+
+  if (
     view.selectorControllerType === null &&
     view.selectorPlayerId !== null
   ) {
@@ -208,13 +215,6 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
     )
   ) {
     return invalidAdapterResult(view, "HUMAN_SELECTOR_IDENTITY_MISSING");
-  }
-
-  if (
-    view.callerIsSelector &&
-    (view.selectorControllerType !== "human" || view.selectorPlayerId === null)
-  ) {
-    return invalidAdapterResult(view, "CONTRADICTORY_CALLER_SELECTOR_STATE");
   }
 
   if (
