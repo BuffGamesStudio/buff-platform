@@ -4,6 +4,9 @@ import type {
   MovieBuffTransitionPresentation,
   MovieBuffVisualControllerType,
 } from "./visualRuntime";
+import { mapMovieBuffAuthoritativePhaseToVisualPhase } from "./visualRuntime";
+
+export const MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION = 1 as const;
 
 export type MovieBuffAuthoritativePhaseViewForVisuals = {
   roomId: string;
@@ -94,6 +97,12 @@ function isValidAuthoritativeTimestamp(value: unknown): value is string {
   );
 }
 
+function isTransitionPresentation(
+  value: unknown,
+): value is MovieBuffTransitionPresentation {
+  return value === "curtain" || value === "film_slate";
+}
+
 function invalidAdapterResult(
   view: Pick<MovieBuffAuthoritativePhaseViewForVisuals, "phaseVersion">,
   reason: string,
@@ -110,11 +119,17 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
   view,
   lastAcceptedPhaseVersion,
   transitionPresentation = null,
+  schemaVersion = MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION,
 }: {
   view: MovieBuffAuthoritativePhaseViewForVisuals;
   lastAcceptedPhaseVersion: number | null;
   transitionPresentation?: MovieBuffTransitionPresentation | null;
+  schemaVersion?: number;
 }): MovieBuffAuthoritativeVisualAdapterResult {
+  if (schemaVersion !== MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION) {
+    return invalidAdapterResult(view, "UNKNOWN_AUTHORITATIVE_SCHEMA_VERSION");
+  }
+
   if (!isKnownPhase(view.phase)) {
     return invalidAdapterResult(view, "UNKNOWN_CANONICAL_PHASE");
   }
@@ -138,8 +153,14 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
     return invalidAdapterResult(view, "CONTRADICTORY_ROUTE_AND_PHASE");
   }
 
-  if (view.phase === "transition" && transitionPresentation === null) {
-    return invalidAdapterResult(view, "TRANSITION_PRESENTATION_MISSING");
+  if (
+    view.phase === "transition" &&
+    !isTransitionPresentation(transitionPresentation)
+  ) {
+    return invalidAdapterResult(
+      view,
+      "TRANSITION_PRESENTATION_MISSING_OR_INVALID",
+    );
   }
 
   if (view.phase !== "transition" && transitionPresentation !== null) {
@@ -147,6 +168,25 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
       view,
       "TRANSITION_PRESENTATION_OUTSIDE_TRANSITION",
     );
+  }
+
+  if (
+    ["transition", "playback", "answer", "results"].includes(view.phase) &&
+    view.selectedClipId === null
+  ) {
+    return invalidAdapterResult(view, "ACTIVE_SCENE_CLIP_MISSING");
+  }
+
+  if (view.phase === "playback" && view.playbackStartsAt === null) {
+    return invalidAdapterResult(view, "PLAYBACK_STARTS_AT_MISSING");
+  }
+
+  if (view.phase === "answer" && view.answerDeadlineAt === null) {
+    return invalidAdapterResult(view, "ANSWER_DEADLINE_AT_MISSING");
+  }
+
+  if (view.phase === "results" && view.resultsEndAt === null) {
+    return invalidAdapterResult(view, "AUTHORITATIVE_RESULTS_STATE_MISSING");
   }
 
   if (view.phase === "blocked" && !view.blockedReason?.trim()) {
@@ -171,21 +211,28 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
     return invalidAdapterResult(view, "CONTRADICTORY_CALLER_SELECTOR_STATE");
   }
 
+  const source: MovieBuffCanonicalVisualSource = {
+    phase: view.phase,
+    phaseVersion: view.phaseVersion,
+    lastAcceptedPhaseVersion,
+    selectedTileId: view.selectedTileId,
+    transitionPresentation,
+    selectorControllerType: view.selectorControllerType,
+    selectorPlayerId: view.selectorPlayerId,
+    terminalFallback:
+      view.phase === "abandoned" || view.phase === "blocked"
+        ? "match_status"
+        : null,
+  };
+
+  const mapping = mapMovieBuffAuthoritativePhaseToVisualPhase(source);
+  if (!mapping.valid) {
+    return invalidAdapterResult(view, mapping.reason ?? "INVALID_VISUAL_MAPPING");
+  }
+
   return {
     valid: true,
     reason: null,
-    source: {
-      phase: view.phase,
-      phaseVersion: view.phaseVersion,
-      lastAcceptedPhaseVersion,
-      selectedTileId: view.selectedTileId,
-      transitionPresentation,
-      selectorControllerType: view.selectorControllerType,
-      selectorPlayerId: view.selectorPlayerId,
-      terminalFallback:
-        view.phase === "abandoned" || view.phase === "blocked"
-          ? "match_status"
-          : null,
-    },
+    source,
   };
 }
