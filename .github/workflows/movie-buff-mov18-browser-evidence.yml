@@ -131,13 +131,15 @@ jobs:
         shell: bash
         run: |
           set +e
-          pid_file="${RUNNER_TEMP}/mov18-browser-evidence/application.pid"
+          evidence="${RUNNER_TEMP}/mov18-browser-evidence"
+          mkdir -p "$evidence"
+          pid_file="$evidence/application.pid"
           code=0
           if [[ -f "$pid_file" ]]; then
             kill "$(cat "$pid_file")" 2>/dev/null || true
             wait "$(cat "$pid_file")" 2>/dev/null || true
           fi
-          echo "$code" >"${RUNNER_TEMP}/mov18-browser-evidence/application-stop.exit"
+          echo "$code" >"$evidence/application-stop.exit"
 
       - name: Build portable evidence manifest
         if: always()
