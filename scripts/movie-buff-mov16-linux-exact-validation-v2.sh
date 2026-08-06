@@ -109,7 +109,7 @@ if require_ready; then
          not exists (
            select 1
            from pg_catalog.aclexplode(
-             pg_catalog.coalesce(
+             coalesce(
                p.proacl,
                pg_catalog.acldefault('f', p.proowner)
              )
