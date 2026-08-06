@@ -1,0 +1,181 @@
+{
+  "manifestVersion": 3,
+  "classificationVocabulary": ["PASS", "FAIL", "UNKNOWN", "NOT APPLICABLE"],
+  "repository": "BuffGamesStudio/buff-platform",
+  "agent6Branch": "security/movie-buff-rls-acl-staging",
+  "integrationBaseline": {
+    "sha": "bf316a15a2120e32d8a32e479df2ae439081f9a1",
+    "tree": "12f425f4c56fb3f3c66df6f3a6543d7fd8b6ef34"
+  },
+  "productComposition": {
+    "source": "Agent 5 draft PR #107",
+    "sha": "2be790c88bc7f34969fe607bb78fd7535b621190",
+    "tree": "cbd8061c9c4da410e39363beee02bf53194ed53f"
+  },
+  "forwardOrder": [
+    "supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql",
+    "supabase/migrations/20260805160000_movie_buff_six_table_rls_reconciliation.sql",
+    "supabase/migrations/20260805160500_public_rls_auto_enable_event_trigger_contract.sql",
+    "supabase/migrations/20260805161000_public_rls_auto_enable_acl_lockdown.sql"
+  ],
+  "rollbackOrder": [
+    "supabase/rollbacks/20260805161000_public_rls_auto_enable_acl_lockdown.rollback.sql",
+    "supabase/rollbacks/20260805160500_public_rls_auto_enable_event_trigger_contract.rollback.sql",
+    "supabase/rollbacks/20260805160000_movie_buff_six_table_rls_reconciliation.rollback.sql",
+    "supabase/rollbacks/20260805155000_movie_buff_function_security_finalizer.rollback.sql"
+  ],
+  "dataLossClassification": "NONE_EXPECTED",
+  "tables": {
+    "match_round_player_hints": {
+      "owner": "postgres",
+      "rls": true,
+      "forceRls": true,
+      "authenticated": "SELECT_SELF_WHILE_ACTIVE_ROOM_MEMBER",
+      "anon": "NO_CRUD",
+      "service_role": "FULL_CRUD"
+    },
+    "match_round_player_playback": {
+      "owner": "postgres",
+      "rls": true,
+      "forceRls": true,
+      "authenticated": "SELECT_SELF_WHILE_ACTIVE_ROOM_MEMBER",
+      "anon": "NO_CRUD",
+      "service_role": "FULL_CRUD"
+    },
+    "movie_buff_boards": {
+      "owner": "postgres",
+      "rls": true,
+      "forceRls": true,
+      "authenticated": "SELECT_ACTIVE_ROOM_MEMBER",
+      "anon": "NO_CRUD",
+      "service_role": "FULL_CRUD"
+    },
+    "movie_buff_board_categories": {
+      "owner": "postgres",
+      "rls": true,
+      "forceRls": true,
+      "authenticated": "SELECT_ACTIVE_ROOM_MEMBER",
+      "anon": "NO_CRUD",
+      "service_role": "FULL_CRUD"
+    },
+    "movie_buff_board_tiles": {
+      "owner": "postgres",
+      "rls": true,
+      "forceRls": true,
+      "authenticated": "SELECT_ACTIVE_ROOM_MEMBER",
+      "anon": "NO_CRUD",
+      "service_role": "FULL_CRUD"
+    },
+    "movie_buff_board_events": {
+      "owner": "postgres",
+      "rls": true,
+      "forceRls": true,
+      "authenticated": "NO_CRUD",
+      "anon": "NO_CRUD",
+      "service_role": "FULL_CRUD"
+    }
+  },
+  "requiredPolicies": [
+    "movie_buff_boards_select_active_member",
+    "movie_buff_board_categories_select_active_member",
+    "movie_buff_board_tiles_select_active_member",
+    "match_round_player_hints_select_self",
+    "match_round_player_playback_select_self"
+  ],
+  "functionRules": {
+    "publicSchemaOwner": "postgres",
+    "publicExecute": false,
+    "anonExecute": false,
+    "authenticatedExecute": "EXACT_BROWSER_RPC_ALLOWLIST_ONLY",
+    "serviceRoleExecute": "ALL_HARDENED_PUBLIC_FUNCTIONS_EXCEPT_DIRECT_RLS_EVENT_CALLBACK",
+    "publicSearchPath": ["pg_catalog", "pg_catalog, public"],
+    "serviceOnlyVipFinalizer": "public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamp with time zone)",
+    "rlsEventCallback": {
+      "identity": "public.rls_auto_enable()",
+      "securityDefiner": true,
+      "owner": "postgres",
+      "searchPath": "pg_catalog",
+      "directExecute": []
+    }
+  },
+  "policyHelpers": {
+    "schema": "movie_buff_security",
+    "sharedWithOtherLanes": true,
+    "schemaMustPreexist": true,
+    "schemaOwnershipOrAclMutationByAgent6": false,
+    "preservedSharedIdentity": "movie_buff_security.current_user_email_is_confirmed()",
+    "exposedByPostgREST": false,
+    "owner": "postgres",
+    "authenticatedSchemaPrivileges": ["USAGE"],
+    "authenticatedSchemaCreate": false,
+    "anonSchemaUsage": false,
+    "agent6OwnedIdentities": [
+      "movie_buff_security.active_room_member(uuid)",
+      "movie_buff_security.active_board_member(uuid)",
+      "movie_buff_security.active_round_member(uuid)"
+    ],
+    "securityDefiner": true,
+    "searchPath": "pg_catalog",
+    "directExecute": ["authenticated", "service_role"],
+    "publicExecute": false,
+    "anonExecute": false,
+    "returnScope": "CALLER_OWN_ACTIVE_MEMBERSHIP_BOOLEAN_ONLY",
+    "rollback": "REMOVE_AGENT6_FUNCTIONS_ONLY_AND_PRESERVE_SHARED_SCHEMA_AND_FOREIGN_HELPERS"
+  },
+  "personas": {
+    "anon": "DENY",
+    "unauthenticatedBrowser": "DENY",
+    "authenticatedNonmember": "DENY",
+    "activeMember": "ALLOW_DECLARED_READS_ONLY",
+    "memberFromAnotherRoom": "DENY_CROSS_ROOM",
+    "selector": "ALLOW_DECLARED_READS_ONLY_NO_DIRECT_WRITE",
+    "nonselector": "ALLOW_DECLARED_READS_ONLY_NO_DIRECT_WRITE",
+    "host": "ALLOW_DECLARED_READS_ONLY_NO_DIRECT_WRITE",
+    "abandonedPlayer": "DENY",
+    "staleMembershipWithLeftAt": "DENY",
+    "reconnectingActiveMember": "ALLOW_DECLARED_READS_ONLY",
+    "serviceRole": "ALLOW_SERVER_CONTINUITY",
+    "busterOrSystemBrowserIdentity": "DENY"
+  },
+  "containment": {
+    "authenticatedTableAccess": "REVOKED",
+    "authenticatedPublicFunctionAccess": "REVOKED",
+    "agent6PolicyHelperFunctions": "REMOVED",
+    "sharedPolicyHelperSchema": "PRESERVED",
+    "foreignPolicyHelpers": "PRESERVED",
+    "serviceRoleContinuity": "PRESERVED_FOR_TARGET_TABLES_AND_APPROVED_PUBLIC_FUNCTIONS",
+    "rls": "PRESERVED_ENABLED_AND_FORCED",
+    "dataDeletion": false,
+    "tableDrop": false,
+    "truncate": false
+  },
+  "evidence": {
+    "required": [
+      "exact source SHA and tree",
+      "exact product SHA and tree",
+      "canonical SHA-256 manifest for every Agent 6 migration, rollback, test, wrapper, runbook, workflow and expected-state manifest",
+      "migration ledger",
+      "53 public-function and six-table forward pgTAP assertions",
+      "25 policy-helper forward assertions",
+      "41 persona behavior assertions before containment",
+      "ordered containment rollback",
+      "28 rollback pgTAP assertions",
+      "5 policy-helper rollback and shared-ownership assertions",
+      "ordered forward reapply",
+      "all forward and persona assertions after reapply",
+      "catalog byte equality before rollback and after reapply",
+      "cleanup",
+      "redaction",
+      "relative-path SHA-256 evidence manifest"
+    ],
+    "hashes": "GENERATED_BY_EXACT_SHA_WORKFLOW"
+  },
+  "hostedBoundaries": {
+    "historicalHostedProject": "UNKNOWN_ACCESS_DENIED",
+    "isolatedStagingProjectRef": "eddwkxcillhzkvwmavsc",
+    "isolatedStagingOrganization": "tleuzztdjpajaltwcclj",
+    "isolatedStagingRegion": "us-east-1",
+    "stagingMutationAuthorized": false,
+    "productionMutationAuthorized": false
+  }
+}

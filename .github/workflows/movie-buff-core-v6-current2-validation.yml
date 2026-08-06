@@ -1,0 +1,196 @@
+name: Movie Buff core v6 current2 exact validation laboratories
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-core-v6
+    paths:
+      - ".github/workflows/movie-buff-core-v6-current2-validation.yml"
+      - ".github/workflows/movie-buff-core-v6-race-browser.yml"
+      - "scripts/movie-buff-core-v6-guard.mjs"
+      - "scripts/movie-buff-core-v6-source-v3.sh"
+      - "scripts/movie-buff-core-v6-windows-v3.ps1"
+      - "scripts/movie-buff-core-v6-db-v3.sh"
+      - "scripts/movie-buff-core-v6-race-browser.sh"
+      - "scripts/movie-buff-core-v6-local-users.mjs"
+      - "scripts/movie-buff-core-v6-three-browser.mjs"
+      - "supabase/**"
+      - "tests/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-core-v6
+  RAW_COMPOSITION_SHA: 61a7ab96904323e1cb6dfae0e54e900d12a83db0
+  RAW_COMPOSITION_TREE: 167191fe2a143bae2f197218949fbe5b2195726a
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  source-build:
+    name: Linux exact source build current2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      EXPECTED_SHA: ${{ github.sha }}
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+      MOVIE_BUFF_APP_URL: http://127.0.0.1:3000
+
+    steps:
+      - name: Check out exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify and parse checked-in source wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          git merge-base --is-ancestor "${RAW_COMPOSITION_SHA}" HEAD
+          test "$(git rev-parse "${RAW_COMPOSITION_SHA}^{tree}")" = "${RAW_COMPOSITION_TREE}"
+          test -z "$(git status --porcelain)"
+          bash -n scripts/movie-buff-core-v6-source-v3.sh
+
+      - name: Execute checked-in source wrapper
+        shell: bash
+        run: |
+          bash scripts/movie-buff-core-v6-source-v3.sh \
+            "${EXPECTED_SHA}" \
+            "$(git rev-parse HEAD^{tree})" \
+            "${RUNNER_TEMP}/movie-buff-core-v6-current2-source"
+
+      - name: Upload source evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-core-v6-current2-source-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/movie-buff-core-v6-current2-source
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-command-shell:
+    name: Windows PowerShell digital twin current2
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      EXPECTED_SHA: ${{ github.sha }}
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+      MOVIE_BUFF_APP_URL: http://127.0.0.1:3000
+
+    steps:
+      - name: Check out exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Parse checked-in wrapper
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./scripts/movie-buff-core-v6-windows-v3.ps1),
+            [ref]$null,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) { $errors | Format-List | Out-String | Write-Error }
+
+      - name: Execute checked-in wrapper
+        shell: pwsh
+        run: |
+          ./scripts/movie-buff-core-v6-windows-v3.ps1 `
+            -ExpectedSha $env:EXPECTED_SHA `
+            -ExpectedTree ((git rev-parse 'HEAD^{tree}').Trim()) `
+            -EvidenceRoot (Join-Path $env:RUNNER_TEMP 'movie-buff-core-v6-current2-windows')
+
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-core-v6-current2-windows-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}\movie-buff-core-v6-current2-windows
+          if-no-files-found: error
+          retention-days: 7
+
+  disposable-database:
+    name: Disposable local Supabase current2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      EXPECTED_SHA: ${{ github.sha }}
+
+    steps:
+      - name: Check out exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Verify tools and parse wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          git merge-base --is-ancestor "${RAW_COMPOSITION_SHA}" HEAD
+          test "$(git rev-parse "${RAW_COMPOSITION_SHA}^{tree}")" = "${RAW_COMPOSITION_TREE}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          bash -n scripts/movie-buff-core-v6-db-v3.sh
+          docker --version
+          psql --version
+          python3 --version
+
+      - name: Execute checked-in database wrapper
+        shell: bash
+        run: |
+          bash scripts/movie-buff-core-v6-db-v3.sh \
+            "${EXPECTED_SHA}" \
+            "$(git rev-parse HEAD^{tree})" \
+            "${RUNNER_TEMP}/movie-buff-core-v6-current2-db"
+
+      - name: Verify source remained clean
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Upload database evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-core-v6-current2-database-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/movie-buff-core-v6-current2-db
+          if-no-files-found: error
+          retention-days: 7
