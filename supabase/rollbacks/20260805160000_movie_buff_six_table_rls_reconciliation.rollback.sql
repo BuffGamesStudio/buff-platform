@@ -1,4 +1,6 @@
 -- Fail-closed containment rollback. RLS and FORCE RLS remain enabled.
+-- Remove only Agent 6-owned policies, grants and helper functions. The shared
+-- movie_buff_security schema and other lanes' helpers remain untouched.
 begin;
 
 do $drop_policies$
@@ -61,9 +63,6 @@ revoke all on function movie_buff_security.active_room_member(uuid)
 drop function if exists movie_buff_security.active_round_member(uuid);
 drop function if exists movie_buff_security.active_board_member(uuid);
 drop function if exists movie_buff_security.active_room_member(uuid);
-
-revoke all on schema movie_buff_security from public, anon, authenticated, service_role;
-drop schema if exists movie_buff_security;
 
 notify pgrst, 'reload schema';
 commit;

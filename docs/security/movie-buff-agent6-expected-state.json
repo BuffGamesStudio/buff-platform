@@ -1,5 +1,5 @@
 {
-  "manifestVersion": 2,
+  "manifestVersion": 3,
   "classificationVocabulary": ["PASS", "FAIL", "UNKNOWN", "NOT APPLICABLE"],
   "repository": "BuffGamesStudio/buff-platform",
   "agent6Branch": "security/movie-buff-rls-acl-staging",
@@ -100,12 +100,16 @@
   },
   "policyHelpers": {
     "schema": "movie_buff_security",
+    "sharedWithOtherLanes": true,
+    "schemaMustPreexist": true,
+    "schemaOwnershipOrAclMutationByAgent6": false,
+    "preservedSharedIdentity": "movie_buff_security.current_user_email_is_confirmed()",
     "exposedByPostgREST": false,
     "owner": "postgres",
     "authenticatedSchemaPrivileges": ["USAGE"],
     "authenticatedSchemaCreate": false,
     "anonSchemaUsage": false,
-    "identities": [
+    "agent6OwnedIdentities": [
       "movie_buff_security.active_room_member(uuid)",
       "movie_buff_security.active_board_member(uuid)",
       "movie_buff_security.active_round_member(uuid)"
@@ -116,7 +120,7 @@
     "publicExecute": false,
     "anonExecute": false,
     "returnScope": "CALLER_OWN_ACTIVE_MEMBERSHIP_BOOLEAN_ONLY",
-    "rollback": "FUNCTIONS_AND_DEDICATED_SCHEMA_REMOVED_FAIL_CLOSED"
+    "rollback": "REMOVE_AGENT6_FUNCTIONS_ONLY_AND_PRESERVE_SHARED_SCHEMA_AND_FOREIGN_HELPERS"
   },
   "personas": {
     "anon": "DENY",
@@ -136,8 +140,9 @@
   "containment": {
     "authenticatedTableAccess": "REVOKED",
     "authenticatedPublicFunctionAccess": "REVOKED",
-    "policyHelperFunctions": "REMOVED",
-    "policyHelperSchema": "REMOVED_IF_EMPTY",
+    "agent6PolicyHelperFunctions": "REMOVED",
+    "sharedPolicyHelperSchema": "PRESERVED",
+    "foreignPolicyHelpers": "PRESERVED",
     "serviceRoleContinuity": "PRESERVED_FOR_TARGET_TABLES_AND_APPROVED_PUBLIC_FUNCTIONS",
     "rls": "PRESERVED_ENABLED_AND_FORCED",
     "dataDeletion": false,
@@ -152,10 +157,10 @@
       "migration ledger",
       "53 public-function and six-table forward pgTAP assertions",
       "25 policy-helper forward assertions",
-      "persona behavior before containment",
+      "41 persona behavior assertions before containment",
       "ordered containment rollback",
       "28 rollback pgTAP assertions",
-      "4 policy-helper rollback assertions",
+      "5 policy-helper rollback and shared-ownership assertions",
       "ordered forward reapply",
       "all forward and persona assertions after reapply",
       "catalog byte equality before rollback and after reapply",

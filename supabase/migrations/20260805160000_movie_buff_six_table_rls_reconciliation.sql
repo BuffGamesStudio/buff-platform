@@ -1,5 +1,6 @@
 -- Exact six-table Movie Buff RLS reconciliation.
--- Browser policies use dedicated policy helpers outside the exposed public API schema.
+-- Browser policies use Agent 6-owned helpers in the existing shared
+-- movie_buff_security schema, outside the exposed public API schema.
 
 begin;
 
@@ -61,10 +62,46 @@ grant select on table public.movie_buff_board_categories to authenticated;
 grant select on table public.movie_buff_board_tiles to authenticated;
 -- movie_buff_board_events intentionally remains service-only.
 
-create schema if not exists movie_buff_security;
-alter schema movie_buff_security owner to postgres;
-revoke all on schema movie_buff_security from public, anon, authenticated, service_role;
-grant usage on schema movie_buff_security to authenticated, service_role;
+-- The exact product composition already owns this shared security schema for
+-- MOV-15 policy helpers. Agent 6 must not create, re-own, revoke, or drop the
+-- schema because those actions would cross lane ownership. Fail closed unless
+-- its existing least-privilege boundary is compatible with Agent 6 policies.
+do $shared_schema_contract$
+declare
+  v_owner text;
+begin
+  if pg_catalog.to_regnamespace('movie_buff_security') is null then
+    raise exception 'required shared schema movie_buff_security is absent';
+  end if;
+
+  select pg_catalog.pg_get_userbyid(n.nspowner)
+  into v_owner
+  from pg_catalog.pg_namespace n
+  where n.oid = pg_catalog.to_regnamespace('movie_buff_security');
+
+  if v_owner is distinct from 'postgres' then
+    raise exception 'movie_buff_security owner must be postgres, found %', v_owner;
+  end if;
+
+  if not pg_catalog.has_schema_privilege(
+    'authenticated', 'movie_buff_security', 'USAGE'
+  ) then
+    raise exception 'authenticated requires USAGE on shared movie_buff_security schema';
+  end if;
+
+  if pg_catalog.has_schema_privilege(
+    'authenticated', 'movie_buff_security', 'CREATE'
+  ) then
+    raise exception 'authenticated must not have CREATE on shared movie_buff_security schema';
+  end if;
+
+  if pg_catalog.has_schema_privilege(
+    'anon', 'movie_buff_security', 'USAGE'
+  ) then
+    raise exception 'anon must not have USAGE on shared movie_buff_security schema';
+  end if;
+end;
+$shared_schema_contract$;
 
 create or replace function movie_buff_security.active_room_member(p_room_id uuid)
 returns boolean
