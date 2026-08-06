@@ -60,10 +60,38 @@ const phaseRoutes: Record<
   blocked: "/games/movie-buff/match-status",
 };
 
+const optionalTimestampFields = [
+  ["phaseEndsAt", "PHASE_ENDS_AT_INVALID"],
+  ["selectorDeadlineAt", "SELECTOR_DEADLINE_AT_INVALID"],
+  ["playbackStartsAt", "PLAYBACK_STARTS_AT_INVALID"],
+  ["answerDeadlineAt", "ANSWER_DEADLINE_AT_INVALID"],
+  ["resultsEndAt", "RESULTS_END_AT_INVALID"],
+] as const satisfies readonly (
+  readonly [
+    keyof Pick<
+      MovieBuffAuthoritativePhaseViewForVisuals,
+      | "phaseEndsAt"
+      | "selectorDeadlineAt"
+      | "playbackStartsAt"
+      | "answerDeadlineAt"
+      | "resultsEndAt"
+    >,
+    string,
+  ]
+)[];
+
 function isKnownPhase(
   phase: MovieBuffAuthoritativePhaseViewForVisuals["phase"],
 ): phase is Exclude<MovieBuffCanonicalVisualSourcePhase, "waiting"> {
   return Object.prototype.hasOwnProperty.call(phaseRoutes, phase);
+}
+
+function isValidAuthoritativeTimestamp(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    Number.isFinite(Date.parse(value))
+  );
 }
 
 function invalidAdapterResult(
@@ -89,6 +117,21 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
 }): MovieBuffAuthoritativeVisualAdapterResult {
   if (!isKnownPhase(view.phase)) {
     return invalidAdapterResult(view, "UNKNOWN_CANONICAL_PHASE");
+  }
+
+  if (!isValidAuthoritativeTimestamp(view.serverNow)) {
+    return invalidAdapterResult(view, "SERVER_NOW_MISSING_OR_INVALID");
+  }
+
+  if (!isValidAuthoritativeTimestamp(view.phaseStartedAt)) {
+    return invalidAdapterResult(view, "PHASE_STARTED_AT_MISSING_OR_INVALID");
+  }
+
+  for (const [field, reason] of optionalTimestampFields) {
+    const value = view[field];
+    if (value !== null && !isValidAuthoritativeTimestamp(value)) {
+      return invalidAdapterResult(view, reason);
+    }
   }
 
   if (view.phaseRoute !== phaseRoutes[view.phase]) {
@@ -119,6 +162,13 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
     (view.selectorPlayerId !== null || view.callerIsSelector)
   ) {
     return invalidAdapterResult(view, "CONTRADICTORY_BUSTER_IDENTITY");
+  }
+
+  if (
+    view.callerIsSelector &&
+    (view.selectorControllerType !== "human" || view.selectorPlayerId === null)
+  ) {
+    return invalidAdapterResult(view, "CONTRADICTORY_CALLER_SELECTOR_STATE");
   }
 
   return {
