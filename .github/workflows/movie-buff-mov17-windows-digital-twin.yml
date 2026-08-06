@@ -5,20 +5,20 @@ on:
     branches:
       - copilot/MOV-17-shared-phase-machine
       - work/movie-buff-mov17-buster-leave-repair-20260805
+      - validation/movie-buff-full-candidate-v3-canonical-mov17
     paths:
       - ".github/workflows/movie-buff-mov17-windows-digital-twin.yml"
+      - ".github/workflows/movie-buff-three-client-full-journey-v9.yml"
       - "scripts/movie-buff-mov17-windows-digital-twin.ps1"
       - "scripts/movie-buff-three-client-phase-proof.mjs"
       - "scripts/movie-buff-reconnect-race-proof.mjs"
       - "scripts/movie-buff-three-client-phase-evidence-runner.mjs"
       - "supabase/migrations/20260804083*_movie_buff_*.sql"
-      - "supabase/migrations/20260805194*_movie_buff_*.sql"
       - "supabase/rollbacks/20260804083*_movie_buff_*.sql"
-      - "supabase/rollbacks/20260805194*_movie_buff_*.sql"
       - "supabase/tests/movie_buff_match_start_handoff_test.sql"
       - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
-      - "supabase/tests/movie_buff_buster_leave_authority_repair_test.sql"
-      - "supabase/tests/movie_buff_buster_leave_authority_rollback_test.sql"
+      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_test.sql"
+      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_rollback_test.sql"
       - "src/app/api/movie-buff/match/leave/**"
       - "src/components/movie-buff/MovieBuffAuthoritativeNavigation.tsx"
       - "src/lib/game/movieBuffAuthoritativePhaseClient.ts"
@@ -26,7 +26,7 @@ on:
       - "tests/movie-buff-server-phase-machine.test.mjs"
       - "tests/movie-buff-authoritative-phase-runtime.test.mjs"
       - "tests/movie-buff-buster-safe-boundary.test.mjs"
-      - "tests/movie-buff-buster-leave-authority-repair.test.mjs"
+      - "tests/movie-buff-active-leave-boundary.test.mjs"
       - "tests/movie-buff-phase-tile-mutation-guard.test.mjs"
       - "tests/movie-buff-match-start-handoff.test.mjs"
   workflow_dispatch:
