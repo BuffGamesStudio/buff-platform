@@ -61,6 +61,16 @@ function Test-Property {
     return $null -ne $Object.PSObject.Properties[$Name]
 }
 
+function Redact-Text {
+    param([string]$Text)
+    $result = $Text
+    $result = $result -replace '(?i)(postgres(?:ql)?://)[^\s"''<>]+', '$1[REDACTED]'
+    $result = $result -replace '(?i)(authorization:\s*bearer\s+)[^\s"''<>]+', '$1[REDACTED]'
+    $result = $result -replace '(?i)(eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,})', '[REDACTED_JWT]'
+    $result = $result -replace '(?i)((?:password|token|secret|key)\s*[=:]\s*)[^\s"''<>]+', '$1[REDACTED]'
+    return $result
+}
+
 $repoRoot = [System.IO.Path]::GetFullPath((Invoke-Git @("rev-parse", "--show-toplevel")))
 $invocationRoot = [System.IO.Path]::GetFullPath((Get-Location).Path)
 if ($invocationRoot -ne $repoRoot) {
@@ -131,6 +141,21 @@ $orders = @($resolved.migrations | ForEach-Object { [int]$_[0] })
 if (($orders -join ",") -ne ((1..$orders.Count) -join ",")) {
     throw "Wrong migration order."
 }
+
+$hashRows = New-Object System.Collections.Generic.List[object]
+foreach ($row in $resolved.migrations) {
+    if ([string]$row[4] -notmatch '^[0-9a-f]{64}$') {
+        throw "Invalid migration SHA-256 in resolved manifest."
+    }
+    $hashRows.Add([pscustomobject]@{kind="migration";order=[int]$row[0];path=[string]$row[3];sha256=[string]$row[4]})
+    if ($null -ne $row[7]) {
+        if ([string]$row[8] -notmatch '^[0-9a-f]{64}$') {
+            throw "Invalid rollback SHA-256 in resolved manifest."
+        }
+        $hashRows.Add([pscustomobject]@{kind="rollback";order=[int]$row[0];path=[string]$row[7];sha256=[string]$row[8]})
+    }
+}
+
 $gaps = @($resolved.migrations | Where-Object { $null -eq $_[7] })
 if ($gaps.Count -ne $overlay.remainingRollbackGaps.Count) {
     throw "Rollback-gap count mismatch."
@@ -145,6 +170,25 @@ foreach ($gap in $overlay.remainingRollbackGaps) {
 $resolvedPath = Join-Path $evidenceFull "resolved-release-recovery-manifest.json"
 Write-Json -Path $resolvedPath -Object $resolved
 Copy-Item -LiteralPath $overlayFull -Destination (Join-Path $evidenceFull "live-overlay.json") -Force
+$hashRows | Export-Csv -LiteralPath (Join-Path $evidenceFull "resolved-file-hashes.csv") -NoTypeInformation -Encoding utf8NoBOM
+
+$toolVersions = @{
+    git = (& git --version 2>&1 | Out-String).Trim()
+    pwsh = $PSVersionTable.PSVersion.ToString()
+}
+Write-Json -Path (Join-Path $evidenceFull "tool-versions.json") -Object $toolVersions
+Get-ChildItem Env: |
+    Where-Object { $_.Name -match '(?i)(SUPABASE|VERCEL|DATABASE|POSTGRES|MOVIE_BUFF)' } |
+    Select-Object -ExpandProperty Name |
+    Sort-Object -Unique |
+    Set-Content -LiteralPath (Join-Path $evidenceFull "environment-variable-names.txt") -Encoding utf8NoBOM
+
+$fixture = 'postgresql://user:password@example.invalid/db Authorization: Bearer fake-token password=demo eyJaaaaaaaaaaa.bbbbbbbbbbb.ccccccccccc'
+$redacted = Redact-Text $fixture
+if ($redacted -match 'user:password|fake-token|password=demo|eyJaaaaaaaa') {
+    throw "Redaction self-test failed."
+}
+Write-Json -Path (Join-Path $evidenceFull "redaction-self-test.json") -Object @{classification="PASS";output=$redacted}
 
 if ($Mode -eq "StagingDryRun") {
     if (-not $ApprovedStagingProjectRef -or -not $ApprovedStagingDatabaseHost) {
@@ -163,26 +207,14 @@ if ($Mode -eq "StagingDryRun") {
     }
 }
 
-if ($Mode -eq "LocalRehearsal" -and $overlay.candidate.classification -eq "FAIL") {
-    throw "LocalRehearsal is blocked while the current candidate classification is FAIL."
+if ($Mode -eq "LocalRehearsal") {
+    if ($overlay.candidate.classification -eq "FAIL") {
+        throw "LocalRehearsal is blocked while the current candidate classification is FAIL."
+    }
+    if (-not $Execute) { throw "LocalRehearsal requires explicit -Execute." }
+    if ($gaps.Count -gt 0) { throw "LocalRehearsal is blocked by unresolved rollback gaps." }
+    throw "LocalRehearsal is not applicable from the operations-only checkout; run the resolved manifest from the exact candidate checkout."
 }
-
-$coreMode = if ($Mode -eq "LocalRehearsal") { "LocalRehearsal" } else { "Preflight" }
-$coreArgs = @{
-    Mode = $coreMode
-    ExpectedBranch = $ExpectedBranch
-    ExpectedSha = $ExpectedSha
-    ExpectedTree = $ExpectedTree
-    ManifestPath = $resolvedPath
-    EvidenceDirectory = (Join-Path $evidenceFull "core")
-}
-if ($coreMode -eq "Preflight") {
-    $coreArgs.PackageOnly = $true
-} else {
-    $coreArgs.DatabaseUrl = $DatabaseUrl
-    $coreArgs.Execute = $Execute
-}
-./scripts/movie-buff-agent9-staging-rehearsal.ps1 @coreArgs
 
 $identity = @{
     repository = "BuffGamesStudio/buff-platform"
@@ -191,12 +223,18 @@ $identity = @{
     tree = $tree
     candidateSha = $overlay.candidate.productSha
     candidateTree = $overlay.candidate.productTree
+    candidateClassification = $overlay.candidate.classification
     overlayBlob = (Invoke-Git @("hash-object", $overlayFull))
     baseManifestBlob = $baseBlob
+    migrationCount = $resolved.migrations.Count
+    rollbackCount = $resolved.migrations.Count - $gaps.Count
+    rollbackGapCount = $gaps.Count
     mode = $Mode
     capturedAtUtc = [DateTimeOffset]::UtcNow.ToString("o")
 }
 Write-Json -Path (Join-Path $evidenceFull "live-identity.json") -Object $identity
+
+if ((Invoke-Git @("status", "--porcelain")).Length -ne 0) { throw "Final worktree is dirty." }
 
 $files = Get-ChildItem -LiteralPath $evidenceFull -File -Recurse | Where-Object { $_.Name -ne "sha256.txt" } | Sort-Object FullName
 $lines = foreach ($file in $files) {
