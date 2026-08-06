@@ -1,6 +1,4 @@
-import fs from "node:fs";
 import fsp from "node:fs/promises";
-import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 
 import { getRoundGeneratedClip } from "@/lib/server/movieClipper";
@@ -14,25 +12,73 @@ type RouteContext = {
   }>;
 };
 
+const LOOPBACK_HOSTNAMES = new Set([
+  "localhost",
+  "127.0.0.1",
+  "::1",
+  "[::1]",
+]);
+
+function getRequestOrigin(request: Request) {
+  const requestUrl = new URL(request.url);
+  const forwardedHost = request.headers
+    .get("x-forwarded-host")
+    ?.split(",")[0]
+    ?.trim();
+  const host = forwardedHost || request.headers.get("host") || requestUrl.host;
+  const forwardedProtocol = request.headers
+    .get("x-forwarded-proto")
+    ?.split(",")[0]
+    ?.trim();
+  const protocol = forwardedProtocol || requestUrl.protocol.replace(/:$/, "");
+
+  return new URL(`${protocol}://${host}`).origin;
+}
+
+function redirectToResolvedAsset(
+  request: Request,
+  assetUrl: string,
+) {
+  const internalRequestUrl = new URL(request.url);
+  const browserOrigin = getRequestOrigin(request);
+  const browserOriginUrl = new URL(browserOrigin);
+  const resolvedAsset = new URL(assetUrl, internalRequestUrl);
+  const redirectUrl =
+    LOOPBACK_HOSTNAMES.has(browserOriginUrl.hostname) &&
+    LOOPBACK_HOSTNAMES.has(resolvedAsset.hostname)
+      ? new URL(
+          `${resolvedAsset.pathname}${resolvedAsset.search}`,
+          browserOrigin,
+        )
+      : resolvedAsset;
+
+  return NextResponse.redirect(
+    redirectUrl,
+    {
+      status: 307,
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+        "X-Movie-Buff-Asset-Url": `${redirectUrl.pathname}${redirectUrl.search}`,
+      },
+    },
+  );
+}
+
 async function buildRoundMediaResponse(
   request: Request,
   roundId: string,
   headOnly: boolean,
 ) {
   try {
-    const summary =
-      await getRoundGeneratedClip(roundId);
+    const summary = await getRoundGeneratedClip(roundId);
 
-    if (!summary.assetPath) {
-      return NextResponse.redirect(
-        new URL(summary.assetUrl, request.url),
-        {
-          status: 307,
-          headers: {
-            "Cache-Control":
-              "no-store, max-age=0",
-          },
-        },
+    // Browsers require native range-request semantics for synchronized media.
+    // Resolve or generate the authoritative round asset here, then let the
+    // same-origin public media handler serve the concrete file directly.
+    if (!headOnly || !summary.assetPath) {
+      return redirectToResolvedAsset(
+        request,
+        summary.assetUrl,
       );
     }
 
@@ -41,83 +87,17 @@ async function buildRoundMediaResponse(
       summary.clipType === "audio"
         ? "audio/mpeg"
         : "video/mp4";
-    const baseHeaders = {
-      "Accept-Ranges": "bytes",
-      "Cache-Control": "no-store, max-age=0",
-      "Content-Length": stats.size.toString(),
-      "Content-Type": contentType,
-      "X-Movie-Buff-Asset-Url":
-        summary.assetUrl,
-    };
 
-    if (headOnly) {
-      return new NextResponse(null, {
-        status: 200,
-        headers: baseHeaders,
-      });
-    }
-
-    const rangeHeader =
-      request.headers.get("range");
-
-    if (rangeHeader) {
-      const [startRaw, endRaw] = rangeHeader
-        .replace(/bytes=/i, "")
-        .split("-");
-      const start = Number.parseInt(
-        startRaw ?? "",
-        10,
-      );
-      const requestedEnd = Number.parseInt(
-        endRaw ?? "",
-        10,
-      );
-
-      if (
-        Number.isFinite(start) &&
-        start >= 0 &&
-        start < stats.size
-      ) {
-        const end =
-          Number.isFinite(requestedEnd) &&
-          requestedEnd >= start
-            ? Math.min(requestedEnd, stats.size - 1)
-            : stats.size - 1;
-        const chunkSize = end - start + 1;
-        const stream = fs.createReadStream(
-          summary.assetPath,
-          {
-            start,
-            end,
-          },
-        );
-
-        return new NextResponse(
-          Readable.toWeb(stream) as ReadableStream,
-          {
-            status: 206,
-            headers: {
-              ...baseHeaders,
-              "Content-Length":
-                chunkSize.toString(),
-              "Content-Range": `bytes ${start}-${end}/${stats.size}`,
-            },
-          },
-        );
-      }
-    }
-
-    const stream = fs.createReadStream(
-      summary.assetPath,
-    );
-
-    return new NextResponse(
-      Readable.toWeb(stream) as ReadableStream,
-      {
-        status: 200,
-        headers: baseHeaders,
+    return new NextResponse(null, {
+      status: 200,
+      headers: {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store, max-age=0",
+        "Content-Length": stats.size.toString(),
+        "Content-Type": contentType,
+        "X-Movie-Buff-Asset-Url": summary.assetUrl,
       },
-    );
+    });
   } catch (error) {
     return NextResponse.json(
       {

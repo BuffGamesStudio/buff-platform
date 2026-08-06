@@ -1,0 +1,227 @@
+name: MOV-18 Rive dependency evidence
+
+on:
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - .github/workflows/movie-buff-mov18-rive-evidence.yml
+      - package.json
+      - package-lock.json
+      - src/components/movie-buff/visual/**
+      - src/lib/movie-buff/**
+      - src/app/games/movie-buff/visual-runtime-preview/**
+      - tests/movie-buff-visual-runtime.test.mjs
+      - docs/product/movie-buff-visual-runtime-*.md
+      - docs/product/movie-buff-rive-blender-runtime-contract-v1.md
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mov-18-rive-evidence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate-rive-lock-evidence:
+    name: Generate package and runtime evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out exact MOV-18 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify isolated branch and clean checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "copilot/MOV-18-visual-motion-runtime"
+          test -z "$(git status --porcelain)"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          git fetch --no-tags --depth=1 origin integration/movie-buff:refs/remotes/origin/integration/movie-buff
+          git show origin/integration/movie-buff:package-lock.json > /tmp/movie-buff-integration-package-lock.json
+          node --version
+          npm --version
+          git rev-parse HEAD
+
+      - name: Generate registry-backed Rive lock nodes
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --save-exact @rive-app/react-webgl2@4.30.0
+          cp package-lock.json /tmp/movie-buff-generated-rive-package-lock.json
+
+      - name: Restore untouched lock metadata and insert only Rive nodes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const base = JSON.parse(
+            fs.readFileSync('/tmp/movie-buff-integration-package-lock.json', 'utf8'),
+          );
+          const generated = JSON.parse(
+            fs.readFileSync('/tmp/movie-buff-generated-rive-package-lock.json', 'utf8'),
+          );
+
+          const reactKey = 'node_modules/@rive-app/react-webgl2';
+          const webglKey = 'node_modules/@rive-app/webgl2';
+          const reactNode = generated.packages?.[reactKey];
+          const webglNode = generated.packages?.[webglKey];
+
+          if (reactNode?.version !== '4.30.0') {
+            throw new Error('Generated Rive React lock node is missing or unexpected');
+          }
+          if (webglNode?.version !== '2.39.1') {
+            throw new Error('Generated Rive WebGL2 lock node is missing or unexpected');
+          }
+
+          base.packages[''].dependencies = {
+            '@rive-app/react-webgl2': '4.30.0',
+            ...base.packages[''].dependencies,
+          };
+
+          const packages = {};
+          let inserted = false;
+          for (const [key, value] of Object.entries(base.packages)) {
+            if (!inserted && key.localeCompare(reactKey) > 0) {
+              packages[reactKey] = reactNode;
+              packages[webglKey] = webglNode;
+              inserted = true;
+            }
+            packages[key] = value;
+          }
+          if (!inserted) {
+            packages[reactKey] = reactNode;
+            packages[webglKey] = webglNode;
+          }
+          base.packages = packages;
+
+          fs.writeFileSync('package-lock.json', `${JSON.stringify(base, null, 2)}\n`);
+          NODE
+
+      - name: Validate exact dependency and minimal lock boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only)
+          printf 'Generated dependency changes:\n%s\n' "${changed[*]:-none}"
+          for path in "${changed[@]}"; do
+            case "${path}" in
+              package.json|package-lock.json) ;;
+              *) echo "Unexpected generated file: ${path}" >&2; exit 1 ;;
+            esac
+          done
+
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const base = JSON.parse(
+            fs.readFileSync('/tmp/movie-buff-integration-package-lock.json', 'utf8'),
+          );
+
+          const reactKey = 'node_modules/@rive-app/react-webgl2';
+          const webglKey = 'node_modules/@rive-app/webgl2';
+
+          assert.equal(pkg.dependencies?.['@rive-app/react-webgl2'], '4.30.0');
+          assert.equal(lock.packages?.['']?.dependencies?.['@rive-app/react-webgl2'], '4.30.0');
+          assert.equal(lock.packages?.[reactKey]?.version, '4.30.0');
+          assert.equal(lock.packages?.[webglKey]?.version, '2.39.1');
+
+          const stripped = structuredClone(lock);
+          delete stripped.packages[''].dependencies['@rive-app/react-webgl2'];
+          delete stripped.packages[reactKey];
+          delete stripped.packages[webglKey];
+          assert.deepEqual(
+            stripped,
+            base,
+            'package-lock contains changes outside the approved Rive nodes',
+          );
+          NODE
+          git diff --check
+
+      - name: Install exact lock without package scripts
+        shell: bash
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run MOV-18 contract test
+        shell: bash
+        run: node --test tests/movie-buff-visual-runtime.test.mjs
+
+      - name: Run TypeScript
+        shell: bash
+        run: npx --no-install tsc --noEmit
+
+      - name: Run production build with localhost-only placeholders
+        shell: bash
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-build-publishable-key
+          SUPABASE_SERVICE_ROLE_KEY: local-build-service-role-key
+        run: npm run build
+
+      - name: Write exact-SHA evidence record
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mov18-rive-evidence
+          cp package.json package-lock.json mov18-rive-evidence/
+          sha256sum package.json package-lock.json > mov18-rive-evidence/sha256.txt
+          git diff -- package.json package-lock.json > mov18-rive-evidence/package-lock.patch
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          {
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_ref=${resolved_ref}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "node_version=$(node --version)"
+            echo "npm_version=$(npm --version)"
+            echo "build_supabase_target=http://127.0.0.1:54321"
+            echo "lock_boundary=integration lock plus exact Rive nodes only"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "workflow_run_id=${GITHUB_RUN_ID}"
+            echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
+          } > mov18-rive-evidence/evidence.txt
+
+      - name: Upload dependency and evidence record
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov18-rive-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+          path: mov18-rive-evidence
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Commit synchronized dependency pair to MOV-18 branch when needed
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          test "${HEAD_REF}" = "copilot/MOV-18-visual-motion-runtime"
+          git add package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo "Package and lock files are already synchronized and minimal."
+            exit 0
+          fi
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(movie-buff): minimize isolated Rive lock diff"
+          git push origin "HEAD:${HEAD_REF}"
