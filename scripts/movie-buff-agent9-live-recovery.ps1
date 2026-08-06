@@ -56,6 +56,11 @@ function Write-Json {
     $Object | ConvertTo-Json -Depth 50 -Compress | Set-Content -LiteralPath $Path -Encoding utf8NoBOM
 }
 
+function Test-Property {
+    param($Object, [string]$Name)
+    return $null -ne $Object.PSObject.Properties[$Name]
+}
+
 $repoRoot = [System.IO.Path]::GetFullPath((Invoke-Git @("rev-parse", "--show-toplevel")))
 $invocationRoot = [System.IO.Path]::GetFullPath((Get-Location).Path)
 if ($invocationRoot -ne $repoRoot) {
@@ -104,15 +109,15 @@ if ($RequireBackupIdentity -and $overlay.targets.backupOrPitr.classification -ne
 
 $resolved = Get-Content -LiteralPath $baseFull -Raw | ConvertFrom-Json -Depth 50
 foreach ($override in $overlay.migrationOverrides) {
-    if ($null -ne $override.orders) {
+    if (Test-Property -Object $override -Name "orders") {
         foreach ($order in $override.orders) {
             $resolved.migrations[[int]$order - 1][2] = $override.sourceHead
         }
     } else {
         $row = $resolved.migrations[[int]$override.order - 1]
-        if ($null -ne $override.sourceHead) { $row[2] = $override.sourceHead }
-        if ($null -ne $override.migrationSha256) { $row[4] = $override.migrationSha256 }
-        if ($null -ne $override.rollbackSha256) { $row[8] = $override.rollbackSha256 }
+        if (Test-Property -Object $override -Name "sourceHead") { $row[2] = $override.sourceHead }
+        if (Test-Property -Object $override -Name "migrationSha256") { $row[4] = $override.migrationSha256 }
+        if (Test-Property -Object $override -Name "rollbackSha256") { $row[8] = $override.rollbackSha256 }
     }
 }
 $resolved.candidate = $overlay.candidate
