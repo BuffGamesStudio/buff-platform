@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 
 import {
   adaptMovieBuffAuthoritativePhaseViewToVisualSource,
-  MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION,
   type MovieBuffAuthoritativePhaseViewForVisuals,
 } from "@/lib/movie-buff/authoritativeVisualAdapter";
 import type { MovieBuffTransitionPresentation } from "@/lib/movie-buff/visualRuntime";
@@ -16,13 +15,13 @@ export function MovieBuffAuthoritativePhaseVisualAdapter({
   view,
   lastAcceptedPhaseVersion,
   transitionPresentation = null,
-  schemaVersion = MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION,
+  schemaVersion,
   children,
 }: {
   view: MovieBuffAuthoritativePhaseViewForVisuals;
   lastAcceptedPhaseVersion: number | null;
   transitionPresentation?: MovieBuffTransitionPresentation | null;
-  schemaVersion?: number;
+  schemaVersion: number;
   children: ReactNode;
 }) {
   const adapted = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
