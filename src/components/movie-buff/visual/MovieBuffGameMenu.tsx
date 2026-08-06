@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  useEffect,
+  useLayoutEffect,
   useRef,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
@@ -31,7 +31,7 @@ export function MovieBuffGameMenu({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
 
     openerRef.current =
@@ -40,13 +40,9 @@ export function MovieBuffGameMenu({
         : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-
-    const animationFrame = window.requestAnimationFrame(() => {
-      closeButtonRef.current?.focus();
-    });
+    closeButtonRef.current?.focus();
 
     return () => {
-      window.cancelAnimationFrame(animationFrame);
       document.body.style.overflow = previousOverflow;
       openerRef.current?.focus();
       openerRef.current = null;
