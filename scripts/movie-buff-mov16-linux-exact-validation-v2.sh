@@ -48,6 +48,21 @@ new = '''for token in [
 if source.count(old) != 1:
     raise SystemExit("Expected exactly one obsolete MOV-17 binder block.")
 source = source.replace(old, new)
+old_encoding = '''    if not current.startswith(b"\\xef\\xbb\\xbf") or current[3:] != repaired:
+        raise SystemExit(f"encoding repair mismatch for {rel}")
+    target = work / rel
+'''
+new_encoding = '''    if current == repaired:
+        pass
+    elif current.startswith(b"\\xef\\xbb\\xbf") and current[3:] == repaired:
+        pass
+    else:
+        raise SystemExit(f"encoding repair mismatch for {rel}")
+    target = work / rel
+'''
+if source.count(old_encoding) != 1:
+    raise SystemExit("Expected exactly one encoding-composition block.")
+source = source.replace(old_encoding, new_encoding)
 guard_call = "node scripts/movie-buff-mov16-evidence-guard.mjs"
 if source.count(guard_call) < 3:
     raise SystemExit("Expected MOV-16 guard calls were not found.")
