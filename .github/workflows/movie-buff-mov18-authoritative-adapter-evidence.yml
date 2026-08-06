@@ -1,0 +1,203 @@
+name: MOV-18 authoritative visual adapter evidence
+
+on:
+  push:
+    branches:
+      - copilot/MOV-18-visual-motion-runtime
+    paths:
+      - .github/workflows/movie-buff-mov18-authoritative-adapter-evidence.yml
+      - src/lib/movie-buff/authoritativeVisualAdapter.ts
+      - src/lib/movie-buff/visualRuntime.ts
+      - src/components/movie-buff/visual/MovieBuffAuthoritativePhaseVisualAdapter.tsx
+      - src/components/movie-buff/visual/MovieBuffCanonicalVisualAdapter.tsx
+      - tests/movie-buff-authoritative-visual-adapter.test.mjs
+      - tests/movie-buff-visual-runtime.test.mjs
+      - package.json
+      - package-lock.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mov-18-authoritative-adapter-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_BRANCH: copilot/MOV-18-visual-motion-runtime
+  EXPECTED_INTEGRATION_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
+  REVIEWED_MOV17_SHA: f17234debfb8942e1998306a12dc33301c1c5440
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-authoritative-adapter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out exact MOV-18 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Bind exact source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test -z "$(git status --porcelain)"
+          test -f src/lib/movie-buff/authoritativeVisualAdapter.ts
+          test -f src/components/movie-buff/visual/MovieBuffAuthoritativePhaseVisualAdapter.tsx
+          test -f tests/movie-buff-authoritative-visual-adapter.test.mjs
+          node --check tests/movie-buff-authoritative-visual-adapter.test.mjs
+          mkdir -p "${RUNNER_TEMP}/mov18-authoritative-adapter"
+
+      - name: Install committed dependency graph
+        shell: bash
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run focused passive-adapter contracts
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          node --test \
+            tests/movie-buff-authoritative-visual-adapter.test.mjs \
+            tests/movie-buff-visual-runtime.test.mjs \
+            2>&1 | tee "${RUNNER_TEMP}/mov18-authoritative-adapter/contracts.tap"
+          code=${PIPESTATUS[0]}
+          echo "$code" >"${RUNNER_TEMP}/mov18-authoritative-adapter/contracts.exit"
+          exit 0
+
+      - name: Run TypeScript
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          npx --no-install tsc --noEmit \
+            2>&1 | tee "${RUNNER_TEMP}/mov18-authoritative-adapter/typescript.txt"
+          code=${PIPESTATUS[0]}
+          echo "$code" >"${RUNNER_TEMP}/mov18-authoritative-adapter/typescript.exit"
+          exit 0
+
+      - name: Build exact source with localhost placeholders
+        shell: bash
+        env:
+          NEXT_PUBLIC_APP_URL: http://127.0.0.1:3001
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:55321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-adapter-publishable-placeholder
+          SUPABASE_SERVICE_ROLE_KEY: local-adapter-service-placeholder
+        run: |
+          set +e
+          set -o pipefail
+          npm run build \
+            2>&1 | tee "${RUNNER_TEMP}/mov18-authoritative-adapter/build.txt"
+          code=${PIPESTATUS[0]}
+          echo "$code" >"${RUNNER_TEMP}/mov18-authoritative-adapter/build.exit"
+          exit 0
+
+      - name: Build portable evidence manifest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/mov18-authoritative-adapter"
+          mkdir -p "$evidence"
+
+          git diff --check >"$evidence/git-diff-check.txt" 2>&1
+          git status --porcelain >"$evidence/git-status.txt"
+          test ! -s "$evidence/git-status.txt"
+
+          contracts_exit=$(cat "$evidence/contracts.exit" 2>/dev/null || echo 99)
+          typescript_exit=$(cat "$evidence/typescript.exit" 2>/dev/null || echo 99)
+          build_exit=$(cat "$evidence/build.exit" 2>/dev/null || echo 99)
+          classification=FAIL
+          if [[ "$contracts_exit" = 0 && "$typescript_exit" = 0 && "$build_exit" = 0 ]]; then
+            classification=PASS
+          fi
+
+          {
+            echo "lane=MOV-18-authoritative-visual-adapter"
+            echo "classification=$classification"
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "source_ref=${GITHUB_REF_NAME}"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "integration_sha=${EXPECTED_INTEGRATION_SHA}"
+            echo "reviewed_mov17_sha=${REVIEWED_MOV17_SHA}"
+            echo "workflow_run_id=${GITHUB_RUN_ID}"
+            echo "workflow_job=${GITHUB_JOB}"
+            echo "contracts_exit=$contracts_exit"
+            echo "typescript_exit=$typescript_exit"
+            echo "build_exit=$build_exit"
+            echo "gameplay_authority=ABSENT"
+            echo "hosted_state=UNTOUCHED"
+            echo "integrated_three_client_browser=UNKNOWN"
+            echo "production_rive_identity=UNKNOWN"
+            echo "figma_file_node_identity=UNKNOWN"
+            echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"$evidence/metadata.txt"
+
+          sha256sum \
+            src/lib/movie-buff/authoritativeVisualAdapter.ts \
+            src/lib/movie-buff/visualRuntime.ts \
+            src/components/movie-buff/visual/MovieBuffAuthoritativePhaseVisualAdapter.tsx \
+            src/components/movie-buff/visual/MovieBuffCanonicalVisualAdapter.tsx \
+            tests/movie-buff-authoritative-visual-adapter.test.mjs \
+            tests/movie-buff-visual-runtime.test.mjs \
+            .github/workflows/movie-buff-mov18-authoritative-adapter-evidence.yml \
+            >"$evidence/source-sha256.txt"
+
+          if grep -R -E \
+            'gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sb_secret_[A-Za-z0-9._-]{12,}|sk_(live|prod)_[A-Za-z0-9]{12,}' \
+            "$evidence"; then
+            echo "Secret-like material detected in evidence." >&2
+            exit 1
+          fi
+          echo "secret_scan=PASS" >"$evidence/secret-scan.txt"
+
+          (
+            cd "$evidence"
+            find . -type f ! -name sha256.txt -print0 \
+              | sort -z | xargs -0 sha256sum >sha256.txt
+            sha256sum -c sha256.txt
+          )
+
+      - name: Upload exact-SHA adapter evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov18-authoritative-adapter-${{ github.sha }}
+          path: ${{ runner.temp }}/mov18-authoritative-adapter
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Classify exact adapter evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/mov18-authoritative-adapter"
+          test "$(cat "$evidence/contracts.exit")" = 0
+          test "$(cat "$evidence/typescript.exit")" = 0
+          test "$(cat "$evidence/build.exit")" = 0
+          grep -Fxq "classification=PASS" "$evidence/metadata.txt"
+
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"

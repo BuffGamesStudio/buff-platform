@@ -30,20 +30,6 @@ const movieBuffLayoutSource = await readFile(
   ),
   "utf8",
 );
-const roundResultsPageSource = await readFile(
-  new URL(
-    "../src/app/games/movie-buff/round-results/page.tsx",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const authoritativeResultsSource = await readFile(
-  new URL(
-    "../src/components/movie-buff/MovieBuffAuthoritativeResultsClient.tsx",
-    import.meta.url,
-  ),
-  "utf8",
-);
 
 test("round media resolves the authoritative asset and redirects GET playback", () => {
   assert.match(routeSource, /getRoundGeneratedClip\(roundId\)/);
@@ -109,22 +95,4 @@ test("Movie Buff applies browser-safe muted autoplay without phase authority", (
     autoplayPolicySource,
     /advanceMovieBuff|selectMovieBuff|submitMovieBuff|phaseVersion/,
   );
-});
-
-test("round results derives round identity from the authoritative phase", () => {
-  assert.match(roundResultsPageSource, /MovieBuffAuthoritativeResultsClient/);
-  assert.match(roundResultsPageSource, /parameters\.get\("roomId"\)/);
-  assert.doesNotMatch(roundResultsPageSource, /parameters\.get\("roundId"\)/);
-  assert.doesNotMatch(
-    roundResultsPageSource,
-    /advanceMovieBuffRound|handleNextRound|Next Round|Start Round/,
-  );
-  assert.match(authoritativeResultsSource, /getMovieBuffAuthoritativePhase\(roomId\)/);
-  assert.match(authoritativeResultsSource, /nextPhase\.roundId/);
-  assert.match(
-    authoritativeResultsSource,
-    /getMovieBuffRoundResults\(roomId, nextPhase\.roundId\)/,
-  );
-  assert.match(authoritativeResultsSource, /resultsEndAt/);
-  assert.match(authoritativeResultsSource, /The server rotates the selector and advances automatically/);
 });

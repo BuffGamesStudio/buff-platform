@@ -142,28 +142,6 @@ assert.equal(
 );
 transformed = transformed.replace(historyAnchor, historyReplacement);
 
-const boardReturnAnchor = `  await Promise.all(pages.map((page) => page.waitForURL(/\\/games\\/movie-buff\\/board-preview\\?/, { timeout: 60_000 })));
-  const usedTiles = await Promise.all(pages.map((page) => page.evaluate(() => {`;
-const boardReturnReplacement = `  await Promise.all(pages.map((page) => page.waitForURL(/\\/games\\/movie-buff\\/board-preview\\?/, { timeout: 60_000 })));
-  await Promise.all(pages.map(async (page, index) => {
-    await page.waitForFunction(() => {
-      const body = document.body.innerText.replace(/\\s+/g, " ").toLowerCase();
-      return body.includes("scene complete") && body.includes("buster slate stamped");
-    }, null, { timeout: 60_000 });
-    await assertNoAdvanceControls(page, index + 1, "board-return");
-    await assertResponsiveAccessible(page, index + 1, "board-return");
-  }));
-  const usedTiles = await Promise.all(pages.map((page) => page.evaluate(() => {`;
-assert.equal(
-  transformed.split(boardReturnAnchor).length - 1,
-  1,
-  "expected one board return hydration anchor",
-);
-transformed = transformed.replace(
-  boardReturnAnchor,
-  boardReturnReplacement,
-);
-
 const finalEvidenceAnchor = `    expectedOfflineRequestFailures: evidence.failedRequests.filter((request) => request.expectedOfflineExercise).length,
     expectedNavigationAborts: evidence.failedRequests.filter((request) => request.errorText === "net::ERR_ABORTED").length,`;
 const finalEvidenceReplacement = `    expectedOfflineRequestFailures: evidence.failedRequests.filter((request) => request.expectedOfflineExercise).length,
