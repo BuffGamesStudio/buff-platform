@@ -1,0 +1,144 @@
+name: MOV-16 structured local setup diagnostic
+
+on:
+  push:
+    branches:
+      - copilot/MOV-16-vip-authority
+    paths:
+      - ".github/workflows/movie-buff-mov16-diagnostic.yml"
+      - "scripts/movie-buff-vip-authority-diagnostic.mjs"
+      - "supabase/**"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: copilot/MOV-16-vip-authority
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  disposable-diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind exact identity and tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          node --check scripts/movie-buff-vip-authority-diagnostic.mjs
+          docker --version
+          python3 --version
+
+      - name: Install committed lock
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run disposable structured diagnostic
+        id: diagnostic
+        shell: bash
+        run: |
+          set -uo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-mov16-diagnostic"
+          work="${RUNNER_TEMP}/movie-buff-mov16-diagnostic-stack"
+          raw="${RUNNER_TEMP}/movie-buff-mov16-diagnostic-raw"
+          mkdir -p "${evidence}" "${work}" "${raw}"
+          cp -a supabase "${work}/supabase"
+          python3 - "${work}/supabase/config.toml" "mov16-diagnostic-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" <<'PY'
+          import pathlib,re,sys
+          p=pathlib.Path(sys.argv[1]); text=p.read_text(encoding='utf-8'); project=sys.argv[2]
+          text,n=re.subn(r'(?m)^project_id\s*=\s*"[^"]+"\s*$',f'project_id = "{project}"',text,count=1)
+          text,m=re.subn(r'(?ms)(^\[db\.seed\]\s*.*?^enabled\s*=\s*)true(\s*$)',r'\1false\2',text,count=1)
+          if n != 1 or m != 1: raise SystemExit('ephemeral config rewrite failed')
+          p.write_text(text,encoding='utf-8')
+          PY
+          overall=0
+          (
+            cd "${work}"
+            supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor
+          ) >"${raw}/supabase-start.log" 2>&1 || overall=1
+          if [ "${overall}" -eq 0 ]; then
+            (cd "${work}" && supabase db reset --local) >"${raw}/db-reset.log" 2>&1 || overall=1
+          fi
+          if [ "${overall}" -eq 0 ]; then
+            status_env="$(cd "${work}" && supabase status -o env 2>/dev/null)" || overall=1
+            if [ "${overall}" -eq 0 ]; then
+              eval "${status_env}"
+              NEXT_PUBLIC_SUPABASE_URL="${API_URL:-http://127.0.0.1:54321}" \
+              SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY:-${SECRET_KEY:-}}" \
+              MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}" \
+              MOVIE_BUFF_LOCAL_RUN_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+              MOVIE_BUFF_EVIDENCE_OUTPUT="${evidence}/diagnostic.json" \
+                node scripts/movie-buff-vip-authority-diagnostic.mjs \
+                >"${raw}/diagnostic.stdout.log" 2>"${raw}/diagnostic.stderr.log" || overall=1
+            fi
+          fi
+          (cd "${work}" && supabase stop --no-backup) >"${raw}/cleanup.log" 2>&1 || overall=1
+          python3 - "${raw}" "${evidence}" <<'PY'
+          import pathlib,re,sys
+          raw=pathlib.Path(sys.argv[1]); out=pathlib.Path(sys.argv[2]); out.mkdir(parents=True,exist_ok=True)
+          patterns=[
+            (r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[REDACTED_JWT]'),
+            (r'postgres(?:ql)?://[^\s]+','postgresql://[REDACTED_LOCAL_DB_URL]'),
+            (r'sb_(?:secret|publishable)_[A-Za-z0-9_-]+','[REDACTED_SUPABASE_KEY]'),
+          ]
+          for p in raw.iterdir():
+            if not p.is_file(): continue
+            text=p.read_text(encoding='utf-8',errors='replace')
+            for pattern,replacement in patterns: text=re.sub(pattern,replacement,text)
+            (out/p.name).write_text(text,encoding='utf-8')
+          PY
+          {
+            echo "classification=$([ "${overall}" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "source_branch=${GITHUB_REF_NAME}"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "supabase_cli=$(supabase --version)"
+            echo "node=$(node --version)"
+            echo "target=disposable-localhost"
+            echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"${evidence}/metadata.txt"
+          (cd "${evidence}" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt) || overall=1
+          test -z "$(git status --porcelain)" || overall=1
+          exit "${overall}"
+
+      - name: Upload structured diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-mov16-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-mov16-diagnostic
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify clean postflight
+        if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"

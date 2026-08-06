@@ -13,13 +13,12 @@ export default function MovieBuffPage() {
           MOVIE BUFF
         </h1>
 
-        <p className="mb-4 max-w-3xl text-2xl text-zinc-300">
-          Watch, guess, win.
+        <p className="mb-4 max-w-3xl text-3xl font-black text-zinc-100 md:text-5xl">
+          So you think you&apos;re a Movie Buff?
         </p>
 
-        <p className="mb-12 max-w-2xl text-base leading-7 text-zinc-500">
-          Start Movie Buff directly from here, or enter your Buff Games account
-          for the full account hub.
+        <p className="mb-12 max-w-3xl text-2xl font-bold uppercase tracking-[0.24em] text-red-400">
+          Watch. Guess. Win.
         </p>
 
         <div className="mb-6 flex flex-wrap justify-center gap-6">
@@ -28,13 +27,6 @@ export default function MovieBuffPage() {
             className="rounded-xl bg-red-600 px-10 py-5 text-xl font-bold transition hover:bg-red-700"
           >
             PLAY MOVIE BUFF
-          </Link>
-
-          <Link
-            href="/account"
-            className="rounded-xl border border-zinc-700 px-10 py-5 text-xl font-bold transition hover:border-red-500"
-          >
-            ENTER BUFF GAMES
           </Link>
 
           <Link
