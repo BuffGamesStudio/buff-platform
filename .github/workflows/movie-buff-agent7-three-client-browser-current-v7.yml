@@ -6,12 +6,19 @@ on:
       - validation/movie-buff-three-client-browser-current-v7
     paths:
       - .github/workflows/movie-buff-agent7-three-client-browser-current-v7.yml
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - .github/workflows/movie-buff-agent7-three-client-browser-current-v7.yml
   workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
+  CONTROLLER_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  VALIDATION_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
   EXPECTED_BRANCH: validation/movie-buff-three-client-browser-current-v7
   PRODUCT_BRANCH: validation/movie-buff-current-head-browser-product-v7
   PARENT_SHA: 558915d8c2f724aeefd59d4161b59ebe66ce9b94
@@ -31,7 +38,7 @@ jobs:
       - name: Check out exact browser controller
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.CONTROLLER_SHA }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -50,8 +57,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
-          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "${VALIDATION_REF}"
+          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${CONTROLLER_SHA}"
           case "$(git remote get-url origin)" in
             https://github.com/BuffGamesStudio/buff-platform|https://github.com/BuffGamesStudio/buff-platform.git) ;;
             *) exit 1 ;;
@@ -61,10 +70,13 @@ jobs:
           test -z "$(git status --porcelain --untracked-files=all)"
 
           python3 - <<'PY'
+          import os
           import subprocess
+
+          parent = os.environ["PARENT_SHA"]
           expected = {".github/workflows/movie-buff-agent7-three-client-browser-current-v7.yml"}
           actual = set(subprocess.check_output(
-              ["git", "diff", "--name-only", "558915d8c2f724aeefd59d4161b59ebe66ce9b94..HEAD"],
+              ["git", "diff", "--name-only", f"{parent}..HEAD"],
               text=True,
           ).splitlines())
           if actual != expected:
@@ -164,17 +176,20 @@ jobs:
                   raise SystemExit(f"product identity anchor missing: {old}")
               execute = execute.replace(old, new)
 
-          build_anchor = 'NEXT_PUBLIC_MOVIE_BUFF_BUILD_MARKER="${build_marker}" \\\n              npm run build'
-          build_replacement = 'NEXT_PUBLIC_MOVIE_BUFF_BUILD_MARKER="${build_marker}" \\\n            NEXT_PUBLIC_MOVIE_BUFF_SOURCE_SHA="${PARENT_SHA}" \\\n            GITHUB_SHA="${PARENT_SHA}" \\\n              npm run build'
-          if build_anchor not in execute:
-              raise SystemExit("product build identity anchor missing")
-          execute = execute.replace(build_anchor, build_replacement, 1)
-
-          start_anchor = 'NEXT_PUBLIC_MOVIE_BUFF_BUILD_MARKER="${build_marker}" \\\n              npm run start -- --hostname 127.0.0.1 --port 3001'
-          start_replacement = 'NEXT_PUBLIC_MOVIE_BUFF_BUILD_MARKER="${build_marker}" \\\n            NEXT_PUBLIC_MOVIE_BUFF_SOURCE_SHA="${PARENT_SHA}" \\\n            GITHUB_SHA="${PARENT_SHA}" \\\n              npm run start -- --hostname 127.0.0.1 --port 3001'
-          if start_anchor not in execute:
-              raise SystemExit("product runtime identity anchor missing")
-          execute = execute.replace(start_anchor, start_replacement, 1)
+          transformed = []
+          marker_count = 0
+          for line in execute.splitlines():
+              transformed.append(line)
+              if line.strip() == 'NEXT_PUBLIC_MOVIE_BUFF_BUILD_MARKER="${build_marker}" \\':
+                  indent = line[:len(line) - len(line.lstrip())]
+                  transformed.append(
+                      indent + 'NEXT_PUBLIC_MOVIE_BUFF_SOURCE_SHA="${PARENT_SHA}" \\'
+                  )
+                  transformed.append(indent + 'GITHUB_SHA="${PARENT_SHA}" \\')
+                  marker_count += 1
+          if marker_count != 2:
+              raise SystemExit(f"expected two build/runtime identity markers, got {marker_count}")
+          execute = "\n".join(transformed) + "\n"
 
           required = [
               "--untracked-files=all",
@@ -182,6 +197,7 @@ jobs:
               "rm -rf public/media/movie-buff/runtime-generated",
               'NEXT_PUBLIC_MOVIE_BUFF_BUILD_SHA="${PARENT_SHA}"',
               'MOVIE_BUFF_EXPECTED_GIT_SHA="${PARENT_SHA}"',
+              'NEXT_PUBLIC_MOVIE_BUFF_SOURCE_SHA="${PARENT_SHA}"',
               'GITHUB_SHA="${PARENT_SHA}"',
           ]
           for marker in required:
@@ -197,7 +213,10 @@ jobs:
 
       - name: Execute reviewed preflight
         shell: bash
-        run: bash "${RUNNER_TEMP}/agent7-preflight.sh"
+        run: |
+          GITHUB_SHA="${CONTROLLER_SHA}" \
+          GITHUB_REF_NAME="${EXPECTED_BRANCH}" \
+            bash "${RUNNER_TEMP}/agent7-preflight.sh"
 
       - name: Install exact dependency graph
         run: npm ci --ignore-scripts --no-audit --no-fund
@@ -217,9 +236,10 @@ jobs:
             echo "product_sha=${PARENT_SHA}"
             echo "product_tree=${PARENT_TREE}"
             echo "product_branch=${PRODUCT_BRANCH}"
-            echo "controller_sha=${GITHUB_SHA}"
+            echo "controller_sha=$(git rev-parse HEAD)"
             echo "controller_tree=$(git rev-parse HEAD^{tree})"
-            echo "controller_branch=${GITHUB_REF_NAME}"
+            echo "controller_branch=${EXPECTED_BRANCH}"
+            echo "workflow_event=${GITHUB_EVENT_NAME}"
             echo "workflow_run_id=${GITHUB_RUN_ID}"
             echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
             echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -262,7 +282,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: movie-buff-three-client-current-v7-${{ github.sha }}
+          name: movie-buff-three-client-current-v7-${{ env.CONTROLLER_SHA }}
           path: ${{ runner.temp }}/movie-buff-three-client-full-v2
           if-no-files-found: error
           retention-days: 14
