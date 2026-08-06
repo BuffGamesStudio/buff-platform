@@ -26,7 +26,7 @@ function Invoke-Checked {
 
   & $FilePath @Arguments
   if ($LASTEXITCODE -ne 0) {
-    throw "Command failed with exit code $LASTEXITCODE: $FilePath $($Arguments -join ' ')"
+    throw "Command failed with exit code ${LASTEXITCODE}: $FilePath $($Arguments -join ' ')"
   }
 }
 
@@ -142,18 +142,20 @@ foreach ($test in $tests) {
   }
 }
 
+$priorErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 & node --test @tests 2>&1 | Tee-Object -FilePath $testLogPath
-if ($LASTEXITCODE -ne 0) {
-  throw "Focused tests failed with exit code $LASTEXITCODE."
-}
+$focusedExit = $LASTEXITCODE
+$ErrorActionPreference = $priorErrorActionPreference
 
 if (git status --porcelain --untracked-files=all) {
   throw 'Worktree is dirty after execution.'
 }
 
+$focusedClassification = if ($focusedExit -eq 0) { 'PASS' } else { 'FAIL' }
 @(
   'windows_command_shell=PASS',
-  'focused_static_tests=PASS',
+  "focused_static_tests=$focusedClassification",
   'database=UNKNOWN',
   'browser=UNKNOWN',
   'hosted_security=FAIL',
@@ -166,3 +168,6 @@ Get-ChildItem -Path $evidenceFull -File | Sort-Object Name | ForEach-Object {
 } | Set-Content -Path $hashPath -Encoding ascii
 
 Write-Host "Agent 5 Windows evidence written outside the checkout: $evidenceFull"
+if ($focusedExit -ne 0) {
+  throw "Focused tests failed with exit code $focusedExit; evidence was preserved."
+}
