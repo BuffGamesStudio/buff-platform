@@ -1,5 +1,7 @@
 import { supabase } from "@/lib/supabase";
 
+export const MOVIE_BUFF_AUTHORITATIVE_SCHEMA_VERSION = 1 as const;
+
 export type MovieBuffCanonicalPhase =
   | "round_intro"
   | "vip_lock"
@@ -12,6 +14,8 @@ export type MovieBuffCanonicalPhase =
   | "abandoned"
   | "blocked";
 
+export type MovieBuffTransitionPresentation = "curtain" | "film_slate";
+
 export type MovieBuffPhaseParticipant = {
   seatIndex: number;
   playerId: string;
@@ -23,6 +27,10 @@ export type MovieBuffPhaseParticipant = {
 };
 
 export type MovieBuffAuthoritativePhaseView = {
+  schemaVersion: typeof MOVIE_BUFF_AUTHORITATIVE_SCHEMA_VERSION;
+  sourceSha: string;
+  buildIdentity: string;
+  transitionPresentation: MovieBuffTransitionPresentation | null;
   roomId: string;
   matchId: string;
   roundId: string;
@@ -117,6 +125,19 @@ export async function getMovieBuffAuthoritativePhase(roomId: string) {
   const response = await postAuthoritativePhase<{
     view: MovieBuffAuthoritativePhaseView;
   }>("/api/movie-buff/match/view", { roomId });
+
+  if (
+    response.view.schemaVersion !== MOVIE_BUFF_AUTHORITATIVE_SCHEMA_VERSION ||
+    !/^[0-9a-f]{40}$/i.test(response.view.sourceSha) ||
+    response.view.buildIdentity !== response.view.sourceSha ||
+    (response.view.phase === "transition" &&
+      response.view.transitionPresentation === null) ||
+    (response.view.phase !== "transition" &&
+      response.view.transitionPresentation !== null)
+  ) {
+    throw new Error("INVALID_MOVIE_BUFF_AUTHORITATIVE_VIEW_IDENTITY");
+  }
+
   return response.view;
 }
 
