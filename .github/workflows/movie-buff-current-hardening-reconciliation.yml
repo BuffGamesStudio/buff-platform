@@ -1,0 +1,258 @@
+name: Movie Buff current hardening reconciliation
+
+on:
+  push:
+    branches: [work/movie-buff-current-hardening-reconciliation-20260805]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: work/movie-buff-current-hardening-reconciliation-20260805
+  BASE_COMPOSITION_SHA: e80f12b078cae64a65a61670458941e6bec15d70
+  BASE_COMPOSITION_TREE: 3bd6662685418f84bf2192928a5a13f63c3c7544
+  NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+  SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+  MOVIE_BUFF_APP_URL: http://127.0.0.1:3000
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  linux-source-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Bind exact identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          git merge-base --is-ancestor "${BASE_COMPOSITION_SHA}" HEAD
+          test "$(git rev-parse "${BASE_COMPOSITION_SHA}^{tree}")" = "${BASE_COMPOSITION_TREE}"
+          test -z "$(git status --porcelain)"
+      - name: Install committed lock
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Focused hardening contract
+        run: node --test tests/movie-buff-current-hardening-reconciliation.test.mjs
+      - name: TypeScript and production build
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install tsc --noEmit
+          npm run build
+      - name: Clean postflight
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+  windows-command-shell:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Bind exact identity
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -ne $env:EXPECTED_BRANCH) { throw 'Wrong branch' }
+          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) { throw 'Wrong SHA' }
+          if ((git remote get-url origin).Trim() -ne 'https://github.com/BuffGamesStudio/buff-platform') { throw 'Wrong remote' }
+          git merge-base --is-ancestor $env:BASE_COMPOSITION_SHA HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Base composition is not an ancestor' }
+          if ((git rev-parse "$env:BASE_COMPOSITION_SHA`^{tree}").Trim() -ne $env:BASE_COMPOSITION_TREE) { throw 'Wrong base tree' }
+          if ((git status --porcelain | Out-String).Trim()) { throw 'Dirty worktree' }
+      - name: Install committed lock
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Focused hardening contract
+        run: node --test tests/movie-buff-current-hardening-reconciliation.test.mjs
+      - name: TypeScript and production build
+        shell: pwsh
+        run: |
+          npx --no-install tsc --noEmit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Clean postflight
+        shell: pwsh
+        run: |
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((git status --porcelain | Out-String).Trim()) { throw 'Dirty worktree' }
+
+  disposable-database:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Bind exact identity and tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          git merge-base --is-ancestor "${BASE_COMPOSITION_SHA}" HEAD
+          test "$(git rev-parse "${BASE_COMPOSITION_SHA}^{tree}")" = "${BASE_COMPOSITION_TREE}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          docker --version
+          psql --version
+      - name: Execute reset, pgTAP, containment, and restoration
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-hardening-reconciliation"
+          raw="${RUNNER_TEMP}/movie-buff-hardening-reconciliation-raw"
+          work="${RUNNER_TEMP}/movie-buff-hardening-stack"
+          overall=0
+          failure_step=""
+          mkdir -p "${evidence}" "${raw}" "${work}"
+          cp -a supabase "${work}/supabase"
+          python3 - "${work}/supabase/config.toml" "hardening-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" <<'PY'
+          import pathlib,re,sys
+          p=pathlib.Path(sys.argv[1]); text=p.read_text(encoding='utf-8'); project=sys.argv[2]
+          text,n=re.subn(r'(?m)^project_id\s*=\s*"[^"]+"\s*$',f'project_id = "{project}"',text,count=1)
+          text,m=re.subn(r'(?ms)(^\[db\.seed\]\s*.*?^enabled\s*=\s*)true(\s*$)',r'\1false\2',text,count=1)
+          if n != 1 or m != 1: raise SystemExit('ephemeral config rewrite failed')
+          p.write_text(text,encoding='utf-8')
+          PY
+          x=$?; echo "$x" >"${raw}/config.exit"; if [ "$x" -ne 0 ]; then overall=1; failure_step=config; fi
+          if [ "$overall" -eq 0 ]; then
+            (cd "${work}" && supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor) >"${raw}/start.log" 2>&1
+            x=$?; echo "$x" >"${raw}/start.exit"; if [ "$x" -ne 0 ]; then overall=1; failure_step=start; fi
+          fi
+          if [ "$overall" -eq 0 ]; then
+            (cd "${work}" && supabase db reset --local) >"${raw}/reset.log" 2>&1
+            x=$?; echo "$x" >"${raw}/reset.exit"; if [ "$x" -ne 0 ]; then overall=1; failure_step=reset; fi
+          fi
+          export PGPASSWORD=postgres
+          if [ "$overall" -eq 0 ]; then
+            psql -h 127.0.0.1 -p 55322 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+              -f supabase/tests/movie_buff_six_table_rls_reconciliation_test.sql \
+              >"${raw}/initial-pgtap.log" 2>&1
+            x=$?; echo "$x" >"${raw}/initial-pgtap.exit"; if [ "$x" -ne 0 ]; then overall=1; failure_step=initial-pgtap; fi
+          fi
+          if [ "$overall" -eq 0 ]; then
+            psql -h 127.0.0.1 -p 55322 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+              -f supabase/rollbacks/20260805160000_movie_buff_six_table_rls_reconciliation.rollback.sql \
+              >"${raw}/containment.log" 2>&1
+            x=$?; echo "$x" >"${raw}/containment.exit"; if [ "$x" -ne 0 ]; then overall=1; failure_step=containment; fi
+          fi
+          if [ "$overall" -eq 0 ]; then
+            psql -h 127.0.0.1 -p 55322 -U postgres -d postgres -v ON_ERROR_STOP=1 -At <<'SQL' \
+              >"${raw}/containment-probe.log" 2>&1
+          do $$
+          declare
+            target text;
+          begin
+            foreach target in array array[
+              'match_round_player_hints',
+              'match_round_player_playback',
+              'movie_buff_boards',
+              'movie_buff_board_categories',
+              'movie_buff_board_tiles',
+              'movie_buff_board_events'
+            ] loop
+              if not (select relrowsecurity from pg_catalog.pg_class where oid = ('public.' || target)::regclass) then
+                raise exception 'RLS disabled for %', target;
+              end if;
+              if has_table_privilege('authenticated', 'public.' || target, 'SELECT,INSERT,UPDATE,DELETE') then
+                raise exception 'authenticated retained direct privilege on %', target;
+              end if;
+              if not has_table_privilege('service_role', 'public.' || target, 'SELECT,INSERT,UPDATE,DELETE') then
+                raise exception 'service_role continuity missing on %', target;
+              end if;
+            end loop;
+          end;
+          $$;
+          select 'containment=PASS';
+          SQL
+            x=$?; echo "$x" >"${raw}/containment-probe.exit"; if [ "$x" -ne 0 ]; then overall=1; failure_step=containment-probe; fi
+          fi
+          if [ "$overall" -eq 0 ]; then
+            psql -h 127.0.0.1 -p 55322 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+              -f supabase/migrations/20260805160000_movie_buff_six_table_rls_reconciliation.sql \
+              >"${raw}/reapply.log" 2>&1
+            x=$?; echo "$x" >"${raw}/reapply.exit"; if [ "$x" -ne 0 ]; then overall=1; failure_step=reapply; fi
+          fi
+          if [ "$overall" -eq 0 ]; then
+            psql -h 127.0.0.1 -p 55322 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+              -f supabase/tests/movie_buff_six_table_rls_reconciliation_test.sql \
+              >"${raw}/restored-pgtap.log" 2>&1
+            x=$?; echo "$x" >"${raw}/restored-pgtap.exit"; if [ "$x" -ne 0 ]; then overall=1; failure_step=restored-pgtap; fi
+          fi
+          (cd "${work}" && supabase stop --no-backup) >"${raw}/cleanup.log" 2>&1
+          x=$?; echo "$x" >"${raw}/cleanup.exit"; if [ "$x" -ne 0 ]; then overall=1; [ -n "$failure_step" ] || failure_step=cleanup; fi
+          unset PGPASSWORD
+          python3 - "${raw}" "${evidence}" <<'PY'
+          import pathlib,re,sys
+          raw=pathlib.Path(sys.argv[1]); out=pathlib.Path(sys.argv[2]); out.mkdir(parents=True,exist_ok=True)
+          pats=[
+            (r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[REDACTED_JWT]'),
+            (r'postgres(?:ql)?://[^\s]+','postgresql://[REDACTED_LOCAL_DB_URL]'),
+            (r'sb_(?:secret|publishable)_[A-Za-z0-9_-]+','[REDACTED_SUPABASE_KEY]'),
+          ]
+          for p in raw.iterdir():
+            if not p.is_file(): continue
+            text=p.read_text(encoding='utf-8',errors='replace')
+            for a,b in pats: text=re.sub(a,b,text)
+            (out/p.name).write_text(text,encoding='utf-8')
+          PY
+          {
+            echo "classification=$([ "$overall" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "failure_step=${failure_step}"
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "branch=${GITHUB_REF_NAME}"
+            echo "sha=$(git rev-parse HEAD)"
+            echo "tree=$(git rev-parse HEAD^{tree})"
+            echo "base_composition_sha=${BASE_COMPOSITION_SHA}"
+            echo "base_composition_tree=${BASE_COMPOSITION_TREE}"
+            echo "target=disposable-localhost"
+            echo "supabase_cli=$(supabase --version)"
+            echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"${evidence}/metadata.txt"
+          if grep -RIlE 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|postgres(ql)?://[^[:space:]]+:[^[:space:]]+@|sb_secret_[A-Za-z0-9_-]+' "${evidence}" >"${evidence}/secret-scan.txt"; then overall=1; else echo tested_secret_patterns=PASS >"${evidence}/secret-scan.txt"; fi
+          (cd "${evidence}" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt) || overall=1
+          git diff --check || overall=1
+          test -z "$(git status --porcelain)" || overall=1
+          exit "$overall"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-current-hardening-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-hardening-reconciliation
+          if-no-files-found: error
+          retention-days: 7
+      - if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"

@@ -1,0 +1,100 @@
+name: Movie Buff core v10 current MOV-17 runtime laboratory v2
+
+on:
+  push:
+    branches: [validation/movie-buff-core-v10-current-mov17-v2]
+    paths:
+      - ".github/workflows/movie-buff-core-v10-mov17-runtime.yml"
+      - "scripts/movie-buff-core-v10-mov17-runtime-lab.sh"
+      - "scripts/movie-buff-core-v10-patch-mov17-owner-fixtures.py"
+      - "scripts/movie-buff-three-client-phase*"
+      - "scripts/movie-buff-reconnect*"
+      - "scripts/movie-buff-core-v6-local-users.mjs"
+      - "supabase/**"
+      - "src/app/api/movie-buff/match/**"
+      - "src/lib/game/movieBuff*"
+      - "tests/movie-buff-phase-digest-schema-repair.test.mjs"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-core-v10-current-mov17-v2
+  RAW_COMPOSITION_SHA: fe74dc595f54de30370c45169aaab0e8c5622d22
+  RAW_COMPOSITION_TREE: 8326dc323f9378fd4d38a1013faa3fa4b0b338ac
+  MOV17_SOURCE_SHA: c04cd53995c55608a6a9b4bfa2d7fbfe488d90c7
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-current-mov17-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Bind exact identity and parse wrappers
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          git merge-base --is-ancestor "${RAW_COMPOSITION_SHA}" HEAD
+          git merge-base --is-ancestor "${MOV17_SOURCE_SHA}" HEAD
+          test "$(git rev-parse "${RAW_COMPOSITION_SHA}^{tree}")" = "${RAW_COMPOSITION_TREE}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          bash -n scripts/movie-buff-core-v10-mov17-runtime-lab.sh
+          python3 -B - <<'PY'
+          from pathlib import Path
+          compile(Path('scripts/movie-buff-core-v10-patch-mov17-owner-fixtures.py').read_text(), 'patch', 'exec')
+          PY
+          node --check scripts/movie-buff-three-client-phase-evidence-runner.mjs
+          docker --version
+          psql --version
+      - name: Install committed lock and run digest source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/movie-buff-phase-digest-schema-repair.test.mjs
+      - name: Execute checked-in exact runtime laboratory
+        shell: bash
+        run: |
+          set +e
+          bash scripts/movie-buff-core-v10-mov17-runtime-lab.sh \
+            "${GITHUB_SHA}" \
+            "${RAW_COMPOSITION_SHA}" \
+            "${RAW_COMPOSITION_TREE}" \
+            "${MOV17_SOURCE_SHA}" \
+            "${RUNNER_TEMP}/movie-buff-core-v10-mov17-runtime" \
+            "${RUNNER_TEMP}/movie-buff-core-v10-mov17-stack" \
+            "${RUNNER_TEMP}/movie-buff-core-v10-mov17-worktree" \
+            "${RUNNER_TEMP}/movie-buff-core-v10-mov17-users.json"
+          exit $?
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-core-v10-mov17-runtime-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-core-v10-mov17-runtime
+          if-no-files-found: error
+          retention-days: 7
+      - if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
