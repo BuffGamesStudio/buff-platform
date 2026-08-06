@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:movie-buff-board-routes": "node --experimental-strip-types --test tests/movie-buff-board-route-personas.test.mjs",
     "movie-buff:smoke-public": "node ./scripts/movie-buff-public-flow-smoke.mjs",
     "movie-buff:smoke-private": "node ./scripts/movie-buff-private-flow-smoke.mjs",
     "movie-buff:smoke-auth": "node ./scripts/movie-buff-auth-flow-smoke.mjs",
@@ -29,6 +30,7 @@
     "movie-buff:verify-analytics": "node ./scripts/verify-movie-buff-analytics.mjs"
   },
   "dependencies": {
+    "@rive-app/react-webgl2": "4.30.0",
     "@supabase/supabase-js": "^2.110.8",
     "lucide-react": "^1.26.0",
     "next": "16.2.11",
