@@ -1,5 +1,5 @@
 -- Exact six-table Movie Buff RLS reconciliation.
--- Derived from PR #47, strengthened with FORCE RLS and exact policy cleanup.
+-- Browser policies use dedicated policy helpers outside the exposed public API schema.
 
 begin;
 
@@ -61,71 +61,107 @@ grant select on table public.movie_buff_board_categories to authenticated;
 grant select on table public.movie_buff_board_tiles to authenticated;
 -- movie_buff_board_events intentionally remains service-only.
 
+create schema if not exists movie_buff_security;
+alter schema movie_buff_security owner to postgres;
+revoke all on schema movie_buff_security from public, anon, authenticated, service_role;
+grant usage on schema movie_buff_security to authenticated, service_role;
+
+create or replace function movie_buff_security.active_room_member(p_room_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog
+as $function$
+  select exists (
+    select 1
+    from public.room_players rp
+    where rp.room_id = p_room_id
+      and rp.player_id = (select auth.uid())
+      and rp.left_at is null
+  );
+$function$;
+alter function movie_buff_security.active_room_member(uuid) owner to postgres;
+revoke all on function movie_buff_security.active_room_member(uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function movie_buff_security.active_room_member(uuid)
+  to authenticated, service_role;
+
+create or replace function movie_buff_security.active_board_member(p_board_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog
+as $function$
+  select exists (
+    select 1
+    from public.movie_buff_boards board
+    join public.room_players rp on rp.room_id = board.room_id
+    where board.id = p_board_id
+      and rp.player_id = (select auth.uid())
+      and rp.left_at is null
+  );
+$function$;
+alter function movie_buff_security.active_board_member(uuid) owner to postgres;
+revoke all on function movie_buff_security.active_board_member(uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function movie_buff_security.active_board_member(uuid)
+  to authenticated, service_role;
+
+create or replace function movie_buff_security.active_round_member(p_round_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog
+as $function$
+  select exists (
+    select 1
+    from public.match_rounds round_row
+    join public.matches match_row on match_row.id = round_row.match_id
+    join public.room_players rp on rp.room_id = match_row.room_id
+    where round_row.id = p_round_id
+      and rp.player_id = (select auth.uid())
+      and rp.left_at is null
+  );
+$function$;
+alter function movie_buff_security.active_round_member(uuid) owner to postgres;
+revoke all on function movie_buff_security.active_round_member(uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function movie_buff_security.active_round_member(uuid)
+  to authenticated, service_role;
+
 create policy movie_buff_boards_select_active_member
 on public.movie_buff_boards for select to authenticated
 using (
-  exists (
-    select 1 from public.room_players rp
-    where rp.room_id = movie_buff_boards.room_id
-      and rp.player_id = (select auth.uid())
-      and rp.left_at is null
-  )
+  movie_buff_security.active_room_member(room_id)
 );
 
 create policy movie_buff_board_categories_select_active_member
 on public.movie_buff_board_categories for select to authenticated
 using (
-  exists (
-    select 1
-    from public.movie_buff_boards board
-    join public.room_players rp on rp.room_id = board.room_id
-    where board.id = movie_buff_board_categories.board_id
-      and rp.player_id = (select auth.uid())
-      and rp.left_at is null
-  )
+  movie_buff_security.active_board_member(board_id)
 );
 
 create policy movie_buff_board_tiles_select_active_member
 on public.movie_buff_board_tiles for select to authenticated
 using (
-  exists (
-    select 1
-    from public.movie_buff_boards board
-    join public.room_players rp on rp.room_id = board.room_id
-    where board.id = movie_buff_board_tiles.board_id
-      and rp.player_id = (select auth.uid())
-      and rp.left_at is null
-  )
+  movie_buff_security.active_board_member(board_id)
 );
 
 create policy match_round_player_hints_select_self
 on public.match_round_player_hints for select to authenticated
 using (
   player_id = (select auth.uid())
-  and exists (
-    select 1
-    from public.match_rounds round_row
-    join public.matches match_row on match_row.id = round_row.match_id
-    join public.room_players rp on rp.room_id = match_row.room_id
-    where round_row.id = match_round_player_hints.round_id
-      and rp.player_id = (select auth.uid())
-      and rp.left_at is null
-  )
+  and movie_buff_security.active_round_member(round_id)
 );
 
 create policy match_round_player_playback_select_self
 on public.match_round_player_playback for select to authenticated
 using (
   player_id = (select auth.uid())
-  and exists (
-    select 1
-    from public.match_rounds round_row
-    join public.matches match_row on match_row.id = round_row.match_id
-    join public.room_players rp on rp.room_id = match_row.room_id
-    where round_row.id = match_round_player_playback.round_id
-      and rp.player_id = (select auth.uid())
-      and rp.left_at is null
-  )
+  and movie_buff_security.active_round_member(round_id)
 );
 
 notify pgrst, 'reload schema';
