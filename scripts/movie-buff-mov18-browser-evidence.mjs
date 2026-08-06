@@ -112,7 +112,7 @@ async function captureViewport(browser, viewport, name) {
   await page.keyboard.press("Shift+Tab");
   assert.match(
     await page.evaluate(() => document.activeElement?.textContent?.trim() ?? ""),
-    /Leave Match is deliberately not actionable/i,
+    /Return to visual preview/i,
   );
   await page.keyboard.press("Tab");
   assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), "Close");
