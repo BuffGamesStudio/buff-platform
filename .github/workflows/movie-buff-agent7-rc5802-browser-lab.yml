@@ -242,6 +242,7 @@ jobs:
             MOVIE_BUFF_V2_HARNESS_BLOB="${MOVIE_BUFF_V2_HARNESS_BLOB}" \
             bash "${RUNNER_TEMP}/movie-buff-agent7-rc5802-execute.sh"
           journey_exit=$?
+          kill "${monitor_pid}" >/dev/null 2>&1 || true
           wait "${monitor_pid}" >/dev/null 2>&1 || true
           echo "${journey_exit}" >"${identity}/journey.exit"
           exit "${journey_exit}"
