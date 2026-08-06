@@ -230,6 +230,19 @@ test("caller selector state cannot contradict the authoritative controller", () 
   }
 });
 
+test("the rendered browser workflow is bound to both visual contract suites", async () => {
+  const workflow = await source(
+    "../.github/workflows/movie-buff-mov18-browser-evidence.yml",
+  );
+
+  assert.match(
+    workflow,
+    /tests\/movie-buff-authoritative-visual-adapter\.test\.mjs/,
+  );
+  assert.match(workflow, /tests\/movie-buff-visual-runtime\.test\.mjs/);
+  assert.match(workflow, /Run focused visual contracts/);
+});
+
 test("the authoritative visual adapter remains read-only", async () => {
   const [adapter, component] = await Promise.all([
     source("../src/lib/movie-buff/authoritativeVisualAdapter.ts"),
