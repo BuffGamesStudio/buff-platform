@@ -1,0 +1,130 @@
+name: Movie Buff Agent 7 candidate-v6 prerequisites
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-agent7-prerequisites-v6
+    paths:
+      - .github/workflows/movie-buff-agent7-candidate-prerequisites-v6.yml
+      - tests/movie-buff-agent7-candidate-prerequisites.test.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-agent7-prerequisites-v6
+  PRODUCT_SHA: c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6
+  PRODUCT_TREE: a995a9aeb2fca76d2c1b216ece3a2645c2393c71
+
+jobs:
+  candidate-prerequisites:
+    name: Exact Agent 7 candidate prerequisites
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out exact prerequisite controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Bind exact candidate and validation-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          python3 - <<'PY'
+          import subprocess
+          expected = {
+              ".github/workflows/movie-buff-agent7-candidate-prerequisites-v6.yml",
+              "tests/movie-buff-agent7-candidate-prerequisites.test.mjs",
+          }
+          actual = set(subprocess.check_output(
+              ["git", "diff", "--name-only", "c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6..HEAD"],
+              text=True,
+          ).splitlines())
+          if actual != expected:
+              raise SystemExit(f"unexpected product-to-controller delta: {sorted(actual)}")
+          PY
+          node --check tests/movie-buff-agent7-candidate-prerequisites.test.mjs
+
+      - name: Execute exact source prerequisites
+        id: prerequisites
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-agent7-prerequisites-v6"
+          mkdir -p "${evidence}"
+          node --test tests/movie-buff-agent7-candidate-prerequisites.test.mjs \
+            2>&1 | tee "${evidence}/prerequisites.tap"
+          code=${PIPESTATUS[0]}
+          echo "${code}" >"${evidence}/prerequisites.exit"
+          exit 0
+
+      - name: Build exact prerequisite evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-agent7-prerequisites-v6"
+          mkdir -p "${evidence}"
+          code="$(cat "${evidence}/prerequisites.exit" 2>/dev/null || echo 99)"
+          {
+            echo "classification=$([ "${code}" = 0 ] && echo PASS || echo FAIL)"
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "source_branch=${GITHUB_REF_NAME}"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "product_sha=${PRODUCT_SHA}"
+            echo "product_tree=${PRODUCT_TREE}"
+            echo "lobby_bootstrap_blob=$(git rev-parse HEAD:src/app/games/movie-buff/lobby/LobbyAuthBootstrap.tsx)"
+            echo "results_page_blob=$(git rev-parse HEAD:src/app/games/movie-buff/round-results/page.tsx)"
+            echo "navigation_blob=$(git rev-parse HEAD:src/components/movie-buff/MovieBuffAuthoritativeNavigation.tsx)"
+            echo "browser_harness_blob=$(git rev-parse HEAD:scripts/movie-buff-three-client-full-journey-v2.mjs)"
+            echo "prerequisites_exit=${code}"
+            echo "target=repository-static-no-hosted-mutation"
+            echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"${evidence}/metadata.txt"
+          if grep -Eiq 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|sb_(secret|publishable)_[A-Za-z0-9_-]+|postgres(ql)?://[^[:space:]]+' "${evidence}/prerequisites.tap"; then
+            echo "secret-pattern finding" >&2
+            exit 1
+          fi
+          (cd "${evidence}" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt)
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Upload prerequisite evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-agent7-prerequisites-v6-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-agent7-prerequisites-v6
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce prerequisite result
+        if: always()
+        shell: bash
+        run: |
+          test "$(cat "${RUNNER_TEMP}/movie-buff-agent7-prerequisites-v6/prerequisites.exit" 2>/dev/null || echo 99)" = 0
+
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
