@@ -1,22 +1,19 @@
-# Registered workflow revision 2.
 name: Movie Buff staging security independent clearance
 
 on:
   push:
-    branches:
-      - security/movie-buff-staging-independent-clearance-v1
+    branches: [security/movie-buff-staging-independent-clearance-v1]
     paths:
       - ".github/workflows/movie-buff-staging-security-clearance.yml"
-      - "scripts/movie-buff-staging-security-clearance.sh"
+      - "scripts/movie-buff-staging-security-clearance-v2.sh"
       - "supabase/migrations/20260806214500_movie_buff_staging_security_independent_clearance.sql"
       - "supabase/rollbacks/20260806214500_movie_buff_staging_security_independent_clearance.rollback.sql"
       - "supabase/tests/movie_buff_staging_security_independent_clearance_test.sql"
   pull_request:
-    branches:
-      - security/movie-buff-rls-acl-staging
+    branches: [security/movie-buff-rls-acl-staging]
     paths:
       - ".github/workflows/movie-buff-staging-security-clearance.yml"
-      - "scripts/movie-buff-staging-security-clearance.sh"
+      - "scripts/movie-buff-staging-security-clearance-v2.sh"
       - "supabase/migrations/20260806214500_movie_buff_staging_security_independent_clearance.sql"
       - "supabase/rollbacks/20260806214500_movie_buff_staging_security_independent_clearance.rollback.sql"
       - "supabase/tests/movie_buff_staging_security_independent_clearance_test.sql"
@@ -53,7 +50,7 @@ jobs:
         with:
           version: 2.111.0
 
-      - name: Bind source and validate wrappers
+      - name: Bind exact source and wrapper
         shell: bash
         run: |
           set -euo pipefail
@@ -63,85 +60,64 @@ jobs:
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
           test -z "$(git status --porcelain)"
           test ! -f supabase/.temp/project-ref
-          source_tree="$(git rev-parse HEAD^{tree})"
-          echo "SOURCE_TREE=${source_tree}" >> "${GITHUB_ENV}"
+          echo "SOURCE_TREE=$(git rev-parse HEAD^{tree})" >> "${GITHUB_ENV}"
           git fetch --no-tags --depth=1 origin "${PRODUCT_SHA}"
           test "$(git rev-parse ${PRODUCT_SHA}^{tree})" = "${PRODUCT_TREE}"
-          bash -n scripts/movie-buff-staging-security-clearance.sh
+          bash -n scripts/movie-buff-staging-security-clearance-v2.sh
           python3 - <<'PY'
           from pathlib import Path
-          paths = [
-              Path('scripts/movie-buff-staging-security-clearance.sh'),
+          for path in [
+              Path('scripts/movie-buff-staging-security-clearance-v2.sh'),
               Path('supabase/migrations/20260806214500_movie_buff_staging_security_independent_clearance.sql'),
               Path('supabase/rollbacks/20260806214500_movie_buff_staging_security_independent_clearance.rollback.sql'),
               Path('supabase/tests/movie_buff_staging_security_independent_clearance_test.sql'),
-          ]
-          for path in paths:
-              data = path.read_bytes()
-              if data.startswith(b'\xef\xbb\xbf'):
-                  raise SystemExit(f'UTF-8 BOM refused: {path}')
+          ]:
+              data=path.read_bytes()
+              if data.startswith(b'\xef\xbb\xbf'): raise SystemExit(f'UTF-8 BOM refused: {path}')
               data.decode('utf-8')
-              if b'\r\n' in data:
-                  raise SystemExit(f'CRLF refused: {path}')
+              if b'\r\n' in data: raise SystemExit(f'CRLF refused: {path}')
           PY
           test "$(supabase --version)" = "2.111.0"
           docker --version
           psql --version
-          python3 --version
-          git --version
 
       - name: Exercise fail-closed preflight paths
         shell: bash
         run: |
           set -euo pipefail
-          valid_root="${RUNNER_TEMP}/clearance-preflight-valid"
-          bash scripts/movie-buff-staging-security-clearance.sh \
-            "${EXPECTED_SHA}" "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" \
-            "${valid_root}" preflight
+          wrapper=scripts/movie-buff-staging-security-clearance-v2.sh
+          valid="${RUNNER_TEMP}/clearance-v2-valid"
+          bash "${wrapper}" "${EXPECTED_SHA}" "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${valid}" preflight
 
-          wrong_sha_root="${RUNNER_TEMP}/clearance-preflight-wrong-sha"
-          if bash scripts/movie-buff-staging-security-clearance.sh \
-            "0000000000000000000000000000000000000000" "${SOURCE_TREE}" \
-            "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${wrong_sha_root}" preflight; then
-            echo "wrong-SHA preflight unexpectedly succeeded" >&2
-            exit 1
+          wrong_sha="${RUNNER_TEMP}/clearance-v2-wrong-sha"
+          if bash "${wrapper}" 0000000000000000000000000000000000000000 "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${wrong_sha}" preflight; then
+            echo "wrong-SHA preflight unexpectedly succeeded" >&2; exit 1
           fi
-          grep -q '^failure_step=exact-source-sha$' "${wrong_sha_root}/metadata.txt"
+          grep -q '^failure_step=exact-source-sha$' "${wrong_sha}/metadata.txt"
 
-          wrong_tree_root="${RUNNER_TEMP}/clearance-preflight-wrong-tree"
-          if bash scripts/movie-buff-staging-security-clearance.sh \
-            "${EXPECTED_SHA}" "0000000000000000000000000000000000000000" \
-            "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${wrong_tree_root}" preflight; then
-            echo "wrong-tree preflight unexpectedly succeeded" >&2
-            exit 1
+          wrong_tree="${RUNNER_TEMP}/clearance-v2-wrong-tree"
+          if bash "${wrapper}" "${EXPECTED_SHA}" 0000000000000000000000000000000000000000 "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${wrong_tree}" preflight; then
+            echo "wrong-tree preflight unexpectedly succeeded" >&2; exit 1
           fi
-          grep -q '^failure_step=exact-source-tree$' "${wrong_tree_root}/metadata.txt"
+          grep -q '^failure_step=exact-source-tree$' "${wrong_tree}/metadata.txt"
 
           touch .clearance-dirty-negative-path
-          dirty_root="${RUNNER_TEMP}/clearance-preflight-dirty"
-          if bash scripts/movie-buff-staging-security-clearance.sh \
-            "${EXPECTED_SHA}" "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" \
-            "${dirty_root}" preflight; then
-            echo "dirty-worktree preflight unexpectedly succeeded" >&2
+          dirty="${RUNNER_TEMP}/clearance-v2-dirty"
+          if bash "${wrapper}" "${EXPECTED_SHA}" "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${dirty}" preflight; then
             rm -f .clearance-dirty-negative-path
-            exit 1
+            echo "dirty-worktree preflight unexpectedly succeeded" >&2; exit 1
           fi
           rm -f .clearance-dirty-negative-path
-          grep -q '^failure_step=dirty-source$' "${dirty_root}/metadata.txt"
+          grep -q '^failure_step=dirty-source$' "${dirty}/metadata.txt"
           test -z "$(git status --porcelain)"
 
       - name: Execute disposable exact-product clearance proof
         shell: bash
         run: |
-          set -o pipefail
-          evidence_root="${RUNNER_TEMP}/movie-buff-staging-security-clearance-evidence"
-          bash scripts/movie-buff-staging-security-clearance.sh \
-            "${EXPECTED_SHA}" \
-            "${SOURCE_TREE}" \
-            "${PRODUCT_SHA}" \
-            "${PRODUCT_TREE}" \
-            "${evidence_root}" \
-            full
+          evidence="${RUNNER_TEMP}/movie-buff-staging-security-clearance-evidence"
+          bash scripts/movie-buff-staging-security-clearance-v2.sh \
+            "${EXPECTED_SHA}" "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" \
+            "${evidence}" full
 
       - name: Upload exact clearance evidence
         if: always()
