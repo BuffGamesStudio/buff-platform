@@ -1,0 +1,50 @@
+name: Movie Buff Agent 7 v3 MOV-16 final
+
+on:
+  push:
+    branches:
+      - validation/MOV-17-encoding-twin-v2
+    paths:
+      - .github/workflows/movie-buff-agent7-v3-mov16-final.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
+  PRODUCT_SHA: d6a173aa585941db447ba53a6c387f49a5784bfd
+  PRODUCT_TREE: 197387d7bed0e36dff576f98c13f0fde14e22924
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  mov16:
+    name: MOV-16 current-head composition laboratory
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/MOV-17-encoding-twin-v2
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute current MOV-16 laboratory through composition adapter
+        shell: bash
+        run: bash scripts/movie-buff-agent7-v3-mov16-adapter.sh
+      - name: Upload MOV-16 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-v3-mov16-final-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-mov16-exact-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+          if-no-files-found: error
+          retention-days: 14
