@@ -70,7 +70,6 @@ select is((
 ),0,'direct EXECUTE matrix matches PUBLIC/anon/authenticated/service_role exactly');
 
 with matrix(identity,role_name,expected) as (
-  select identity,'public',public_execute from mov16_expected_functions union all
   select identity,'anon',anon_execute from mov16_expected_functions union all
   select identity,'authenticated',authenticated_execute from mov16_expected_functions union all
   select identity,'service_role',service_role_execute from mov16_expected_functions
@@ -78,7 +77,7 @@ with matrix(identity,role_name,expected) as (
 select is((
   select count(*)::integer from matrix
   where expected is distinct from pg_catalog.has_function_privilege(role_name,identity,'EXECUTE')
-),0,'effective inherited EXECUTE matrix matches exactly');
+),0,'effective inherited EXECUTE matrix matches anon/authenticated/service_role exactly');
 
 select is((
   select count(*)::integer from pg_catalog.pg_proc p
