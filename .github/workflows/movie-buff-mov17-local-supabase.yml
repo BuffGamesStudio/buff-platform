@@ -6,6 +6,7 @@ on:
       - copilot/MOV-17-shared-phase-machine
     paths:
       - ".github/workflows/movie-buff-mov17-local-supabase.yml"
+      - ".github/workflows/movie-buff-mov17-validation.yml"
       - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
       - "scripts/movie-buff-redact-evidence.py"
       - "scripts/movie-buff-redact-evidence-test.py"
@@ -21,6 +22,7 @@ on:
       - integration/movie-buff
     paths:
       - ".github/workflows/movie-buff-mov17-local-supabase.yml"
+      - ".github/workflows/movie-buff-mov17-validation.yml"
       - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
       - "scripts/movie-buff-redact-evidence.py"
       - "scripts/movie-buff-redact-evidence-test.py"
