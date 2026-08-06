@@ -48,6 +48,49 @@ jobs:
             -EvidenceDirectory $env:EVIDENCE_DIR `
             -PackageOnly
 
+      - name: Prove refusal paths
+        shell: pwsh
+        run: |
+          function Assert-Refusal {
+            param([string]$Name, [string]$ExpectedMessage, [scriptblock]$Action)
+            try {
+              & $Action
+              throw "$Name did not fail closed."
+            } catch {
+              if ($_.Exception.Message -notmatch [regex]::Escape($ExpectedMessage)) {
+                throw "$Name failed for the wrong reason: $($_.Exception.Message)"
+              }
+              Write-Host "$Name refusal PASS"
+            }
+          }
+
+          $common = @{
+            ExpectedBranch = '${{ github.head_ref || github.ref_name }}'
+            ExpectedSha = '${{ github.event.pull_request.head.sha || github.sha }}'
+            ExpectedTree = '${{ steps.identity.outputs.tree }}'
+            PackageOnly = $true
+          }
+
+          Assert-Refusal -Name 'wrong-sha' -ExpectedMessage 'Wrong SHA' -Action {
+            ./scripts/movie-buff-agent9-staging-rehearsal.ps1 @common `
+              -Mode Preflight `
+              -ExpectedSha '0000000000000000000000000000000000000000' `
+              -EvidenceDirectory '${{ runner.temp }}/agent9-negative-wrong-sha'
+          }
+
+          Assert-Refusal -Name 'hosted-target' -ExpectedMessage 'Refusing non-localhost database target' -Action {
+            ./scripts/movie-buff-agent9-staging-rehearsal.ps1 @common `
+              -Mode DryRun `
+              -DatabaseUrl 'postgresql://example.invalid/movie_buff' `
+              -EvidenceDirectory '${{ runner.temp }}/agent9-negative-hosted-target'
+          }
+
+          Assert-Refusal -Name 'evidence-inside-checkout' -ExpectedMessage 'EvidenceDirectory must be outside the source checkout' -Action {
+            ./scripts/movie-buff-agent9-staging-rehearsal.ps1 @common `
+              -Mode Preflight `
+              -EvidenceDirectory './agent9-invalid-evidence'
+          }
+
       - name: Upload preflight evidence
         if: always()
         uses: actions/upload-artifact@v4
