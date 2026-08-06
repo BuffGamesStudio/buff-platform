@@ -26,6 +26,8 @@ SECURITY_FILES=(
   supabase/tests/movie_buff_current_security_finalizer_test.sql
   supabase/tests/movie_buff_current_security_finalizer_rollback_test.sql
   supabase/tests/movie_buff_agent6_persona_behavior_test.sql
+  supabase/tests/movie_buff_agent6_policy_helper_security_test.sql
+  supabase/tests/movie_buff_agent6_policy_helper_rollback_test.sql
   scripts/movie-buff-agent6-security-package.sh
   docs/security/movie-buff-agent6-expected-state.json
   docs/security/movie-buff-agent6-isolated-staging-runbook.md
@@ -104,9 +106,12 @@ select jsonb_build_object(
     ) order by p.oid::regprocedure::text)
     from pg_proc p
     join pg_namespace n on n.oid=p.pronamespace
-    where n.nspname='public'
+    where (
+      n.nspname='public'
       and (p.proname like '%movie_buff%'
         or p.proname in ('set_updated_at','normalize_movie_answer','handle_new_user','rls_auto_enable'))
+    )
+    or n.nspname='movie_buff_security'
   ),
   'tables',(
     select jsonb_agg(jsonb_build_object(
@@ -328,6 +333,9 @@ PY
   (cd "${WORK_ROOT}" && run_step pgtap-forward-initial supabase test db \
     supabase/tests/movie_buff_current_security_finalizer_test.sql --local) \
     || { fail pgtap-forward-initial; return; }
+  (cd "${WORK_ROOT}" && run_step policy-helpers-forward-initial supabase test db \
+    supabase/tests/movie_buff_agent6_policy_helper_security_test.sql --local) \
+    || { fail policy-helpers-forward-initial; return; }
   (cd "${WORK_ROOT}" && run_step personas-forward-initial supabase test db \
     supabase/tests/movie_buff_agent6_persona_behavior_test.sql --local) \
     || { fail personas-forward-initial; return; }
@@ -349,6 +357,9 @@ PY
   (cd "${WORK_ROOT}" && run_step pgtap-rollback supabase test db \
     supabase/tests/movie_buff_current_security_finalizer_rollback_test.sql --local) \
     || { fail pgtap-rollback; return; }
+  (cd "${WORK_ROOT}" && run_step policy-helpers-rollback supabase test db \
+    supabase/tests/movie_buff_agent6_policy_helper_rollback_test.sql --local) \
+    || { fail policy-helpers-rollback; return; }
 
   run_step reapply-155000 psql "${DB_URL}" -X -v ON_ERROR_STOP=1 \
     -f "${WORK_ROOT}/supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql" \
@@ -366,6 +377,9 @@ PY
   (cd "${WORK_ROOT}" && run_step pgtap-forward-reapply supabase test db \
     supabase/tests/movie_buff_current_security_finalizer_test.sql --local) \
     || { fail pgtap-forward-reapply; return; }
+  (cd "${WORK_ROOT}" && run_step policy-helpers-forward-reapply supabase test db \
+    supabase/tests/movie_buff_agent6_policy_helper_security_test.sql --local) \
+    || { fail policy-helpers-forward-reapply; return; }
   (cd "${WORK_ROOT}" && run_step personas-forward-reapply supabase test db \
     supabase/tests/movie_buff_agent6_persona_behavior_test.sql --local) \
     || { fail personas-forward-reapply; return; }
