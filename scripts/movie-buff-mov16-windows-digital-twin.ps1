@@ -63,6 +63,7 @@ Invoke-Checked "guard syntax" {
 }
 Invoke-Checked "deadline race syntax" {
   node --check scripts/movie-buff-mov16-deadline-release-race.mjs
+  node --check scripts/movie-buff-mov16-deadline-release-race-v2.mjs
 }
 Invoke-Checked "negative-path self-test" {
   node scripts/movie-buff-mov16-evidence-guard.mjs --self-test |
@@ -79,10 +80,16 @@ Invoke-Checked "TypeScript" {
   npx tsc --noEmit 2>&1 |
     Tee-Object -FilePath (Join-Path $EvidenceDirectory "typescript.log")
 }
+"0" | Out-File -FilePath (Join-Path $EvidenceDirectory "typescript.exit") -Encoding ascii
+if (-not (Test-Path (Join-Path $EvidenceDirectory "typescript.log"))) {
+  "TypeScript completed successfully with no diagnostics." |
+    Out-File -FilePath (Join-Path $EvidenceDirectory "typescript.log") -Encoding utf8
+}
 Invoke-Checked "production build" {
   npm run build 2>&1 |
     Tee-Object -FilePath (Join-Path $EvidenceDirectory "build.log")
 }
+"0" | Out-File -FilePath (Join-Path $EvidenceDirectory "build.exit") -Encoding ascii
 
 @"
 classification=PASS
@@ -92,6 +99,8 @@ source_sha=$sha
 source_tree=$tree
 platform=windows
 node=$(node --version)
+typescript_exit=0
+build_exit=0
 finished_at=$([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))
 "@ | Out-File -FilePath (Join-Path $EvidenceDirectory "metadata.txt") -Encoding utf8
 
