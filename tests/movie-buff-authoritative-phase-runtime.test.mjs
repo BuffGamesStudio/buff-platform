@@ -38,6 +38,10 @@ const matchStatusPage = fs.readFileSync(
   "src/app/games/movie-buff/match-status/page.tsx",
   "utf8",
 );
+const resultsPage = fs.readFileSync(
+  "src/app/games/movie-buff/round-results/page.tsx",
+  "utf8",
+);
 
 test("canonical phases and server timestamps are durable", () => {
   for (const phase of [
@@ -146,6 +150,15 @@ test("legacy manual round advance is removed from authenticated callers", () => 
     hardening,
     /grant execute on function public\.advance_movie_buff_round\(uuid\)[\s\S]*service_role/i,
   );
+});
+
+test("results route consumes authoritative room state without manual advance", () => {
+  assert.match(resultsPage, /MovieBuffAuthoritativeResultsClient/);
+  assert.match(resultsPage, /searchParams/);
+  assert.match(resultsPage, /resolved\?\.roomId/);
+  assert.match(resultsPage, /redirect\("\/games\/movie-buff\/lobby"\)/);
+  assert.doesNotMatch(resultsPage, /roundId/);
+  assert.doesNotMatch(resultsPage, /advanceMovieBuffRound|handleNextRound|Next Round/);
 });
 
 test("caller routes verify bearer membership and use caller-scoped RPCs", () => {
