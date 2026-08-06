@@ -1,0 +1,341 @@
+name: Agent 5 Movie Buff exact-SHA candidate
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-integrated-candidate-v1
+  pull_request:
+    branches:
+      - integration/movie-buff
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent5-movie-buff-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-integrated-candidate-v1
+  PRODUCT_SHA: 2be790c88bc7f34969fe607bb78fd7535b621190
+  PRODUCT_TREE: cbd8061c9c4da410e39363beee02bf53194ed53f
+  INTEGRATION_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
+  RECONCILIATION_BASE_SHA: cbf1c3e7c3fdd6925cf3ba473f9729a05d5fdfc7
+
+jobs:
+  linux-source-build:
+    name: Exact identity, focused tests, TypeScript, build, and integrity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-agent5-linux-evidence
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+      APP_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: local-anon-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-service-role-placeholder
+
+    steps:
+      - name: Check out exact controller SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify repository, branch, SHA, product tree, and clean checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          remote="$(git remote get-url origin)"
+          [[ "$remote" =~ BuffGamesStudio/buff-platform(\.git)?$ ]] || { echo 'Wrong repository remote'; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "${GITHUB_SHA}" ]] || { echo 'Controller SHA mismatch'; exit 1; }
+          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
+            [[ "${GITHUB_REF_NAME}" == "$EXPECTED_BRANCH" ]] || { echo 'Wrong branch'; exit 1; }
+          fi
+          git cat-file -e "${PRODUCT_SHA}^{commit}"
+          [[ "$(git show -s --format=%T "$PRODUCT_SHA")" == "$PRODUCT_TREE" ]] || { echo 'Product tree mismatch'; exit 1; }
+          [[ -z "$(git status --porcelain --untracked-files=all)" ]] || { echo 'Dirty checkout'; exit 1; }
+          {
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "branch=$EXPECTED_BRANCH"
+            echo "controller_sha=$GITHUB_SHA"
+            echo "controller_tree=$(git show -s --format=%T "$GITHUB_SHA")"
+            echo "product_sha=$PRODUCT_SHA"
+            echo "product_tree=$PRODUCT_TREE"
+            echo "captured_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } | tee "$EVIDENCE_DIR/identity.txt"
+
+      - name: Verify manifest and source marker identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const manifest = JSON.parse(fs.readFileSync('docs/validation/movie-buff-integrated-candidate-v1.manifest.json', 'utf8'));
+          const marker = JSON.parse(fs.readFileSync('public/movie-buff-build-marker.json', 'utf8'));
+          const productSha = process.env.PRODUCT_SHA;
+          const productTree = process.env.PRODUCT_TREE;
+          if (manifest.productComposition.sha !== productSha || manifest.productComposition.treeSha !== productTree) {
+            throw new Error('Manifest product identity mismatch');
+          }
+          if (marker.productCompositionSha !== productSha || marker.productTreeSha !== productTree) {
+            throw new Error('Build marker product identity mismatch');
+          }
+          if (manifest.releaseClassification !== 'NO-GO' || marker.releaseClassification !== 'NO-GO') {
+            throw new Error('Candidate must remain NO-GO');
+          }
+          NODE
+
+      - name: Record component merge bases
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$EVIDENCE_DIR/components.tsv" <<'EOF'
+          integration	bf316a15a2120e32d8a32e479df2ae439081f9a1
+          pr3_visuals	f692e82a5d524c950011e0300908c9cbec2389cb
+          pr5_hardening	91eac0d55abb1a9568017df687e8395771d24780
+          mov15	dc9804cdae03d8627a89980dbcdf2292d2055372
+          mov16	4a5e5591113b005f69fd34361becb2fd8d024897
+          mov17	f17234debfb8942e1998306a12dc33301c1c5440
+          mov18	780153d0624a8186db1c628f6bd93906bca41a30
+          pr12_encoding	f86689895cb810831d9b4d6346ee95eed9439495
+          mov19_validator	46c549675d44f19c22a7786421cf2581dc22af3c
+          EOF
+          : > "$EVIDENCE_DIR/merge-bases.tsv"
+          while IFS=$'\t' read -r name sha; do
+            git cat-file -e "${sha}^{commit}"
+            tree="$(git show -s --format=%T "$sha")"
+            merge_base="$(git merge-base "$INTEGRATION_SHA" "$sha")"
+            printf '%s\t%s\t%s\t%s\n' "$name" "$sha" "$tree" "$merge_base" | tee -a "$EVIDENCE_DIR/merge-bases.tsv"
+          done < "$EVIDENCE_DIR/components.tsv"
+
+      - name: Verify protected reconciled blobs and exact lane deltas
+        shell: bash
+        run: |
+          set -euo pipefail
+          check_blob() {
+            local path="$1"
+            local expected="$2"
+            local actual
+            actual="$(git rev-parse "$PRODUCT_SHA:$path")"
+            [[ "$actual" == "$expected" ]] || { echo "Blob mismatch: $path expected $expected got $actual"; exit 1; }
+            printf '%s\t%s\n' "$path" "$actual" >> "$EVIDENCE_DIR/protected-blobs.tsv"
+          }
+          : > "$EVIDENCE_DIR/protected-blobs.tsv"
+          check_blob 'src/app/games/movie-buff/board-preview/page.tsx' 'ee4ef8bae382aebc1e2242a8342d3858ecbc922c'
+          check_blob 'src/app/games/movie-buff/play/page.tsx' '2115b1f81a1dd64fa0998ebffcd2ca4ef605f0d5'
+          check_blob 'src/components/movie-buff/MovieBuffBoardRoomClient.tsx' 'da8ea21aba760e51ffb37fa32e8906e5825cf86f'
+          check_blob '.github/workflows/movie-buff-mov16-exact-validation.yml' 'fcc47d8db07b075f1b6de30c5c7671700454631a'
+          check_blob 'src/app/games/movie-buff/round-results/page.tsx' '9282f124b85351a8569aa59d107a063862165afa'
+          check_blob 'tests/movie-buff-authoritative-phase-runtime.test.mjs' '9334253a1f9481778ac9aa29cf7387b695cfcf8e'
+          check_blob 'src/components/movie-buff/visual/MovieBuffAuthoritativePhaseVisualAdapter.tsx' '2396a59440f729dd9df9a7d6bd5da7ae4926c870'
+          check_blob 'src/components/movie-buff/visual/index.ts' 'af974d079ff936131c52c1dff1c83915c36be70a'
+          check_blob 'src/lib/movie-buff/authoritativeVisualAdapter.ts' 'e8ca8b79328ee55c176d2732670072174a08a2a9'
+          check_blob 'tests/movie-buff-visual-runtime.test.mjs' 'bc245859b11595c72647a05071b0fa0cd2f5448a'
+          check_blob 'scripts/movie-buff-migration-bom-only-check.mjs' '67123ea020c9ed245c4dacf9c5cdbce1c3ea0a64'
+          check_blob 'tests/movie-buff-migration-encoding.test.mjs' 'a88adaffe01d00a3af38c0a48da255f526199ce6'
+
+      - name: Verify changed-file ownership boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$EVIDENCE_DIR/allowed-product-delta.txt" <<'EOF'
+          .github/workflows/movie-buff-mov16-exact-validation.yml
+          .github/workflows/movie-buff-mov19-validation.yml
+          .github/workflows/movie-buff-mov19-windows-digital-twin.yml
+          docs/security/movie-buff-go-no-go-v1.md
+          docs/security/movie-buff-independent-validation-matrix-v1.md
+          docs/security/movie-buff-rollback-readiness-v1.md
+          scripts/movie-buff-migration-bom-only-check.mjs
+          scripts/movie-buff-mov19-windows-digital-twin.ps1
+          scripts/movie-buff-security-evidence.mjs
+          scripts/movie-buff-three-client-validation.mjs
+          src/app/games/movie-buff/round-results/page.tsx
+          src/components/movie-buff/visual/MovieBuffAuthoritativePhaseVisualAdapter.tsx
+          src/components/movie-buff/visual/index.ts
+          src/lib/movie-buff/authoritativeVisualAdapter.ts
+          supabase/tests/movie_buff_security_validation_test.sql
+          tests/movie-buff-authoritative-phase-runtime.test.mjs
+          tests/movie-buff-independent-security-validation.test.mjs
+          tests/movie-buff-migration-encoding.test.mjs
+          tests/movie-buff-release-evidence-integrity.test.mjs
+          tests/movie-buff-visual-runtime.test.mjs
+          EOF
+          git diff --name-only "$RECONCILIATION_BASE_SHA" "$PRODUCT_SHA" | sort > "$EVIDENCE_DIR/actual-product-delta.txt"
+          sort -o "$EVIDENCE_DIR/allowed-product-delta.txt" "$EVIDENCE_DIR/allowed-product-delta.txt"
+          diff -u "$EVIDENCE_DIR/allowed-product-delta.txt" "$EVIDENCE_DIR/actual-product-delta.txt"
+          git diff --name-only "$PRODUCT_SHA" "$GITHUB_SHA" | sort > "$EVIDENCE_DIR/controller-delta.txt"
+          while IFS= read -r path; do
+            case "$path" in
+              .github/workflows/movie-buff-agent5-integrated-candidate.yml|docs/validation/movie-buff-integrated-candidate-v1.manifest.json|docs/validation/movie-buff-integrated-candidate-v1.md|public/movie-buff-build-marker.json|scripts/movie-buff-agent5-windows-digital-twin.ps1) ;;
+              *) echo "Controller contains out-of-scope path: $path"; exit 1 ;;
+            esac
+          done < "$EVIDENCE_DIR/controller-delta.txt"
+
+      - name: Install dependencies without lifecycle scripts
+        shell: bash
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run focused static contracts from every included lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            tests/movie-buff-public-matchmaking-contract.test.mjs \
+            tests/movie-buff-public-matchmaking-handoff.test.mjs \
+            tests/movie-buff-vip-authority.test.mjs \
+            tests/movie-buff-vip-finalize-contract.test.mjs \
+            tests/movie-buff-authoritative-phase-runtime.test.mjs \
+            tests/movie-buff-server-phase-machine.test.mjs \
+            tests/movie-buff-visual-runtime.test.mjs \
+            tests/movie-buff-migration-encoding.test.mjs \
+            tests/movie-buff-current-hardening-reconciliation.test.mjs \
+            tests/movie-buff-independent-security-validation.test.mjs \
+            tests/movie-buff-release-evidence-integrity.test.mjs \
+            2>&1 | tee "$EVIDENCE_DIR/focused-tests.log"
+
+      - name: Run TypeScript
+        shell: bash
+        run: npx tsc --noEmit 2>&1 | tee "$EVIDENCE_DIR/typescript.log"
+
+      - name: Reject BOM-bearing SQL and scan encoding
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE' | tee "$EVIDENCE_DIR/sql-encoding.log"
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const roots = ['supabase/migrations', 'supabase/rollbacks', 'supabase/tests'];
+          const sql = [];
+          function walk(dir) {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const p = path.join(dir, entry.name);
+              if (entry.isDirectory()) walk(p);
+              else if (entry.isFile() && p.endsWith('.sql')) sql.push(p);
+            }
+          }
+          for (const root of roots) if (fs.existsSync(root)) walk(root);
+          const failures = [];
+          for (const file of sql) {
+            const bytes = fs.readFileSync(file);
+            if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) failures.push(file);
+          }
+          console.log(`scanned_sql_files=${sql.length}`);
+          if (failures.length) throw new Error(`UTF-8 BOM found: ${failures.join(', ')}`);
+          NODE
+
+      - name: Scan candidate source for obvious secret material
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE -- '-----BEGIN (RSA|OPENSSH|EC|DSA) PRIVATE KEY-----|sk_live_[A-Za-z0-9]{16,}|sbp_[A-Za-z0-9]{20,}' "$PRODUCT_SHA" -- ':!package-lock.json' > "$EVIDENCE_DIR/secret-scan-findings.txt"; then
+            cat "$EVIDENCE_DIR/secret-scan-findings.txt"
+            exit 1
+          fi
+          echo 'obvious_secret_patterns=PASS' | tee "$EVIDENCE_DIR/secret-scan.txt"
+
+      - name: Inject runtime build timestamp into marker and build with localhost placeholders
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp public/movie-buff-build-marker.json "$EVIDENCE_DIR/source-build-marker.json"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'public/movie-buff-build-marker.json';
+          const marker = JSON.parse(fs.readFileSync(path, 'utf8'));
+          marker.controllerSha = process.env.GITHUB_SHA;
+          marker.buildTimestampUtc = new Date().toISOString();
+          marker.buildTimestampStatus = 'captured by exact-SHA GitHub Actions build';
+          marker.workflowRunId = process.env.GITHUB_RUN_ID;
+          fs.writeFileSync(path, JSON.stringify(marker, null, 2) + '\n');
+          fs.copyFileSync(path, process.env.EVIDENCE_DIR + '/runtime-build-marker.json');
+          NODE
+          npm run build 2>&1 | tee "$EVIDENCE_DIR/production-build.log"
+          git checkout -- public/movie-buff-build-marker.json
+
+      - name: Verify diff hygiene and clean worktree postflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          [[ -z "$(git status --porcelain --untracked-files=all)" ]] || { git status --short; exit 1; }
+          {
+            echo 'source_assembly=PASS'
+            echo 'dependency_install=PASS'
+            echo 'focused_static_tests=PASS'
+            echo 'typescript=PASS'
+            echo 'production_build=PASS'
+            echo 'sql_encoding=PASS'
+            echo 'changed_file_ownership=PASS'
+            echo 'secret_scan=PASS'
+            echo 'clean_worktree=PASS'
+            echo 'database=UNKNOWN'
+            echo 'browser=UNKNOWN'
+            echo 'hosted_security=FAIL'
+            echo 'isolated_staging=UNKNOWN'
+            echo 'rollback=UNKNOWN'
+            echo 'release=NO-GO'
+          } | tee "$EVIDENCE_DIR/status.txt"
+          find "$EVIDENCE_DIR" -maxdepth 1 -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > "$EVIDENCE_DIR/sha256.txt"
+
+      - name: Upload Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent5-linux-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-agent5-linux-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-command-shell:
+    name: Windows PowerShell command-shell digital twin
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      EVIDENCE_DIR: ${{ runner.temp }}\movie-buff-agent5-windows-evidence
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+      APP_URL: http://127.0.0.1:3000
+
+    steps:
+      - name: Check out exact controller SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Execute checked-in Agent 5 Windows wrapper
+        shell: pwsh
+        run: |
+          ./scripts/movie-buff-agent5-windows-digital-twin.ps1 `
+            -ExpectedSha '${{ github.sha }}' `
+            -ProductSha '${{ env.PRODUCT_SHA }}' `
+            -ExpectedBranch '${{ env.EXPECTED_BRANCH }}' `
+            -EvidenceRoot '${{ runner.temp }}\movie-buff-agent5-windows-evidence'
+
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent5-windows-${{ github.sha }}
+          path: ${{ runner.temp }}\movie-buff-agent5-windows-evidence
+          if-no-files-found: error
+          retention-days: 14
