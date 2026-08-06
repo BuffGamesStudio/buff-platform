@@ -142,6 +142,29 @@ assert.equal(
 );
 transformed = transformed.replace(historyAnchor, historyReplacement);
 
+const usedTileAnchor = `  const usedTiles = await Promise.all(pages.map((page) => page.evaluate(() => {
+    const complete = [...document.querySelectorAll("button")].filter((button) => button.textContent?.includes("Scene Complete"));
+    return { count: complete.length, disabled: complete.filter((button) => button.disabled).length, buster: complete.filter((button) => button.textContent?.includes("Buster slate stamped")).length };
+  })));
+  assert.ok(usedTiles.every((item) => item.count >= 1 && item.disabled === item.count && item.buster >= 1), JSON.stringify(usedTiles));`;
+const usedTileReplacement = `  await Promise.all(pages.map((page) => page.waitForFunction(() => {
+    const complete = [...document.querySelectorAll("button")].filter((button) => button.textContent?.includes("Scene Complete"));
+    return complete.length >= 1
+      && complete.every((button) => button.disabled)
+      && complete.every((button) => button.textContent?.includes("Buster slate stamped"));
+  }, null, { timeout: 15_000, polling: 250 })));
+  const usedTiles = await Promise.all(pages.map((page) => page.evaluate(() => {
+    const complete = [...document.querySelectorAll("button")].filter((button) => button.textContent?.includes("Scene Complete"));
+    return { count: complete.length, disabled: complete.filter((button) => button.disabled).length, buster: complete.filter((button) => button.textContent?.includes("Buster slate stamped")).length };
+  })));
+  assert.ok(usedTiles.every((item) => item.count >= 1 && item.disabled === item.count && item.buster >= 1), JSON.stringify(usedTiles));`;
+assert.equal(
+  transformed.split(usedTileAnchor).length - 1,
+  1,
+  "expected one board-return used-tile assertion anchor",
+);
+transformed = transformed.replace(usedTileAnchor, usedTileReplacement);
+
 const finalEvidenceAnchor = `    expectedOfflineRequestFailures: evidence.failedRequests.filter((request) => request.expectedOfflineExercise).length,
     expectedNavigationAborts: evidence.failedRequests.filter((request) => request.errorText === "net::ERR_ABORTED").length,`;
 const finalEvidenceReplacement = `    expectedOfflineRequestFailures: evidence.failedRequests.filter((request) => request.expectedOfflineExercise).length,
