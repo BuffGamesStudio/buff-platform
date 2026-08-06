@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "repository": "BuffGamesStudio/buff-platform",
+  "releaseTrain": "2026-08-06-01",
+  "classification": "VALIDATION_ONLY_NO_GO",
+  "product": {
+    "sha": "886b914ef83398b6384ce49e18955e026103a27c",
+    "tree": "7e1fe5b4cdc4787976b8929664e966b2aa09d83d",
+    "branch": "release-candidate/movie-buff-2026-08-06-01-v7"
+  },
+  "productParents": [
+    "c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6",
+    "ffff733d856c8c6dca5a04fdbe84e3a0c5839111",
+    "3d2743da175229de42847c82c71931657c2090da"
+  ],
+  "productDelta": [
+    ".github/workflows/movie-buff-mov17-local-supabase.yml",
+    ".github/workflows/movie-buff-mov17-validation.yml",
+    "src/app/api/movie-buff/match/view/route.ts",
+    "src/lib/game/movieBuffAuthoritativePhaseClient.ts",
+    "src/app/games/movie-buff/lobby/LobbyAuthBootstrap.tsx",
+    "tests/movie-buff-lobby-auth-bootstrap.test.mjs"
+  ],
+  "controllerOnly": [
+    "scripts/movie-buff-agent5-linux-exact-validation.sh",
+    "scripts/movie-buff-agent5-windows-digital-twin.ps1",
+    "scripts/movie-buff-release-train-combined-runtime-lab.sh",
+    "scripts/movie-buff-release-train-canonical-leave-race.mjs",
+    "scripts/movie-buff-release-train-patch-owner-fixtures.py",
+    "docs/validation/movie-buff-v7-controller.manifest.json"
+  ],
+  "prohibitions": [
+    "ARM_REQUEST",
+    "MERGE",
+    "DEPLOYMENT",
+    "ALIAS_PROMOTION",
+    "HOSTED_MUTATION",
+    "PRODUCTION_ACTION"
+  ]
+}
