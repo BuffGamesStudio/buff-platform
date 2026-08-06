@@ -1,0 +1,74 @@
+name: Movie Buff release-train combined runtime
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-release-train-runtime-20260806
+    paths:
+      - ".github/workflows/movie-buff-release-train-combined-runtime.yml"
+      - "scripts/movie-buff-release-train-combined-runtime-lab.sh"
+      - "scripts/movie-buff-release-train-canonical-leave-race.mjs"
+      - "scripts/movie-buff-release-train-patch-owner-fixtures.py"
+      - "docs/validation/movie-buff-release-train-combined-runtime.manifest.json"
+  pull_request:
+    branches:
+      - integration/movie-buff
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  combined-runtime:
+    name: Disposable MOV-15/MOV-16/MOV-17 race matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PRODUCT_SHA: c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6
+      PRODUCT_TREE: a995a9aeb2fca76d2c1b216ece3a2645c2393c71
+      EXPECTED_BRANCH: validation/movie-buff-release-train-runtime-20260806
+      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-release-train-runtime
+      STACK_ROOT: ${{ runner.temp }}/movie-buff-release-train-stack
+      PROOF_ROOT: ${{ runner.temp }}/movie-buff-release-train-worktree
+      USERS_FILE: ${{ runner.temp }}/movie-buff-release-train-users.json
+
+    steps:
+      - name: Check out exact controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Supabase CLI 2.111.0
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Execute exact disposable runtime matrix
+        shell: bash
+        run: |
+          bash scripts/movie-buff-release-train-combined-runtime-lab.sh \
+            "${EXPECTED_SHA}" \
+            "${PRODUCT_SHA}" \
+            "${PRODUCT_TREE}" \
+            "${EXPECTED_BRANCH}" \
+            "${EVIDENCE_DIR}" \
+            "${STACK_ROOT}" \
+            "${PROOF_ROOT}" \
+            "${USERS_FILE}"
+
+      - name: Upload combined runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-release-train-runtime-${{ env.EXPECTED_SHA }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 7
