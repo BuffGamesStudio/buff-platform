@@ -46,6 +46,12 @@ substitutions = [
 '''    node scripts/movie-buff-mov16-deadline-release-race-v2.mjs \\
 '''
     ),
+    (
+'''    node "${HARNESS}" >"${RAW}/adversarial-${suffix}.log" 2>&1
+''',
+'''    node scripts/movie-buff-mov16-adversarial-v3-wrapper.mjs "${HARNESS}" >"${RAW}/adversarial-${suffix}.log" 2>&1
+'''
+    ),
 ]
 for old, new in substitutions:
     if source.count(old) != 1:
