@@ -24,6 +24,52 @@ function Invoke-Checked {
   }
 }
 
+function Get-GitBlobSha256 {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path
+  )
+
+  $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName = "git"
+  $startInfo.UseShellExecute = $false
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  $startInfo.ArgumentList.Add("cat-file")
+  $startInfo.ArgumentList.Add("blob")
+  $startInfo.ArgumentList.Add("HEAD:$Path")
+
+  $process = [System.Diagnostics.Process]::new()
+  $process.StartInfo = $startInfo
+  $memory = [System.IO.MemoryStream]::new()
+  try {
+    if (-not $process.Start()) {
+      throw "Unable to start git cat-file for $Path"
+    }
+
+    $copyTask = $process.StandardOutput.BaseStream.CopyToAsync($memory)
+    $errorTask = $process.StandardError.ReadToEndAsync()
+    $process.WaitForExit()
+    $copyTask.GetAwaiter().GetResult()
+    $stderr = $errorTask.GetAwaiter().GetResult()
+
+    if ($process.ExitCode -ne 0) {
+      throw "git cat-file failed for $Path with code $($process.ExitCode): $stderr"
+    }
+
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    try {
+      $digest = $algorithm.ComputeHash($memory.ToArray())
+      return [Convert]::ToHexString($digest).ToLowerInvariant()
+    } finally {
+      $algorithm.Dispose()
+    }
+  } finally {
+    $memory.Dispose()
+    $process.Dispose()
+  }
+}
+
 if (-not (Test-Path "AGENTS.md") -or
     -not (Test-Path "package.json") -or
     -not (Test-Path ".git")) {
@@ -99,7 +145,7 @@ foreach ($sourcePath in $sourcePaths) {
 }
 $sourcePaths |
   ForEach-Object {
-    $hash = (Get-FileHash -Algorithm SHA256 -Path $_).Hash.ToLowerInvariant()
+    $hash = Get-GitBlobSha256 -Path $_
     "$hash  ./$($_ -replace '\\','/')"
   } |
   Out-File -FilePath (Join-Path $EvidenceDirectory "mov16-source-sha256.txt") -Encoding ascii
@@ -127,6 +173,7 @@ source_sha=$sha
 source_tree=$tree
 platform=windows
 node=$(node --version)
+source_hash_basis=git_blob_bytes
 typescript_exit=0
 build_exit=0
 finished_at=$([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))
