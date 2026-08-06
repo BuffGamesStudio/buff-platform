@@ -1,0 +1,232 @@
+name: MOV-17 plus PR12 current composition validation
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-mov17-pr12-current-20260806
+  pull_request:
+    branches:
+      - integration/movie-buff
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-mov17-pr12-current-20260806
+  PRODUCT_SHA: 373cc05fb4fe457e8512989bb776ddb9638c8258
+  PRODUCT_TREE: 15b6e78b0f692f0a2d2f92f9fcf96051d38de910
+  FAST_FORWARD_ANCHOR: ea0881c93af560bc3cb90fc4a536279c0a421d52
+  MOV17_SHA: ffff733d856c8c6dca5a04fdbe84e3a0c5839111
+  MOV17_TREE: 99cbd5b0554e3d5499d9789c500bbff8e8fd82a5
+  PR12_SHA: d1f7ca58b534cbccd3071743d542f5788c0e9173
+  PR12_TREE: ea817ad706f4107fc16482cbe6cc40ec6a012ee0
+  BASELINE_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
+
+jobs:
+  linux-source-build:
+    name: Linux exact composition, contracts, encoding and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EVIDENCE_DIR: ${{ runner.temp }}/mov17-pr12-linux
+    steps:
+      - name: Check out exact controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify branch, controller, product ancestry and exact blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test "$(git rev-parse HEAD^)" = "${PRODUCT_SHA}"
+          test "$(git rev-parse ${PRODUCT_SHA}^{tree})" = "${PRODUCT_TREE}"
+          test "$(git rev-parse ${PRODUCT_SHA}^1)" = "${FAST_FORWARD_ANCHOR}"
+          test "$(git rev-parse ${PRODUCT_SHA}^2)" = "${MOV17_SHA}"
+          test "$(git rev-parse ${PRODUCT_SHA}^3)" = "${PR12_SHA}"
+          test "$(git rev-parse ${MOV17_SHA}^{tree})" = "${MOV17_TREE}"
+          test "$(git rev-parse ${PR12_SHA}^{tree})" = "${PR12_TREE}"
+          test "$(git rev-parse ${PRODUCT_SHA}:.github/workflows/movie-buff-migration-encoding.yml)" = "f0f01e696d25e95874dfd0619e16f4417444b8a0"
+          test "$(git rev-parse ${PRODUCT_SHA}:scripts/movie-buff-migration-bom-only-check.mjs)" = "67123ea020c9ed245c4dacf9c5cdbce1c3ea0a64"
+          test "$(git rev-parse ${PRODUCT_SHA}:scripts/movie-buff-migration-encoding-check.mjs)" = "8dafc79ce092b4ffa666fc492d1f171f4424629f"
+          test "$(git rev-parse ${PRODUCT_SHA}:supabase/migrations/202607250001_start_movie_buff_match.sql)" = "148fdca03371512f3698f9039b635fd071ad6dce"
+          test "$(git rev-parse ${PRODUCT_SHA}:supabase/migrations/202607250002_fix_start_match_ambiguity.sql)" = "be8958f9c30955e9cd6c7c47fa33016ac9ec7f0b"
+          test "$(git rev-parse ${PRODUCT_SHA}:supabase/migrations/202607250003_movie_buff_answers.sql)" = "ef2ce0c2e0f3297ca96453b2af56d04136ddb684"
+          test "$(git rev-parse ${PRODUCT_SHA}:supabase/migrations/202607250004_advance_movie_buff_round.sql)" = "c9421ddc6bbe958cfadbe6392b93972097717108"
+          test "$(git rev-parse ${PRODUCT_SHA}:supabase/migrations/202607250005_movie_buff_round_results.sql)" = "0a320aef0bf80ae8f1d41c454bac90b5a554fe59"
+          test "$(git rev-parse ${PRODUCT_SHA}:supabase/migrations/202607250006_exact_movie_buff_round_results.sql)" = "371f04e3d07df78d27b54607375ee06cdaf4c958"
+          test "$(git rev-parse ${PRODUCT_SHA}:supabase/migrations/202607260001_movie_buff_final_results.sql)" = "7243bbe321538e8f48e8f63b933e39a74bdcd6ba"
+          test "$(git rev-parse ${PRODUCT_SHA}:supabase/migrations/202607262300_add_movie_buff_trivia_clips.sql)" = "268475cc636bd10cd4ad75e3913162ccb71809b6"
+          test "$(git rev-parse ${PRODUCT_SHA}:supabase/migrations/202607270002_buff_games_content_engine.sql)" = "525193d165f7c1e96db0d8cc8c1856b44c7a9059"
+          test "$(git rev-parse ${PRODUCT_SHA}:tests/movie-buff-migration-encoding.test.mjs)" = "a88adaffe01d00a3af38c0a48da255f526199ce6"
+          test -z "$(git status --porcelain)"
+
+      - name: Install committed lock
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run MOV-17 and encoding contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          node --check scripts/movie-buff-three-client-phase-proof.mjs
+          node --check scripts/movie-buff-reconnect-race-proof.mjs
+          node --check scripts/movie-buff-three-client-phase-evidence-runner.mjs
+          bash -n scripts/movie-buff-mov17-local-supabase-evidence.sh
+          node --test \
+            tests/movie-buff-server-phase-machine.test.mjs \
+            tests/movie-buff-authoritative-phase-runtime.test.mjs \
+            tests/movie-buff-buster-safe-boundary.test.mjs \
+            tests/movie-buff-phase-tile-mutation-guard.test.mjs \
+            tests/movie-buff-match-start-handoff.test.mjs \
+            tests/movie-buff-migration-encoding.test.mjs \
+            2>&1 | tee "${EVIDENCE_DIR}/contracts.tap"
+          MOVIE_BUFF_MIGRATION_ENCODING_OUTPUT="${EVIDENCE_DIR}/encoding-report.json" \
+            node scripts/movie-buff-migration-encoding-check.mjs \
+              supabase/migrations supabase/rollbacks supabase/tests \
+              > "${EVIDENCE_DIR}/encoding.stdout.txt"
+          MOVIE_BUFF_BOM_ONLY_OUTPUT="${EVIDENCE_DIR}/bom-only-report.json" \
+            node scripts/movie-buff-migration-bom-only-check.mjs "${BASELINE_SHA}" \
+              > "${EVIDENCE_DIR}/bom-only.stdout.txt"
+
+      - name: TypeScript and localhost-placeholder build
+        shell: bash
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-build-publishable-key
+          SUPABASE_SERVICE_ROLE_KEY: local-build-service-role-key
+        run: |
+          set -euo pipefail
+          npx --no-install tsc --noEmit 2>&1 | tee "${EVIDENCE_DIR}/typescript.txt"
+          npm run build 2>&1 | tee "${EVIDENCE_DIR}/build.txt"
+
+      - name: Clean postflight and portable hashes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          git diff --check
+          test -z "$(git status --porcelain)"
+          {
+            echo "classification=UNKNOWN"
+            echo "controller_sha=$(git rev-parse HEAD)"
+            echo "controller_tree=$(git rev-parse HEAD^{tree})"
+            echo "product_sha=${PRODUCT_SHA}"
+            echo "product_tree=${PRODUCT_TREE}"
+            echo "mov17_sha=${MOV17_SHA}"
+            echo "pr12_sha=${PR12_SHA}"
+            echo "database=UNKNOWN"
+            echo "browser=UNKNOWN"
+            echo "hosted=UNKNOWN"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${EVIDENCE_DIR}/metadata.txt"
+          (cd "${EVIDENCE_DIR}" && find . -maxdepth 1 -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt && sha256sum -c sha256.txt)
+
+      - name: Upload Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov17-pr12-linux-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/mov17-pr12-linux
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-digital-twin:
+    name: Windows PowerShell digital twin and encoding check
+    runs-on: windows-2025
+    timeout-minutes: 35
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EVIDENCE_DIR: ${{ runner.temp }}\mov17-pr12-windows
+    steps:
+      - name: Check out exact controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify exact composition identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $resolvedRef = if ($env:GITHUB_HEAD_REF) { $env:GITHUB_HEAD_REF } else { $env:GITHUB_REF_NAME }
+          if ($resolvedRef -ne $env:EXPECTED_BRANCH) { throw "Branch mismatch: $resolvedRef" }
+          if ((git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'Controller SHA mismatch' }
+          if ((git rev-parse HEAD^).Trim() -ne $env:PRODUCT_SHA) { throw 'Product parent mismatch' }
+          if ((git rev-parse "$env:PRODUCT_SHA^{tree}").Trim() -ne $env:PRODUCT_TREE) { throw 'Product tree mismatch' }
+          if ((git rev-parse "$env:PRODUCT_SHA^1").Trim() -ne $env:FAST_FORWARD_ANCHOR) { throw 'Fast-forward anchor mismatch' }
+          if ((git rev-parse "$env:PRODUCT_SHA^2").Trim() -ne $env:MOV17_SHA) { throw 'MOV-17 source parent mismatch' }
+          if ((git rev-parse "$env:PRODUCT_SHA^3").Trim() -ne $env:PR12_SHA) { throw 'PR12 source parent mismatch' }
+          if (git status --porcelain) { throw 'Checkout is dirty before validation' }
+
+      - name: Execute checked-in MOV-17 Windows wrapper
+        shell: pwsh
+        run: |
+          ./scripts/movie-buff-mov17-windows-digital-twin.ps1 -ExpectedSha $env:EXPECTED_SHA -EvidenceRoot $env:EVIDENCE_DIR
+
+      - name: Execute PR12 encoding self-test and scan
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node --test tests/movie-buff-migration-encoding.test.mjs 1> (Join-Path $env:EVIDENCE_DIR 'encoding-tests.stdout.txt') 2> (Join-Path $env:EVIDENCE_DIR 'encoding-tests.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "Encoding tests failed: $LASTEXITCODE" }
+          $env:MOVIE_BUFF_MIGRATION_ENCODING_OUTPUT = Join-Path $env:EVIDENCE_DIR 'encoding-report.json'
+          node scripts/movie-buff-migration-encoding-check.mjs supabase/migrations supabase/rollbacks supabase/tests 1> (Join-Path $env:EVIDENCE_DIR 'encoding-scan.stdout.txt') 2> (Join-Path $env:EVIDENCE_DIR 'encoding-scan.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "Encoding scan failed: $LASTEXITCODE" }
+          $env:MOVIE_BUFF_BOM_ONLY_OUTPUT = Join-Path $env:EVIDENCE_DIR 'bom-only-report.json'
+          node scripts/movie-buff-migration-bom-only-check.mjs $env:BASELINE_SHA 1> (Join-Path $env:EVIDENCE_DIR 'bom-only.stdout.txt') 2> (Join-Path $env:EVIDENCE_DIR 'bom-only.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "BOM-only check failed: $LASTEXITCODE" }
+          if (git status --porcelain) { throw 'Checkout is dirty after validation' }
+
+      - name: Rebuild and verify combined portable evidence manifest
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifestPath = Join-Path $env:EVIDENCE_DIR 'combined-sha256.txt'
+          $manifestLines = Get-ChildItem -LiteralPath $env:EVIDENCE_DIR -File |
+            Where-Object Name -ne 'combined-sha256.txt' |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $($_.Name)"
+            }
+          [System.IO.File]::WriteAllLines($manifestPath, $manifestLines, [System.Text.Encoding]::ASCII)
+          Get-Content -LiteralPath $manifestPath | ForEach-Object {
+            if ($_ -notmatch '^([0-9a-f]{64})  (.+)$') { throw "Invalid portable hash line: $_" }
+            $expectedHash = $Matches[1]
+            $relativeName = $Matches[2]
+            if ([System.IO.Path]::IsPathRooted($relativeName) -or $relativeName -ne [System.IO.Path]::GetFileName($relativeName)) { throw "Nonportable evidence path: $relativeName" }
+            $actualHash = (Get-FileHash -LiteralPath (Join-Path $env:EVIDENCE_DIR $relativeName) -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualHash -ne $expectedHash) { throw "Evidence hash mismatch: $relativeName" }
+          }
+
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov17-pr12-windows-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}\mov17-pr12-windows
+          if-no-files-found: error
+          retention-days: 7
