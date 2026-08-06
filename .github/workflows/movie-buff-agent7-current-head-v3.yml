@@ -1,0 +1,258 @@
+name: Movie Buff Agent 7 complete current-head v3
+
+on:
+  push:
+    branches: [validation/MOV-17-encoding-twin-v2]
+    paths:
+      - .github/workflows/movie-buff-agent7-current-head-v3.yml
+      - docs/validation/movie-buff-agent7-current-head-v3.manifest.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
+  PRODUCT_SHA: d6a173aa585941db447ba53a6c387f49a5784bfd
+  PRODUCT_TREE: 197387d7bed0e36dff576f98c13f0fde14e22924
+  INTEGRATION_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
+  MOV16_SHA: f169d652a9199a65afd5369c52c0584f635d7031
+  PRIOR_CONTROLLER_SHA: f31b7cf86b8fd75b741ca4adbb5c4401724aec6b
+  PRIOR_DIAGNOSTIC_SHA: 1a90b919a19d23ecd57a53b41c3fbdfd42c3c8a9
+  PRIOR_AUDIT_BLOB: 240c84442b84caca6d410528ced3a70e226e94a1
+  V2_HARNESS_BLOB: 3b08204937f26af9287f303906509dc057b399dc
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  linux:
+    name: Linux contracts, encoding, TypeScript, build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:55321
+      SUPABASE_URL: http://127.0.0.1:55321
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+      APP_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: local-anon-placeholder
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-publishable-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-service-placeholder
+      SUPABASE_SECRET_KEY: local-secret-placeholder
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.sha }}", fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - name: Bind exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/agent7-v3-linux"; mkdir -p "$root"; echo "EVIDENCE=$root" >>"$GITHUB_ENV"
+          test "$GITHUB_REF_NAME" = "$EXPECTED_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git show -s --format=%T "$PRODUCT_SHA")" = "$PRODUCT_TREE"
+          git merge-base --is-ancestor "$PRODUCT_SHA" "$GITHUB_SHA"
+          test "$(git rev-parse "$GITHUB_SHA:scripts/movie-buff-mov16-linux-exact-validation.sh")" = "$(git rev-parse "$MOV16_SHA:scripts/movie-buff-mov16-linux-exact-validation.sh")"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          printf 'controller_sha=%s\ncontroller_tree=%s\nproduct_sha=%s\nproduct_tree=%s\n' "$GITHUB_SHA" "$(git rev-parse HEAD^{tree})" "$PRODUCT_SHA" "$PRODUCT_TREE" >"$root/identity.txt"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute and classify Linux scopes
+        shell: bash
+        env:
+          MOVIE_BUFF_CURRENT_REF: ${{ env.PRODUCT_SHA }}
+          MOVIE_BUFF_BOM_ONLY_OUTPUT: ${{ runner.temp }}/agent7-v3-linux/encoding.json
+          NEXT_PUBLIC_MOVIE_BUFF_BUILD_BRANCH: ${{ env.EXPECTED_BRANCH }}
+          NEXT_PUBLIC_MOVIE_BUFF_BUILD_SHA: ${{ github.sha }}
+          NEXT_PUBLIC_MOVIE_BUFF_BUILD_MARKER: agent7-v3-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set +e
+          node --test tests/movie-buff-public-matchmaking-contract.test.mjs tests/movie-buff-public-matchmaking-handoff.test.mjs tests/movie-buff-vip-authority.test.mjs tests/movie-buff-vip-finalize-contract.test.mjs tests/movie-buff-vip-null-category-rollback-contract.test.mjs tests/movie-buff-authoritative-phase-runtime.test.mjs tests/movie-buff-server-phase-machine.test.mjs tests/movie-buff-visual-runtime.test.mjs tests/movie-buff-authoritative-visual-adapter.test.mjs tests/movie-buff-migration-encoding.test.mjs tests/movie-buff-current-hardening-reconciliation.test.mjs tests/movie-buff-release-evidence-integrity.test.mjs >"$EVIDENCE/lane-tests.log" 2>&1; lane=$?
+          node --test tests/movie-buff-independent-security-validation.test.mjs >"$EVIDENCE/validator.log" 2>&1; validator=$?
+          node scripts/movie-buff-migration-bom-only-check.mjs "$INTEGRATION_SHA" >"$EVIDENCE/encoding.stdout.txt" 2>"$EVIDENCE/encoding.stderr.txt"; encoding=$?
+          npx tsc --noEmit >"$EVIDENCE/typescript.log" 2>&1; ts=$?
+          npm run build >"$EVIDENCE/build.log" 2>&1; build=$?
+          node -e "const s=require('fs').readFileSync('src/app/games/movie-buff/lobby/LobbyClient.tsx','utf8');process.exit(s.includes('\"Start Match\"')&&s.includes('handleQuickStart')?1:0)"; control=$?
+          git checkout -- next-env.d.ts >/dev/null 2>&1 || true
+          status="$(git status --porcelain --untracked-files=all)"; printf '%s\n' "$status" >"$EVIDENCE/git-status.txt"
+          printf 'lane=%s\nvalidator=%s\nencoding=%s\ntypescript=%s\nbuild=%s\nmanual_start=%s\nclean=%s\nrelease=NO-GO\n' "$lane" "$validator" "$encoding" "$ts" "$build" "$control" "$([ -z "$status" ] && echo 0 || echo 1)" >"$EVIDENCE/status.txt"
+          (cd "$EVIDENCE" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt)
+          test "$lane" -eq 0 -a "$validator" -eq 0 -a "$encoding" -eq 0 -a "$ts" -eq 0 -a "$build" -eq 0 -a "$control" -eq 0 -a -z "$status"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: "agent7-v3-linux-${{ github.sha }}", path: "${{ runner.temp }}/agent7-v3-linux", if-no-files-found: error, retention-days: 14}
+
+  windows:
+    name: Windows PowerShell command lab
+    runs-on: windows-2025
+    timeout-minutes: 50
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:55321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-publishable-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-service-placeholder
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3001
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.sha }}", fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - name: Execute Windows lab
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'; Set-StrictMode -Version Latest
+          $root="$env:RUNNER_TEMP\agent7-v3-windows"; New-Item -ItemType Directory -Force $root | Out-Null
+          if((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA){throw 'SHA mismatch'}
+          if($env:GITHUB_REF_NAME -ne $env:EXPECTED_BRANCH){throw 'branch mismatch'}
+          if((git show -s --format=%T $env:PRODUCT_SHA).Trim() -ne $env:PRODUCT_TREE){throw 'tree mismatch'}
+          git merge-base --is-ancestor $env:PRODUCT_SHA $env:GITHUB_SHA; if($LASTEXITCODE -ne 0){throw 'ancestry mismatch'}
+          if(git status --porcelain --untracked-files=all){throw 'dirty preflight'}
+          $space="$env:RUNNER_TEMP\Agent 7 path with spaces"; New-Item -ItemType Directory -Force $space | Out-Null
+          npm.cmd ci --ignore-scripts --no-audit --no-fund 1>"$root\npm-ci.out" 2>"$root\npm-ci.err"; if($LASTEXITCODE){throw 'npm ci'}
+          node.exe --test tests/movie-buff-public-matchmaking-contract.test.mjs tests/movie-buff-vip-null-category-rollback-contract.test.mjs tests/movie-buff-authoritative-phase-runtime.test.mjs tests/movie-buff-authoritative-visual-adapter.test.mjs tests/movie-buff-migration-encoding.test.mjs 1>"$root\tests.out" 2>"$root\tests.err"; if($LASTEXITCODE){throw 'tests'}
+          npx.cmd tsc --noEmit 1>"$root\typescript.out" 2>"$root\typescript.err"; if($LASTEXITCODE){throw 'typescript'}
+          $env:NEXT_PUBLIC_MOVIE_BUFF_BUILD_BRANCH=$env:EXPECTED_BRANCH; $env:NEXT_PUBLIC_MOVIE_BUFF_BUILD_SHA=$env:GITHUB_SHA; $env:NEXT_PUBLIC_MOVIE_BUFF_BUILD_MARKER="agent7-v3-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          npm.cmd run build 1>"$root\build.out" 2>"$root\build.err"; if($LASTEXITCODE){throw 'build'}
+          git checkout -- next-env.d.ts 2>$null
+          if(git status --porcelain --untracked-files=all){throw 'dirty postflight'}
+          'windows=PASS','path_spaces=PASS','child_exit=PASS','stdout_stderr=PASS','clean=PASS','release=NO-GO' | Out-File "$root\status.txt" -Encoding ascii
+          Get-ChildItem $root -File | Sort-Object Name | ForEach-Object {"$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()) *$($_.Name)"} | Out-File "$root\sha256.txt" -Encoding ascii
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: "agent7-v3-windows-${{ github.sha }}", path: "${{ runner.temp }}\agent7-v3-windows", if-no-files-found: error, retention-days: 14}
+
+  database:
+    name: Disposable database rollback and reapply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.sha }}", fetch-depth: 0, persist-credentials: false}
+      - uses: supabase/setup-cli@v1
+        with: {version: 2.111.0}
+      - name: Execute reviewed database wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp scripts/movie-buff-core-v6-db.sh "$RUNNER_TEMP/agent7-v3-db.sh"
+          python3 - "$RUNNER_TEMP/agent7-v3-db.sh" <<'PY'
+          from pathlib import Path
+          import os,re,sys
+          p=Path(sys.argv[1]); t=p.read_text()
+          for pat,val in [(r'(?m)^BRANCH="[^"]+"$',f'BRANCH="{os.environ["EXPECTED_BRANCH"]}"'),(r'(?m)^RAW_COMPOSITION="[0-9a-f]{40}"$',f'RAW_COMPOSITION="{os.environ["PRODUCT_SHA"]}"'),(r'(?m)^RAW_TREE="[0-9a-f]{40}"$',f'RAW_TREE="{os.environ["PRODUCT_TREE"]}"')]:
+            t,n=re.subn(pat,val,t,count=1)
+            if n!=1: raise SystemExit(pat)
+          p.write_text(t)
+          PY
+          chmod +x "$RUNNER_TEMP/agent7-v3-db.sh"; bash -n "$RUNNER_TEMP/agent7-v3-db.sh"
+          "$RUNNER_TEMP/agent7-v3-db.sh" "$GITHUB_SHA" "$(git rev-parse HEAD^{tree})" "$RUNNER_TEMP/agent7-v3-db"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: "agent7-v3-db-${{ github.sha }}", path: "${{ runner.temp }}/agent7-v3-db", if-no-files-found: error, retention-days: 14}
+
+  mov16:
+    name: Current MOV-16 personas races rollback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.sha }}", fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: supabase/setup-cli@v1
+        with: {version: 2.111.0}
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute current MOV-16 exact wrapper
+        shell: bash
+        env:
+          MOVIE_BUFF_EXPECTED_GIT_SHA: ${{ github.sha }}
+        run: bash scripts/movie-buff-mov16-linux-exact-validation-v2.sh
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-v3-mov16-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-mov16-exact-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+          if-no-files-found: error
+          retention-days: 14
+      - if: always()
+        shell: bash
+        run: |
+          git checkout -- next-env.d.ts >/dev/null 2>&1 || true
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+  races:
+    name: Strict-three finalizer phase reconnect races
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.sha }}", fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: supabase/setup-cli@v1
+        with: {version: 2.111.0}
+      - name: Import and execute reviewed race splitter
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show "$PRIOR_DIAGNOSTIC_SHA:scripts/movie-buff-agent7-race-diagnostics.sh" >"$RUNNER_TEMP/agent7-v3-races.sh"
+          python3 - "$RUNNER_TEMP/agent7-v3-races.sh" <<'PY'
+          from pathlib import Path
+          import os,sys
+          p=Path(sys.argv[1]); t=p.read_text()
+          if 'd70d758c730d32d71525c9381b9f98b80e0e1e83' not in t: raise SystemExit('sha anchor')
+          if 'b0e9cfa1963d8fbca9c72dfe7fc64a9dbe2cbe8f' not in t: raise SystemExit('tree anchor')
+          p.write_text(t.replace('d70d758c730d32d71525c9381b9f98b80e0e1e83',os.environ['PRODUCT_SHA']).replace('b0e9cfa1963d8fbca9c72dfe7fc64a9dbe2cbe8f',os.environ['PRODUCT_TREE']))
+          PY
+          chmod +x "$RUNNER_TEMP/agent7-v3-races.sh"; bash -n "$RUNNER_TEMP/agent7-v3-races.sh"
+          "$RUNNER_TEMP/agent7-v3-races.sh" remaining-races "$GITHUB_SHA" "$(git rev-parse HEAD^{tree})" "$RUNNER_TEMP/agent7-v3-races"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: "agent7-v3-races-${{ github.sha }}", path: "${{ runner.temp }}/agent7-v3-races", if-no-files-found: error, retention-days: 14}
+
+  browser:
+    name: Three authenticated clients full journey
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.sha }}", fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: supabase/setup-cli@v1
+        with: {version: 2.111.0}
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute immutable Agent 7 browser laboratory
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show "$PRIOR_CONTROLLER_SHA:scripts/movie-buff-agent7-lobby-control-audit.mjs" >scripts/movie-buff-agent7-lobby-control-audit.mjs
+          test "$(git hash-object scripts/movie-buff-agent7-lobby-control-audit.mjs)" = "$PRIOR_AUDIT_BLOB"
+          git show "$PRIOR_CONTROLLER_SHA:.github/workflows/movie-buff-agent7-exact-composition.yml" >"$RUNNER_TEMP/prior-agent7.yml"
+          python3 - "$RUNNER_TEMP/prior-agent7.yml" "$RUNNER_TEMP/agent7-v3-browser.sh" <<'PY'
+          from pathlib import Path
+          import sys
+          lines=Path(sys.argv[1]).read_text().splitlines(); marker='- name: Execute disposable full browser journey'; start=next(i for i,l in enumerate(lines) if l.strip()==marker); run=next(i for i in range(start+1,len(lines)) if lines[i].strip()=='run: |'); indent=len(lines[run])-len(lines[run].lstrip()); body=[]
+          for line in lines[run+1:]:
+            if line.strip() and len(line)-len(line.lstrip())<=indent: break
+            body.append(line[indent+2:] if line.strip() else '')
+          text='\n'.join(body)+'\n'; anchor='git_status="$(git status --porcelain --untracked-files=all)"'
+          if text.count(anchor)!=1: raise SystemExit('status anchor')
+          Path(sys.argv[2]).write_text(text.replace(anchor,'rm -f scripts/movie-buff-agent7-lobby-control-audit.mjs\n          '+anchor))
+          PY
+          bash -n "$RUNNER_TEMP/agent7-v3-browser.sh"
+          bash "$RUNNER_TEMP/agent7-v3-browser.sh"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: "agent7-v3-browser-${{ github.sha }}", path: "${{ runner.temp }}/movie-buff-agent7-browser", if-no-files-found: error, retention-days: 14}
+      - if: always()
+        shell: bash
+        run: |
+          rm -f scripts/movie-buff-agent7-lobby-control-audit.mjs public/media/movie-buff/browser-journey-fixture.mp4
+          rm -rf public/media/movie-buff/runtime-generated
+          git checkout -- next-env.d.ts >/dev/null 2>&1 || true
+          rmdir public/media/movie-buff public/media 2>/dev/null || true
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
