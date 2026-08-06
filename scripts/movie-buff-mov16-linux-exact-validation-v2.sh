@@ -75,6 +75,12 @@ if require_ready; then
 fi
 '''
     ),
+    (
+'''node scripts/movie-buff-mov16-evidence-guard.mjs --verify-evidence "${EVIDENCE}" \\
+''',
+'''node scripts/movie-buff-mov16-evidence-verify-v2.mjs "${EVIDENCE}" \\
+'''
+    ),
 ]
 for old, new in substitutions:
     if source.count(old) != 1:
