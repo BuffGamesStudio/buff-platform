@@ -130,11 +130,40 @@ test("external compatibility-lock contention is real and bounded", () => {
   assert.match(race, /contentionElapsedMs/);
 });
 
-test("rollback packet is non-destructive containment", () => {
-  assert.match(rollback, /movie_buff\.allow_matchmaking_containment/);
+test("rollback packet is guarded, fail-closed, and non-destructive", () => {
+  assert.match(
+    rollback,
+    /current_setting\('movie_buff\.allow_matchmaking_containment',\s*true\)/i,
+  );
+  assert.match(rollback, /allow_matchmaking_containment\s*=\s*'on'/i);
+  assert.match(rollback, /<>\s*'on'/i);
   assert.match(rollback, /containment blocked/i);
   assert.match(rollback, /preserving schema/i);
-  assert.doesNotMatch(rollback, /drop table|delete from|truncate/i);
+  assert.match(
+    rollback,
+    /revoke execute on function public\.find_or_create_movie_buff_public_room[\s\S]*from authenticated/i,
+  );
+  assert.match(
+    rollback,
+    /revoke execute on function public\.set_movie_buff_player_ready[\s\S]*from authenticated/i,
+  );
+  assert.match(
+    rollback,
+    /revoke execute on function public\.start_movie_buff_match[\s\S]*from authenticated/i,
+  );
+  assert.match(
+    rollback,
+    /grant execute on function public\.find_or_create_movie_buff_public_room[\s\S]*to service_role/i,
+  );
+  assert.match(
+    rollback,
+    /grant execute on function public\.set_movie_buff_player_ready[\s\S]*to service_role/i,
+  );
+  assert.match(
+    rollback,
+    /grant execute on function public\.start_movie_buff_match[\s\S]*to service_role/i,
+  );
+  assert.doesNotMatch(rollback, /drop\s+table|truncate|delete\s+from/i);
 });
 
 test("pgTAP covers ACL, ownership, fixed paths, and no SKIP LOCKED", () => {
