@@ -1,0 +1,268 @@
+name: Movie Buff exact full three-client browser journey v9
+
+on:
+  push:
+    branches: [validation/movie-buff-full-candidate-v3-canonical-mov17]
+    paths:
+      - ".github/workflows/movie-buff-three-client-full-journey-v9.yml"
+      - "scripts/movie-buff-three-client-full-journey-v3-runner.mjs"
+      - "src/app/api/movie-buff/round-media/[roundId]/route.ts"
+      - "tests/movie-buff-round-media-route.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-full-candidate-v3-canonical-mov17
+  PARENT_SHA: 760aa06290ba9f6fd5438229733e5ce000419419
+  MOV15_SOURCE_SHA: dc9804cdae03d8627a89980dbcdf2292d2055372
+  MOV15_SOURCE_TREE: 86db75f79444b02c972ba4771244950cbec41b38
+  MOV16_SOURCE_SHA: 12c3a8a09cd135152134a7b765976019de7be1a4
+  MOV16_SOURCE_TREE: b251559cbac789a7fbfb90816e41c15d6650f26c
+  MOV17_SOURCE_SHA: f17234debfb8942e1998306a12dc33301c1c5440
+  MOV17_SOURCE_TREE: 56c63df56f085c256289a8e4510ba05cbea3d9d1
+  ENCODING_SOURCE_SHA: bf5e6d6f251f6840d17eed2fc68e0d580295437f
+  ENCODING_SOURCE_TREE: d97528616454b9e93c6be9a44705d008a901ac66
+  MOV17_RESULTS_PAGE_BLOB: 9282f124b85351a8569aa59d107a063862165afa
+  MOV17_RESULTS_TEST_BLOB: 9334253a1f9481778ac9aa29cf7387b695cfcf8e
+  MOV16_WORKFLOW_SOURCE_BLOB: bf3f45a034a5337ada795e599a64e80cc0ba440e
+  MOV16_CATALOG_BLOB: 8139f33133238f9649b3235fcefc0ef9231a70cc
+  MOV16_RACE_V2_BLOB: 9f6df84a1c65438c2245e3e8d34816bb0229035a
+  MOV16_RACE_BLOB: 7522a6ca2f6248cf484e09580aac35ff2e78f5d8
+  MOV16_ADVERSARIAL_V3_BLOB: 4a05eee9f564c6b37ccb47e01d38c55fc9176f8c
+  MOV16_GUARD_BLOB: 676c1a21f868a0463e286d314816d3c66e8350f2
+  MOV16_EVIDENCE_VERIFY_BLOB: 62aa4e43e4aeb0ffc440ac62a869f466bbbe11cc
+  MOV16_V2_SOURCE_BLOB: 6775b620f128c687e62f3a9b06d7189c274599c3
+  MOV16_V2_DERIVED_BLOB: d6ec740d4c45e5dd530dd9705081d1629bfdf7a5
+  MOV16_LINUX_SOURCE_BLOB: a04985abe5e4ed83eab3ce8805824220f0321a3e
+  MOV16_WINDOWS_BLOB: 58abb8a679616cc4240c332caa3a35884b16d2a1
+  MOV16_CONTAINMENT_BLOB: 96e8bcd81385773dc84da58cd2842adbf87fafd7
+  MOV16_CATALOG_TEST_BLOB: aaa66f3f07912aef58db158becab4af007a34ea7
+  V2_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
+  MOVIE_BUFF_V2_HARNESS_BLOB: 3b08204937f26af9287f303906509dc057b399dc
+  MOVIE_BUFF_WRAPPER_BLOB: a4bbe70b22cf95be29fba82e9c69cd51f900fdb3
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-full-three-client-browser-v9:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Verify deterministic media tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo env DEBIAN_FRONTEND=noninteractive timeout 300 apt-get update
+            sudo env DEBIAN_FRONTEND=noninteractive timeout 300 apt-get install -y --no-install-recommends ffmpeg
+          fi
+          ffmpeg -version 2>&1 | sed -n '1p'
+          ffprobe -version 2>&1 | sed -n '1p'
+
+      - name: Extract exact reviewed laboratory blocks
+        shell: bash
+        run: |
+          set -euo pipefail
+          archived=".github/validation-archive/movie-buff-three-client-full-journey-v2.yml"
+          test "$(git rev-parse HEAD:${archived})" = "${V2_WORKFLOW_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-three-client-full-journey-v2.mjs)" = "${MOVIE_BUFF_V2_HARNESS_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-three-client-full-journey-v3-runner.mjs)" = "${MOVIE_BUFF_WRAPPER_BLOB}"
+          node --check scripts/movie-buff-three-client-full-journey-v3-runner.mjs
+          python3 - "${RUNNER_TEMP}" "${archived}" <<'PY'
+          from pathlib import Path
+          import sys
+
+          output = Path(sys.argv[1])
+          source = Path(sys.argv[2])
+          lines = source.read_text(encoding='utf-8').splitlines()
+
+          def extract(step_name: str) -> str:
+              marker = f'- name: {step_name}'
+              start = next(i for i, line in enumerate(lines) if line.strip() == marker)
+              run_line = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'run: |')
+              run_indent = len(lines[run_line]) - len(lines[run_line].lstrip())
+              body = []
+              for line in lines[run_line + 1:]:
+                  if line.strip() and len(line) - len(line.lstrip()) <= run_indent:
+                      break
+                  body.append(line[run_indent + 2:] if line.strip() else '')
+              if not body:
+                  raise SystemExit(f'empty run block for {step_name}')
+              return '\n'.join(body) + '\n'
+
+          preflight = extract('Bind exact source and validate harness')
+          execute = extract('Execute disposable exact-SHA browser journey v2')
+          execute = execute.replace(
+              'git status --porcelain >"${raw}/git-status-before-repair.txt"',
+              'git status --porcelain --untracked-files=all >"${raw}/git-status-before-repair.txt"',
+          )
+          execute = execute.replace(
+              'node scripts/movie-buff-three-client-full-journey-v2.mjs >"${raw}/three-client-browser-v2.log" 2>&1',
+              'node scripts/movie-buff-three-client-full-journey-v3-runner.mjs >"${raw}/three-client-browser-v2.log" 2>&1',
+          )
+          chrome_install_anchor = 'npx playwright install --with-deps chromium'
+          if execute.count(chrome_install_anchor) != 1:
+              raise SystemExit('expected exactly one bundled Chromium install anchor')
+          execute = execute.replace(
+              chrome_install_anchor,
+              'npx playwright install --with-deps chrome',
+          )
+          old_shape = '\n'.join([
+              'allowed={"next-env.d.ts",fixture}',
+              'unexpected=[]',
+              'for line in status:',
+              '    path=line[3:].strip()',
+              '    if " -> " in path: path=path.split(" -> ",1)[1]',
+              '    if path not in allowed: unexpected.append(line)',
+              'if unexpected: raise SystemExit("unexpected worktree changes: "+repr(unexpected))',
+          ])
+          new_shape = '\n'.join([
+              'allowed={"next-env.d.ts",fixture}',
+              'allowed_prefixes=("public/media/movie-buff/runtime-generated/",)',
+              'unexpected=[]',
+              'for line in status:',
+              '    path=line[3:].strip()',
+              '    if " -> " in path: path=path.split(" -> ",1)[1]',
+              '    if path not in allowed and not path.startswith(allowed_prefixes): unexpected.append(line)',
+              'if unexpected: raise SystemExit("unexpected worktree changes: "+repr(unexpected))',
+          ])
+          if old_shape not in execute:
+              raise SystemExit('postflight status-shape anchor was not found')
+          execute = execute.replace(old_shape, new_shape)
+          cleanup_anchor = '\n'.join([
+              'rm -f "${fixture}"',
+              'git checkout -- next-env.d.ts >/dev/null 2>&1 || true',
+              'rmdir public/media/movie-buff public/media 2>/dev/null || true',
+          ])
+          cleanup_replacement = '\n'.join([
+              'rm -f "${fixture}"',
+              'rm -rf public/media/movie-buff/runtime-generated',
+              'git checkout -- next-env.d.ts >/dev/null 2>&1 || true',
+              'rmdir public/media/movie-buff public/media 2>/dev/null || true',
+          ])
+          if cleanup_anchor not in execute:
+              raise SystemExit('runtime-generated cleanup anchor was not found')
+          execute = execute.replace(cleanup_anchor, cleanup_replacement)
+          required = [
+              '--untracked-files=all',
+              'movie-buff-three-client-full-journey-v3-runner.mjs',
+              'npx playwright install --with-deps chrome',
+              'allowed_prefixes=("public/media/movie-buff/runtime-generated/",)',
+              'rm -rf public/media/movie-buff/runtime-generated',
+          ]
+          for marker in required:
+              if marker not in execute:
+                  raise SystemExit(f'missing transformed laboratory marker: {marker}')
+          (output / 'movie-buff-v9-preflight.sh').write_text(preflight, encoding='utf-8')
+          (output / 'movie-buff-v9-execute.sh').write_text(execute, encoding='utf-8')
+          PY
+          bash -n "${RUNNER_TEMP}/movie-buff-v9-preflight.sh"
+          bash -n "${RUNNER_TEMP}/movie-buff-v9-execute.sh"
+
+      - name: Bind exact source composition and validate harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "${PARENT_SHA}"
+          test "$(git rev-parse HEAD:src/app/games/movie-buff/round-results/page.tsx)" = "${MOV17_RESULTS_PAGE_BLOB}"
+          test "$(git rev-parse HEAD:tests/movie-buff-authoritative-phase-runtime.test.mjs)" = "${MOV17_RESULTS_TEST_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-catalog-manifest.sql)" = "${MOV16_CATALOG_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-deadline-release-race-v2.mjs)" = "${MOV16_RACE_V2_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-deadline-release-race.mjs)" = "${MOV16_RACE_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-adversarial-v3-wrapper.mjs)" = "${MOV16_ADVERSARIAL_V3_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-evidence-guard.mjs)" = "${MOV16_GUARD_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-evidence-verify-v2.mjs)" = "${MOV16_EVIDENCE_VERIFY_BLOB}"
+          test "$(git rev-parse ${MOV16_SOURCE_SHA}:scripts/movie-buff-mov16-linux-exact-validation-v2.sh)" = "${MOV16_V2_SOURCE_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-linux-exact-validation-v2.sh)" = "${MOV16_V2_DERIVED_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-linux-exact-validation.sh)" = "${MOV16_LINUX_SOURCE_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-windows-digital-twin.ps1)" = "${MOV16_WINDOWS_BLOB}"
+          test "$(git rev-parse HEAD:supabase/rollbacks/20260804073310_movie_buff_vip_callable_containment.rollback.sql)" = "${MOV16_CONTAINMENT_BLOB}"
+          test "$(git rev-parse HEAD:supabase/tests/movie_buff_vip_catalog_contract_test.sql)" = "${MOV16_CATALOG_TEST_BLOB}"
+          bash "${RUNNER_TEMP}/movie-buff-v9-preflight.sh"
+          node --test tests/movie-buff-round-media-route.test.mjs
+
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Execute disposable exact-SHA browser journey v9
+        shell: bash
+        run: bash "${RUNNER_TEMP}/movie-buff-v9-execute.sh"
+
+      - name: Bind source composition and hash complete evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          {
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "candidate_branch=${EXPECTED_BRANCH}"
+            echo "candidate_sha=$(git rev-parse HEAD)"
+            echo "candidate_tree=$(git rev-parse HEAD^{tree})"
+            echo "candidate_parent=${PARENT_SHA}"
+            echo "mov15_sha=${MOV15_SOURCE_SHA}"
+            echo "mov15_tree=${MOV15_SOURCE_TREE}"
+            echo "mov16_sha=${MOV16_SOURCE_SHA}"
+            echo "mov16_tree=${MOV16_SOURCE_TREE}"
+            echo "mov17_sha=${MOV17_SOURCE_SHA}"
+            echo "mov17_tree=${MOV17_SOURCE_TREE}"
+            echo "encoding_sha=${ENCODING_SOURCE_SHA}"
+            echo "encoding_tree=${ENCODING_SOURCE_TREE}"
+            echo "mov17_results_page_blob=${MOV17_RESULTS_PAGE_BLOB}"
+            echo "mov17_results_test_blob=${MOV17_RESULTS_TEST_BLOB}"
+            echo "mov16_source_workflow_blob=${MOV16_WORKFLOW_SOURCE_BLOB}"
+            echo "mov16_catalog_blob=${MOV16_CATALOG_BLOB}"
+            echo "mov16_race_v2_blob=${MOV16_RACE_V2_BLOB}"
+            echo "mov16_race_blob=${MOV16_RACE_BLOB}"
+            echo "mov16_adversarial_v3_blob=${MOV16_ADVERSARIAL_V3_BLOB}"
+            echo "mov16_guard_blob=${MOV16_GUARD_BLOB}"
+            echo "mov16_evidence_verify_blob=${MOV16_EVIDENCE_VERIFY_BLOB}"
+            echo "mov16_v2_source_blob=${MOV16_V2_SOURCE_BLOB}"
+            echo "mov16_v2_derived_blob=${MOV16_V2_DERIVED_BLOB}"
+            echo "mov16_linux_source_blob=${MOV16_LINUX_SOURCE_BLOB}"
+            echo "mov16_windows_blob=${MOV16_WINDOWS_BLOB}"
+            echo "mov16_containment_blob=${MOV16_CONTAINMENT_BLOB}"
+            echo "mov16_catalog_test_blob=${MOV16_CATALOG_TEST_BLOB}"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${evidence}/source-composition.txt"
+          (
+            cd "${evidence}"
+            find . -type f ! -name sha256.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > sha256.txt
+            sha256sum -c sha256.txt
+          )
+
+      - name: Upload exact full browser evidence v9
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-three-client-full-v9-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-three-client-full-v2
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify clean postflight
+        if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"

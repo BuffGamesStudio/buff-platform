@@ -1,0 +1,190 @@
+name: MOV-15 admission handoff validation
+
+on:
+  push:
+    branches:
+      - copilot/MOV-15-public-matchmaking
+    paths:
+      - ".github/workflows/movie-buff-mov15-validation.yml"
+      - "scripts/movie-buff-mov15-windows-digital-twin.ps1"
+      - "supabase/migrations/20260804081500_movie_buff_atomic_three_player_matchmaking.sql"
+      - "supabase/migrations/20260804081600_movie_buff_admission_phase_handoff.sql"
+      - "supabase/rollbacks/20260804081600_movie_buff_admission_phase_handoff.rollback.sql"
+      - "tests/movie-buff-public-matchmaking-contract.test.mjs"
+      - "tests/movie-buff-public-matchmaking-handoff.test.mjs"
+      - "src/app/games/movie-buff/waiting-room/page.tsx"
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - ".github/workflows/movie-buff-mov15-validation.yml"
+      - "scripts/movie-buff-mov15-windows-digital-twin.ps1"
+      - "supabase/migrations/20260804081500_movie_buff_atomic_three_player_matchmaking.sql"
+      - "supabase/migrations/20260804081600_movie_buff_admission_phase_handoff.sql"
+      - "supabase/rollbacks/20260804081600_movie_buff_admission_phase_handoff.rollback.sql"
+      - "tests/movie-buff-public-matchmaking-contract.test.mjs"
+      - "tests/movie-buff-public-matchmaking-handoff.test.mjs"
+      - "src/app/games/movie-buff/waiting-room/page.tsx"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-validation:
+    name: Linux repository contract and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_BRANCH: copilot/MOV-15-public-matchmaking
+
+    steps:
+      - name: Check out exact MOV-15 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify exact clean checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test -z "$(git status --porcelain)"
+          node --version
+          npm --version
+
+      - name: Install committed lock without package scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run MOV-15 focused contract tests
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov15-linux-evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          node --test \
+            tests/movie-buff-public-matchmaking-contract.test.mjs \
+            tests/movie-buff-public-matchmaking-handoff.test.mjs \
+            2>&1 | tee "${EVIDENCE_DIR}/contracts.tap"
+
+      - name: Run TypeScript
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov15-linux-evidence
+        run: |
+          set -euo pipefail
+          npx --no-install tsc --noEmit 2>&1 | tee "${EVIDENCE_DIR}/typescript.txt"
+
+      - name: Run localhost-placeholder production build
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov15-linux-evidence
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-build-publishable-key
+          SUPABASE_SERVICE_ROLE_KEY: local-build-service-role-key
+        run: |
+          set -euo pipefail
+          npm run build 2>&1 | tee "${EVIDENCE_DIR}/build.txt"
+
+      - name: Verify clean checkout and portable hashes
+        if: always()
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov15-linux-evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          git diff --check
+          test -z "$(git status --porcelain)"
+          {
+            echo "lane=MOV-15"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "node_version=$(node --version)"
+            echo "npm_version=$(npm --version)"
+            echo "target_kind=repository-static-and-localhost-placeholder-build"
+            echo "combined_mov17_database_behavior=UNKNOWN"
+            echo "browser_behavior=UNKNOWN"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${EVIDENCE_DIR}/metadata.txt"
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > sha256.txt
+            sha256sum -c sha256.txt
+          )
+
+      - name: Upload Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov15-linux-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/mov15-linux-evidence
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-digital-twin:
+    name: Windows PowerShell command-shell digital twin
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_BRANCH: copilot/MOV-15-public-matchmaking
+
+    steps:
+      - name: Check out exact MOV-15 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify Windows runner identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $resolvedRef = if ($env:GITHUB_HEAD_REF) { $env:GITHUB_HEAD_REF } else { $env:GITHUB_REF_NAME }
+          if ($resolvedRef -ne $env:EXPECTED_BRANCH) { throw "Branch mismatch: $resolvedRef" }
+          if ((git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'SHA mismatch' }
+          if (git status --porcelain) { throw 'Checkout is not clean' }
+          $PSVersionTable | Out-String
+          node --version
+          npm --version
+
+      - name: Execute checked-in PowerShell wrapper
+        shell: pwsh
+        run: |
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'mov15-windows-evidence'
+          ./scripts/movie-buff-mov15-windows-digital-twin.ps1 `
+            -ExpectedSha $env:EXPECTED_SHA `
+            -EvidenceRoot $evidenceRoot
+
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov15-windows-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}\mov15-windows-evidence
+          if-no-files-found: error
+          retention-days: 7

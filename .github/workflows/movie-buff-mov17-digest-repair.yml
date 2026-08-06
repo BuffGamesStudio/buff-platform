@@ -1,0 +1,89 @@
+name: MOV-17 pgcrypto digest schema repair
+
+on:
+  push:
+    branches: [copilot/MOV-17-shared-phase-machine]
+    paths:
+      - ".github/workflows/movie-buff-mov17-digest-repair.yml"
+      - "supabase/migrations/20260804083610_movie_buff_phase_digest_schema_repair.sql"
+      - "supabase/rollbacks/20260804083610_movie_buff_phase_digest_schema_repair.rollback.sql"
+      - "tests/movie-buff-phase-digest-schema-repair.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: copilot/MOV-17-shared-phase-machine
+  NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder
+  SUPABASE_SERVICE_ROLE_KEY: local-placeholder
+  MOVIE_BUFF_APP_URL: http://127.0.0.1:3000
+
+jobs:
+  linux-source-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Bind exact identity
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test -z "$(git status --porcelain)"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test tests/movie-buff-phase-digest-schema-repair.test.mjs
+      - name: TypeScript and build
+        run: |
+          set -euo pipefail
+          npx --no-install tsc --noEmit
+          npm run build
+      - run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+  windows-command-shell:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Bind exact identity
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -ne $env:EXPECTED_BRANCH) { throw 'Wrong branch' }
+          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) { throw 'Wrong SHA' }
+          if ((git remote get-url origin).Trim() -ne 'https://github.com/BuffGamesStudio/buff-platform') { throw 'Wrong remote' }
+          if ((git status --porcelain | Out-String).Trim()) { throw 'Dirty worktree' }
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test tests/movie-buff-phase-digest-schema-repair.test.mjs
+      - name: TypeScript and build
+        shell: pwsh
+        run: |
+          npx --no-install tsc --noEmit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Clean postflight
+        shell: pwsh
+        run: |
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((git status --porcelain | Out-String).Trim()) { throw 'Dirty worktree' }
