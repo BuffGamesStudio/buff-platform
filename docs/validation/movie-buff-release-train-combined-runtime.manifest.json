@@ -2,10 +2,12 @@
   "schemaVersion": 1,
   "purpose": "Release-train combined MOV-15/MOV-16/MOV-17 race and synchronization runtime",
   "repository": "BuffGamesStudio/buff-platform",
-  "branch": "validation/movie-buff-release-train-runtime-20260806",
+  "branch": "validation/movie-buff-release-train-runner-trigger-20260806",
   "productSha": "c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6",
   "productTree": "a995a9aeb2fca76d2c1b216ece3a2645c2393c71",
   "releaseTrainCutoffUtc": "2026-08-06T21:54:00Z",
+  "executionRequestedUtc": "2026-08-06T23:00:00Z",
+  "runnerBaseSha": "1aa7c28072abc688c1b26fb15eb5cf911c4b901d",
   "components": {
     "integration": "bf316a15a2120e32d8a32e479df2ae439081f9a1",
     "mov15": "48d44bb156b71060d1b9adcc7a2a3f014cf92060",
@@ -43,8 +45,7 @@
     "production": "NOT APPLICABLE"
   },
   "dispatch": {
-    "pushAttemptsObserved": 3,
-    "runsCreatedBeforeReopen": 0,
-    "classification": "UNKNOWN"
+    "method": "pull_request-to-validation-runner-base",
+    "classification": "REQUESTED"
   }
 }
