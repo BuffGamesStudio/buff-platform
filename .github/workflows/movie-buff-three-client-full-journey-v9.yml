@@ -15,7 +15,26 @@ permissions:
 
 env:
   EXPECTED_BRANCH: validation/movie-buff-full-candidate-v3-canonical-mov17
-  PARENT_SHA: d7f3ddfe2b1c20da1357a98e2c43c4a12b2c17c1
+  PARENT_SHA: 253b1a88f99424131b1af198375a899a5f3f24ee
+  MOV15_SOURCE_SHA: dc9804cdae03d8627a89980dbcdf2292d2055372
+  MOV15_SOURCE_TREE: 86db75f79444b02c972ba4771244950cbec41b38
+  MOV16_SOURCE_SHA: c00fec9453f73a2ab78e94f9218892d6be64e074
+  MOV16_SOURCE_TREE: 95424312d3c922b6d33f7e59c7964a88a973681d
+  MOV17_SOURCE_SHA: f17234debfb8942e1998306a12dc33301c1c5440
+  MOV17_SOURCE_TREE: 56c63df56f085c256289a8e4510ba05cbea3d9d1
+  ENCODING_SOURCE_SHA: bf5e6d6f251f6840d17eed2fc68e0d580295437f
+  ENCODING_SOURCE_TREE: d97528616454b9e93c6be9a44705d008a901ac66
+  MOV17_RESULTS_PAGE_BLOB: 9282f124b85351a8569aa59d107a063862165afa
+  MOV17_RESULTS_TEST_BLOB: 9334253a1f9481778ac9aa29cf7387b695cfcf8e
+  MOV16_WORKFLOW_SOURCE_BLOB: bf3f45a034a5337ada795e599a64e80cc0ba440e
+  MOV16_CATALOG_BLOB: 8139f33133238f9649b3235fcefc0ef9231a70cc
+  MOV16_RACE_V2_BLOB: 9f6df84a1c65438c2245e3e8d34816bb0229035a
+  MOV16_RACE_BLOB: 7522a6ca2f6248cf484e09580aac35ff2e78f5d8
+  MOV16_GUARD_BLOB: 676c1a21f868a0463e286d314816d3c66e8350f2
+  MOV16_LINUX_SOURCE_BLOB: a04985abe5e4ed83eab3ce8805824220f0321a3e
+  MOV16_WINDOWS_BLOB: 42579619473ba072f671fa2846e5d1a1505f5fd6
+  MOV16_CONTAINMENT_BLOB: 96e8bcd81385773dc84da58cd2842adbf87fafd7
+  MOV16_CATALOG_TEST_BLOB: aaa66f3f07912aef58db158becab4af007a34ea7
   V2_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
   MOVIE_BUFF_V2_HARNESS_BLOB: 3b08204937f26af9287f303906509dc057b399dc
   MOVIE_BUFF_WRAPPER_BLOB: 53e9ab8816bd25fae84505dbb9477dce2947608c
@@ -153,10 +172,21 @@ jobs:
           bash -n "${RUNNER_TEMP}/movie-buff-v9-preflight.sh"
           bash -n "${RUNNER_TEMP}/movie-buff-v9-execute.sh"
 
-      - name: Bind exact source and validate harness
+      - name: Bind exact source composition and validate harness
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "${PARENT_SHA}"
+          test "$(git rev-parse HEAD:src/app/games/movie-buff/round-results/page.tsx)" = "${MOV17_RESULTS_PAGE_BLOB}"
+          test "$(git rev-parse HEAD:tests/movie-buff-authoritative-phase-runtime.test.mjs)" = "${MOV17_RESULTS_TEST_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-catalog-manifest.sql)" = "${MOV16_CATALOG_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-deadline-release-race-v2.mjs)" = "${MOV16_RACE_V2_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-deadline-release-race.mjs)" = "${MOV16_RACE_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-evidence-guard.mjs)" = "${MOV16_GUARD_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-linux-exact-validation.sh)" = "${MOV16_LINUX_SOURCE_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-windows-digital-twin.ps1)" = "${MOV16_WINDOWS_BLOB}"
+          test "$(git rev-parse HEAD:supabase/rollbacks/20260804073310_movie_buff_vip_callable_containment.rollback.sql)" = "${MOV16_CONTAINMENT_BLOB}"
+          test "$(git rev-parse HEAD:supabase/tests/movie_buff_vip_catalog_contract_test.sql)" = "${MOV16_CATALOG_TEST_BLOB}"
           bash "${RUNNER_TEMP}/movie-buff-v9-preflight.sh"
           node --test tests/movie-buff-round-media-route.test.mjs
 
@@ -166,6 +196,49 @@ jobs:
       - name: Execute disposable exact-SHA browser journey v9
         shell: bash
         run: bash "${RUNNER_TEMP}/movie-buff-v9-execute.sh"
+
+      - name: Bind source composition and hash complete evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          {
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "candidate_branch=${EXPECTED_BRANCH}"
+            echo "candidate_sha=$(git rev-parse HEAD)"
+            echo "candidate_tree=$(git rev-parse HEAD^{tree})"
+            echo "candidate_parent=${PARENT_SHA}"
+            echo "mov15_sha=${MOV15_SOURCE_SHA}"
+            echo "mov15_tree=${MOV15_SOURCE_TREE}"
+            echo "mov16_sha=${MOV16_SOURCE_SHA}"
+            echo "mov16_tree=${MOV16_SOURCE_TREE}"
+            echo "mov17_sha=${MOV17_SOURCE_SHA}"
+            echo "mov17_tree=${MOV17_SOURCE_TREE}"
+            echo "encoding_sha=${ENCODING_SOURCE_SHA}"
+            echo "encoding_tree=${ENCODING_SOURCE_TREE}"
+            echo "mov17_results_page_blob=${MOV17_RESULTS_PAGE_BLOB}"
+            echo "mov17_results_test_blob=${MOV17_RESULTS_TEST_BLOB}"
+            echo "mov16_source_workflow_blob=${MOV16_WORKFLOW_SOURCE_BLOB}"
+            echo "mov16_catalog_blob=${MOV16_CATALOG_BLOB}"
+            echo "mov16_race_v2_blob=${MOV16_RACE_V2_BLOB}"
+            echo "mov16_race_blob=${MOV16_RACE_BLOB}"
+            echo "mov16_guard_blob=${MOV16_GUARD_BLOB}"
+            echo "mov16_linux_source_blob=${MOV16_LINUX_SOURCE_BLOB}"
+            echo "mov16_windows_blob=${MOV16_WINDOWS_BLOB}"
+            echo "mov16_containment_blob=${MOV16_CONTAINMENT_BLOB}"
+            echo "mov16_catalog_test_blob=${MOV16_CATALOG_TEST_BLOB}"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${evidence}/source-composition.txt"
+          (
+            cd "${evidence}"
+            find . -type f ! -name sha256.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > sha256.txt
+            sha256sum -c sha256.txt
+          )
 
       - name: Upload exact full browser evidence v9
         if: always()
