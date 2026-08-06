@@ -39,6 +39,7 @@ const evidence = {
   consoleErrors: [],
   pageErrors: [],
   httpErrors: [],
+  expectedRiveErrors: [],
   gameplayRequests: [],
 };
 
@@ -81,12 +82,16 @@ async function captureViewport(browser, viewport, name) {
     }
   });
   page.on("response", (response) => {
-    if (response.status() >= 400 && !response.url().endsWith(".riv")) {
-      evidence.httpErrors.push({
-        name,
-        url: response.url(),
-        status: response.status(),
-      });
+    if (response.status() < 400) return;
+    const item = {
+      name,
+      url: response.url(),
+      status: response.status(),
+    };
+    if (response.url().endsWith(".riv")) {
+      evidence.expectedRiveErrors.push(item);
+    } else {
+      evidence.httpErrors.push(item);
     }
   });
 
@@ -223,10 +228,19 @@ try {
   assert.equal(evidence.gameplayRequests.length, 0, "visual preview called gameplay APIs");
   assert.equal(evidence.pageErrors.length, 0, "browser page errors were observed");
   assert.equal(evidence.httpErrors.length, 0, "unexpected HTTP errors were observed");
-
-  const unexpectedConsoleErrors = evidence.consoleErrors.filter(
-    ({ text }) => !/rive|\.riv|fetch/i.test(text),
+  assert.ok(
+    evidence.expectedRiveErrors.length > 0,
+    "missing production Rive assets were not observed by the fallback proof",
   );
+
+  const expectedGeneric404 = evidence.expectedRiveErrors.length > 0;
+  const unexpectedConsoleErrors = evidence.consoleErrors.filter(({ text }) => {
+    if (/rive|\.riv|fetch/i.test(text)) return false;
+    if (expectedGeneric404 && /Failed to load resource:.*404/i.test(text)) {
+      return false;
+    }
+    return true;
+  });
   assert.equal(
     unexpectedConsoleErrors.length,
     0,
@@ -236,6 +250,7 @@ try {
   record("no gameplay endpoint requests");
   record("no page errors or unexpected HTTP errors");
   record("missing Rive assets remain contained to static fallback", {
+    expectedRiveHttpErrors: evidence.expectedRiveErrors.length,
     observedConsoleErrors: evidence.consoleErrors.length,
   });
   evidence.classification = "PASS";
@@ -261,6 +276,7 @@ console.log(
       consoleErrors: evidence.consoleErrors.length,
       pageErrors: evidence.pageErrors.length,
       httpErrors: evidence.httpErrors.length,
+      expectedRiveErrors: evidence.expectedRiveErrors.length,
       gameplayRequests: evidence.gameplayRequests.length,
     },
     null,
