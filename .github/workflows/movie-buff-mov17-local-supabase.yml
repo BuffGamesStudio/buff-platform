@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - copilot/MOV-17-shared-phase-machine
+      - work/movie-buff-mov17-buster-leave-repair-20260805
     paths:
       - ".github/workflows/movie-buff-mov17-local-supabase.yml"
       - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
+      - "scripts/movie-buff-mov17-buster-leave-evidence.sh"
       - "scripts/movie-buff-redact-evidence.py"
       - "scripts/movie-buff-redact-evidence-test.py"
       - "supabase/config.toml"
@@ -16,12 +18,15 @@ on:
       - "supabase/tests/movie_buff_reconnect_buster_rollback_probe.sql"
       - "supabase/tests/movie_buff_match_start_handoff_test.sql"
       - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
+      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_test.sql"
+      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_rollback_test.sql"
   pull_request:
     branches:
       - integration/movie-buff
     paths:
       - ".github/workflows/movie-buff-mov17-local-supabase.yml"
       - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
+      - "scripts/movie-buff-mov17-buster-leave-evidence.sh"
       - "scripts/movie-buff-redact-evidence.py"
       - "scripts/movie-buff-redact-evidence-test.py"
       - "supabase/config.toml"
@@ -31,6 +36,8 @@ on:
       - "supabase/tests/movie_buff_reconnect_buster_rollback_probe.sql"
       - "supabase/tests/movie_buff_match_start_handoff_test.sql"
       - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
+      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_test.sql"
+      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_rollback_test.sql"
   workflow_dispatch:
 
 permissions:
@@ -47,7 +54,7 @@ jobs:
     timeout-minutes: 50
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EXPECTED_BRANCH: copilot/MOV-17-shared-phase-machine
+      EXPECTED_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
     steps:
       - name: Check out exact MOV-17 SHA
@@ -65,7 +72,7 @@ jobs:
           set -euo pipefail
           mkdir -p "${EVIDENCE_DIR}"
           {
-            echo "lane=MOV-17"
+            echo "lane=MOV-17-successor"
             echo "source_sha=${EXPECTED_SHA}"
             echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
             echo "preflight=UNKNOWN"
@@ -87,8 +94,9 @@ jobs:
           psql --version
           python3 --version
           {
-            echo "lane=MOV-17"
+            echo "lane=MOV-17-successor"
             echo "source_sha=${EXPECTED_SHA}"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
             echo "source_ref=${resolved_ref}"
             echo "preflight=PASS"
             echo "classification=UNKNOWN"
@@ -104,7 +112,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(supabase --version)" = "2.111.0"
-          bash -n scripts/movie-buff-mov17-local-supabase-evidence.sh
+          bash -n scripts/movie-buff-mov17-buster-leave-evidence.sh
           python3 -B - <<'PY'
           from pathlib import Path
           for name in (
@@ -123,7 +131,7 @@ jobs:
         run: |
           set -uo pipefail
           set +e
-          bash scripts/movie-buff-mov17-local-supabase-evidence.sh \
+          bash scripts/movie-buff-mov17-buster-leave-evidence.sh \
             "${EXPECTED_SHA}" \
             "${EVIDENCE_DIR}"
           wrapper_exit=$?

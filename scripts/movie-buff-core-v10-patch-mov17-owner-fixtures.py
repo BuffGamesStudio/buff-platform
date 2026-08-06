@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Derive local-only MOV-17 proof scripts with database-owner fixture insertion.
+"""Derive local-only MOV-17 and combined race proof scripts.
 
-The production behavior calls remain authenticated/service-role as authored. Only the
-protected match_players fixture row insertion is moved from PostgREST service_role to
-local PostgreSQL owner authority in a disposable Git worktree.
+Production behavior remains authenticated/service-role as authored. Protected fixture
+insertion uses local PostgreSQL owner authority, reconnect assertions accept the
+current fail-closed membership response, and residual deadline fixtures are adapted
+to the exact deployed schema inside a disposable Git worktree only.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ FILES = [
     ROOT / "scripts/movie-buff-three-client-phase-proof.mjs",
     ROOT / "scripts/movie-buff-reconnect-race-proof.mjs",
 ]
+RESIDUAL_FILE = ROOT / "scripts/movie-buff-combined-race-residual.mjs"
 
 IMPORT_MARKER = 'import path from "node:path";\n'
 IMPORT_INSERT = 'import path from "node:path";\nimport { execFileSync } from "node:child_process";\n'
@@ -102,6 +104,25 @@ EARLY_ANSWER_REPLACEMENT = (
     "/answer window is not open|current round could not be found/i);"
 )
 
+EXPIRED_RECONNECT_MARKER = """  const reconnectAttempt = expiredReconnectRace[0];
+  if (reconnectAttempt.status === "fulfilled") {
+    assert.equal(reconnectAttempt.value.error, null);
+    assert.notEqual(reconnectAttempt.value.data?.resumeAllowed, true);
+  }
+"""
+EXPIRED_RECONNECT_REPLACEMENT = """  const reconnectAttempt = expiredReconnectRace[0];
+  if (reconnectAttempt.status === "fulfilled") {
+    if (reconnectAttempt.value.error) {
+      assert.match(
+        reconnectAttempt.value.error.message,
+        /active movie buff room membership required/i,
+      );
+    } else {
+      assert.notEqual(reconnectAttempt.value.data?.resumeAllowed, true);
+    }
+  }
+"""
+
 for file_path in FILES:
     text = file_path.read_text(encoding="utf-8")
     if 'import { execFileSync } from "node:child_process";' not in text:
@@ -124,6 +145,53 @@ for file_path in FILES:
         text, count = RECONNECT_PATTERN.subn(lambda _match: RECONNECT_REPLACEMENT, text, count=1)
         if count != 1:
             raise SystemExit(f"match_players fixture block replacement count {count}: {file_path}")
+        if EXPIRED_RECONNECT_MARKER not in text:
+            raise SystemExit(f"expired reconnect assertion marker missing: {file_path}")
+        text = text.replace(
+            EXPIRED_RECONNECT_MARKER,
+            EXPIRED_RECONNECT_REPLACEMENT,
+            1,
+        )
     file_path.write_text(text, encoding="utf-8")
 
+residual = RESIDUAL_FILE.read_text(encoding="utf-8")
+if "set opened_at=" not in residual:
+    raise SystemExit(f"VIP opens_at fixture marker missing: {RESIDUAL_FILE}")
+residual = residual.replace("set opened_at=", "set opens_at=", 1)
+
+ERROR_MARKER = """function assertNoRpcErrors(results, allowed = null) {
+  for (const result of results) {
+    if (!result.error) continue;
+    if (allowed && allowed.test(result.error.message)) continue;
+    throw result.error;
+  }
+}
+"""
+ERROR_REPLACEMENT = """function assertNoRpcErrors(results, allowed = null) {
+  for (const result of results) {
+    if (!result.error) continue;
+    const message = result.error.message ?? JSON.stringify(result.error);
+    if (allowed && allowed.test(message)) continue;
+    throw new Error(
+      JSON.stringify({
+        code: result.error.code ?? null,
+        message,
+        details: result.error.details ?? null,
+        hint: result.error.hint ?? null,
+      }),
+    );
+  }
+}
+"""
+if ERROR_MARKER not in residual:
+    raise SystemExit(f"RPC error serialization marker missing: {RESIDUAL_FILE}")
+residual = residual.replace(ERROR_MARKER, ERROR_REPLACEMENT, 1)
+residual = residual.replace(
+    "/abandoned|access denied/i",
+    "/abandoned|access denied|active movie buff room membership required/i",
+    1,
+)
+RESIDUAL_FILE.write_text(residual, encoding="utf-8")
+
 print("MOVIE_BUFF_MOV17_OWNER_FIXTURE_PATCH=PASS")
+print("MOVIE_BUFF_COMBINED_RESIDUAL_DERIVATION=PASS")
