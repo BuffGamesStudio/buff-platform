@@ -1,0 +1,240 @@
+name: Movie Buff Agent 7 narrowed diagnostics
+
+on:
+  push:
+    branches:
+      - validation/MOV-17-encoding-twin-v2
+    paths:
+      - .github/workflows/movie-buff-agent7-diagnostics.yml
+      - scripts/movie-buff-agent7-race-diagnostics.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
+  PRODUCT_SHA: d70d758c730d32d71525c9381b9f98b80e0e1e83
+  PRODUCT_TREE: b0e9cfa1963d8fbca9c72dfe7fc64a9dbe2cbe8f
+  INTEGRATION_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  linux-recheck:
+    name: Linux lane contracts and encoding recheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:55321
+      SUPABASE_URL: http://127.0.0.1:55321
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+      APP_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: local-anon-placeholder
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-publishable-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-service-role-placeholder
+      SUPABASE_SECRET_KEY: local-secret-placeholder
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Bind exact product and controller delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/movie-buff-agent7-linux-recheck"
+          mkdir -p "$evidence"
+          echo "EVIDENCE_DIR=$evidence" >> "$GITHUB_ENV"
+          test "$GITHUB_REF_NAME" = "$EXPECTED_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git show -s --format=%T "$PRODUCT_SHA")" = "$PRODUCT_TREE"
+          git merge-base --is-ancestor "$PRODUCT_SHA" "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          {
+            echo "branch=$GITHUB_REF_NAME"
+            echo "controller_sha=$GITHUB_SHA"
+            echo "controller_tree=$(git rev-parse HEAD^{tree})"
+            echo "product_sha=$PRODUCT_SHA"
+            echo "product_tree=$PRODUCT_TREE"
+            echo "captured_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"$evidence/identity.txt"
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run lane-owned contracts
+        id: lane
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          node --test \
+            tests/movie-buff-public-matchmaking-contract.test.mjs \
+            tests/movie-buff-public-matchmaking-handoff.test.mjs \
+            tests/movie-buff-vip-authority.test.mjs \
+            tests/movie-buff-vip-finalize-contract.test.mjs \
+            tests/movie-buff-authoritative-phase-runtime.test.mjs \
+            tests/movie-buff-server-phase-machine.test.mjs \
+            tests/movie-buff-visual-runtime.test.mjs \
+            tests/movie-buff-migration-encoding.test.mjs \
+            tests/movie-buff-current-hardening-reconciliation.test.mjs \
+            tests/movie-buff-release-evidence-integrity.test.mjs \
+            2>&1 | tee "$EVIDENCE_DIR/lane-contracts.log"
+          code=${PIPESTATUS[0]}
+          echo "$code" >"$EVIDENCE_DIR/lane-contracts.exit.txt"
+          exit "$code"
+      - name: Reproduce independent validator status
+        id: validator
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          node --test tests/movie-buff-independent-security-validation.test.mjs \
+            2>&1 | tee "$EVIDENCE_DIR/independent-validator.log"
+          code=${PIPESTATUS[0]}
+          echo "$code" >"$EVIDENCE_DIR/independent-validator.exit.txt"
+          exit "$code"
+      - name: Run correct positional BOM-only proof
+        id: encoding
+        continue-on-error: true
+        shell: bash
+        env:
+          MOVIE_BUFF_CURRENT_REF: ${{ env.PRODUCT_SHA }}
+          MOVIE_BUFF_BOM_ONLY_OUTPUT: ${{ runner.temp }}/movie-buff-agent7-linux-recheck/migration-encoding.json
+        run: |
+          set +e
+          node scripts/movie-buff-migration-bom-only-check.mjs "$INTEGRATION_SHA" \
+            >"$EVIDENCE_DIR/migration-encoding.stdout.txt" \
+            2>"$EVIDENCE_DIR/migration-encoding.stderr.txt"
+          code=$?
+          echo "$code" >"$EVIDENCE_DIR/migration-encoding.exit.txt"
+          exit "$code"
+      - name: TypeScript and production build recheck
+        id: build
+        continue-on-error: true
+        shell: bash
+        env:
+          NEXT_PUBLIC_MOVIE_BUFF_BUILD_BRANCH: ${{ env.EXPECTED_BRANCH }}
+          NEXT_PUBLIC_MOVIE_BUFF_BUILD_SHA: ${{ github.sha }}
+          NEXT_PUBLIC_MOVIE_BUFF_BUILD_MARKER: agent7-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set +e
+          npx tsc --noEmit >"$EVIDENCE_DIR/typescript.stdout.txt" 2>"$EVIDENCE_DIR/typescript.stderr.txt"
+          ts=$?
+          echo "$ts" >"$EVIDENCE_DIR/typescript.exit.txt"
+          npm run build >"$EVIDENCE_DIR/production-build.stdout.txt" 2>"$EVIDENCE_DIR/production-build.stderr.txt"
+          build=$?
+          echo "$build" >"$EVIDENCE_DIR/production-build.exit.txt"
+          test "$ts" -eq 0 -a "$build" -eq 0
+      - name: Finalize Linux diagnostic evidence
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          git checkout -- next-env.d.ts >/dev/null 2>&1 || true
+          status="$(git status --porcelain --untracked-files=all)"
+          printf '%s\n' "$status" >"$EVIDENCE_DIR/git-status.txt"
+          lane=$(cat "$EVIDENCE_DIR/lane-contracts.exit.txt" 2>/dev/null || echo 99)
+          validator=$(cat "$EVIDENCE_DIR/independent-validator.exit.txt" 2>/dev/null || echo 99)
+          encoding=$(cat "$EVIDENCE_DIR/migration-encoding.exit.txt" 2>/dev/null || echo 99)
+          ts=$(cat "$EVIDENCE_DIR/typescript.exit.txt" 2>/dev/null || echo 99)
+          build=$(cat "$EVIDENCE_DIR/production-build.exit.txt" 2>/dev/null || echo 99)
+          {
+            echo "lane_contracts=$([ "$lane" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "independent_validator=$([ "$validator" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "migration_encoding=$([ "$encoding" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "typescript=$([ "$ts" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "production_build=$([ "$build" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "clean_worktree=$([ -z "$status" ] && echo PASS || echo FAIL)"
+            echo "release=NO-GO"
+          } >"$EVIDENCE_DIR/status.txt"
+          (cd "$EVIDENCE_DIR" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt)
+          test "$lane" -eq 0
+          test "$encoding" -eq 0
+          test "$ts" -eq 0
+          test "$build" -eq 0
+          test -z "$status"
+      - name: Upload Linux recheck evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-linux-recheck-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-agent7-linux-recheck
+          if-no-files-found: error
+          retention-days: 14
+
+  mov16-diagnostic:
+    name: MOV-16 adversarial error diagnostic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Execute isolated MOV-16 diagnostic
+        shell: bash
+        run: |
+          chmod +x scripts/movie-buff-agent7-race-diagnostics.sh
+          scripts/movie-buff-agent7-race-diagnostics.sh \
+            mov16-diagnostic \
+            "$GITHUB_SHA" \
+            "$(git rev-parse HEAD^{tree})" \
+            "$RUNNER_TEMP/movie-buff-agent7-mov16-diagnostic"
+      - name: Upload MOV-16 diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-mov16-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-agent7-mov16-diagnostic
+          if-no-files-found: error
+          retention-days: 14
+
+  remaining-races:
+    name: VIP finalizer, phase, reconnect races
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Execute remaining independent race suites
+        shell: bash
+        run: |
+          chmod +x scripts/movie-buff-agent7-race-diagnostics.sh
+          scripts/movie-buff-agent7-race-diagnostics.sh \
+            remaining-races \
+            "$GITHUB_SHA" \
+            "$(git rev-parse HEAD^{tree})" \
+            "$RUNNER_TEMP/movie-buff-agent7-remaining-races"
+      - name: Upload remaining-race evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-remaining-races-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-agent7-remaining-races
+          if-no-files-found: error
+          retention-days: 14
