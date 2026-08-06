@@ -119,15 +119,15 @@ if require_ready; then
          )
        )
        and pg_catalog.bool_and(
-         pg_catalog.position(
+         pg_catalog.strpos(
+           pg_catalog.pg_get_functiondef(p.oid),
            'v_match.category_id is null'
-           in pg_catalog.pg_get_functiondef(p.oid)
          ) = 0
        )
        and pg_catalog.bool_and(
-         pg_catalog.position(
+         pg_catalog.strpos(
+           pg_catalog.pg_get_functiondef(p.oid),
            'and not (v_match.category_id = any(v_definition.allowed_category_ids)) then'
-           in pg_catalog.pg_get_functiondef(p.oid)
          ) > 0
        )
       then 'PASS'
