@@ -2,12 +2,14 @@ export {
   MovieBuffBusterReplacement,
   type MovieBuffBusterVisualState,
 } from "./MovieBuffBusterReplacement";
+export { MovieBuffCanonicalVisualAdapter } from "./MovieBuffCanonicalVisualAdapter";
 export { MovieBuffGameMenu } from "./MovieBuffGameMenu";
 export { MovieBuffMotionRuntime } from "./MovieBuffMotionRuntime";
 export { MovieBuffReconnectVisual } from "./MovieBuffReconnectVisual";
 export {
   MovieBuffRiveCanvas,
   type MovieBuffRiveCanvasProps,
+  type MovieBuffRiveFailureReason,
 } from "./MovieBuffRiveCanvas";
 export {
   MovieBuffRiveSurface,

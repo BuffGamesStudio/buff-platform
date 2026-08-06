@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const {
+  deriveMovieBuffSharedPlaybackOffsetMs,
   deriveMovieBuffVisualRuntimeState,
   mapMovieBuffAuthoritativePhaseToVisualPhase,
   mayMovieBuffVisualRuntimeAdvanceGameplay,
@@ -15,6 +16,8 @@ const baseInput = {
   phase: "board",
   phaseStartedAt: "2026-08-04T12:00:00.000Z",
   phaseDeadlineAt: "2026-08-04T12:00:10.000Z",
+  playbackStartsAt: null,
+  serverNow: "2026-08-04T12:00:05.000Z",
   selectorPlayerId: "player-a",
   currentPlayerId: "player-a",
   selectedTileId: null,
@@ -23,6 +26,18 @@ const baseInput = {
   assetAvailable: true,
   motionPreference: "full",
 };
+
+const canonicalSource = (overrides = {}) => ({
+  phase: "board_select",
+  phaseVersion: 7,
+  lastAcceptedPhaseVersion: 6,
+  selectedTileId: null,
+  transitionPresentation: null,
+  selectorControllerType: "human",
+  selectorPlayerId: "player-a",
+  terminalFallback: null,
+  ...overrides,
+});
 
 async function source(relativePath) {
   return readFile(new URL(relativePath, import.meta.url), "utf8");
@@ -34,6 +49,7 @@ test("visual runtime can never advance gameplay", () => {
 
 test("MOV-17 canonical phases map to passive MOV-18 visual phases", () => {
   const cases = [
+    ["waiting", null, null, "waiting"],
     ["round_intro", null, null, "round_intro"],
     ["vip_lock", null, null, "vip_selection"],
     ["board_select", null, null, "board"],
@@ -46,39 +62,111 @@ test("MOV-17 canonical phases map to passive MOV-18 visual phases", () => {
   ];
 
   for (const [phase, selectedTileId, transitionPresentation, expected] of cases) {
-    const mapping = mapMovieBuffAuthoritativePhaseToVisualPhase({
-      phase,
-      selectedTileId,
-      transitionPresentation,
-    });
+    const selectorRequired = [
+      "board_select",
+      "transition",
+      "playback",
+      "answer",
+      "results",
+    ].includes(phase);
+    const mapping = mapMovieBuffAuthoritativePhaseToVisualPhase(
+      canonicalSource({
+        phase,
+        selectedTileId,
+        transitionPresentation,
+        selectorControllerType: selectorRequired ? "human" : null,
+        selectorPlayerId: selectorRequired ? "player-a" : null,
+      }),
+    );
     assert.equal(mapping.valid, true, phase);
     assert.equal(mapping.phase, expected, phase);
     assert.equal(mapping.reason, null, phase);
+    assert.equal(mapping.phaseVersion, 7, phase);
   }
 });
 
-test("canonical phase contradictions and terminal failures map to error", () => {
+test("terminal states require an explicit fail-closed fallback contract", () => {
+  for (const phase of ["abandoned", "blocked"]) {
+    const withoutFallback = mapMovieBuffAuthoritativePhaseToVisualPhase(
+      canonicalSource({
+        phase,
+        selectorControllerType: null,
+        selectorPlayerId: null,
+      }),
+    );
+    assert.equal(withoutFallback.valid, false);
+    assert.equal(withoutFallback.reason, "TERMINAL_FALLBACK_MISSING");
+
+    const withFallback = mapMovieBuffAuthoritativePhaseToVisualPhase(
+      canonicalSource({
+        phase,
+        selectorControllerType: null,
+        selectorPlayerId: null,
+        terminalFallback: "match_status",
+      }),
+    );
+    assert.equal(withFallback.valid, true);
+    assert.equal(withFallback.phase, "match_status");
+  }
+});
+
+test("stale, contradictory, and unknown canonical state fails closed", () => {
   const cases = [
-    ["board_select", "tile-7", null, "BOARD_SELECT_HAS_SELECTED_TILE"],
-    ["transition", null, "curtain", "TRANSITION_MISSING_SELECTED_TILE"],
-    ["transition", "tile-7", null, "TRANSITION_PRESENTATION_MISSING"],
-    ["playback", "tile-7", "film_slate", "TRANSITION_PRESENTATION_OUTSIDE_TRANSITION"],
-    ["abandoned", null, null, "MATCH_ABANDONED"],
-    ["blocked", null, null, "MATCH_BLOCKED"],
-    ["invented_phase", null, null, "UNKNOWN_CANONICAL_PHASE"],
+    [
+      { phaseVersion: 5, lastAcceptedPhaseVersion: 6 },
+      "STALE_PHASE_VERSION",
+    ],
+    [{ phaseVersion: 0 }, "INVALID_PHASE_VERSION"],
+    [
+      { selectorControllerType: "buster", selectorPlayerId: "player-a" },
+      "CONTRADICTORY_BUSTER_IDENTITY",
+    ],
+    [
+      { selectorControllerType: null, selectorPlayerId: "player-a" },
+      "SELECTOR_IDENTITY_WITHOUT_CONTROLLER",
+    ],
+    [{ selectedTileId: "tile-7" }, "BOARD_SELECT_HAS_SELECTED_TILE"],
+    [
+      {
+        phase: "transition",
+        selectedTileId: null,
+        transitionPresentation: "curtain",
+      },
+      "TRANSITION_MISSING_SELECTED_TILE",
+    ],
+    [
+      {
+        phase: "transition",
+        selectedTileId: "tile-7",
+        transitionPresentation: null,
+      },
+      "TRANSITION_PRESENTATION_MISSING",
+    ],
+    [
+      {
+        phase: "playback",
+        selectedTileId: "tile-7",
+        transitionPresentation: "film_slate",
+      },
+      "TRANSITION_PRESENTATION_OUTSIDE_TRANSITION",
+    ],
+    [
+      {
+        phase: "invented_phase",
+        selectorControllerType: null,
+        selectorPlayerId: null,
+      },
+      "UNKNOWN_CANONICAL_PHASE",
+    ],
   ];
 
-  for (const [phase, selectedTileId, transitionPresentation, reason] of cases) {
-    const mapping = mapMovieBuffAuthoritativePhaseToVisualPhase({
-      phase,
-      selectedTileId,
-      transitionPresentation,
-    });
-    assert.deepEqual(mapping, {
-      phase: "error",
-      valid: false,
-      reason,
-    });
+  for (const [overrides, reason] of cases) {
+    const mapping = mapMovieBuffAuthoritativePhaseToVisualPhase(
+      canonicalSource(overrides),
+    );
+    assert.equal(mapping.valid, false, reason);
+    assert.equal(mapping.phase, "error", reason);
+    assert.equal(mapping.reason, reason, reason);
   }
 });
 
@@ -147,6 +235,25 @@ test("an expired transition is not replayed", () => {
   assert.equal(state.shouldReplayTransition, false);
 });
 
+test("playback presentation derives offset from the shared server epoch", () => {
+  assert.equal(
+    deriveMovieBuffSharedPlaybackOffsetMs({
+      playbackStartsAt: "2026-08-04T12:00:00.000Z",
+      serverNow: "2026-08-04T12:00:02.500Z",
+      clientNowMs: Date.parse("2026-08-04T12:00:50.000Z"),
+    }),
+    2500,
+  );
+
+  const state = deriveMovieBuffVisualRuntimeState({
+    ...baseInput,
+    phase: "playback",
+    playbackStartsAt: "2026-08-04T12:00:00.000Z",
+    serverNow: "2026-08-04T12:00:02.500Z",
+  });
+  assert.equal(state.playbackOffsetMs, 2500);
+});
+
 test("approved Rive packages are exact and synchronized", async () => {
   const manifest = JSON.parse(await source("../package.json"));
   const lock = JSON.parse(await source("../package-lock.json"));
@@ -166,14 +273,16 @@ test("approved Rive packages are exact and synchronized", async () => {
   );
 });
 
-test("all declared Rive assets use public absolute paths", () => {
+test("declared Rive paths remain placeholders until real assets exist", () => {
   for (const asset of Object.values(movieBuffVisualAssets)) {
     assert.equal(asset.kind, "rive");
     assert.match(asset.source, /^\/movie-buff\/rive\/[a-z-]+\.riv$/);
+    assert.equal("artboard" in asset, false);
+    assert.equal("stateMachine" in asset, false);
   }
 });
 
-test("Rive canvas is isolated, passive, and WebGL2 bounded", async () => {
+test("Rive canvas reports actual load and WebGL context loss", async () => {
   const canvas = await source(
     "../src/components/movie-buff/visual/MovieBuffRiveCanvas.tsx",
   );
@@ -183,7 +292,9 @@ test("Rive canvas is isolated, passive, and WebGL2 bounded", async () => {
   assert.match(canvas, /Alignment\.Center/);
   assert.match(canvas, /useOffscreenRenderer/);
   assert.match(canvas, /shouldDisableRiveListeners/);
-  assert.match(canvas, /onLoadError:\s*onRuntimeError/);
+  assert.match(canvas, /onLoad:\s*\(\) => onRuntimeReady\(\)/);
+  assert.match(canvas, /onLoadError:/);
+  assert.match(canvas, /webglcontextlost/);
   assert.doesNotMatch(canvas, /useStateMachineInput/);
   assert.doesNotMatch(canvas, /onStateChange/);
   assert.doesNotMatch(canvas, /router\.(push|replace)/);
@@ -192,18 +303,34 @@ test("Rive canvas is isolated, passive, and WebGL2 bounded", async () => {
   assert.doesNotMatch(canvas, /\/api\/movie-buff/);
 });
 
-test("Rive surface checks assets, honors reduced motion, and fails closed", async () => {
+test("Rive surface waits for real runtime readiness and fails closed", async () => {
   const riveSurface = await source(
     "../src/components/movie-buff/visual/MovieBuffRiveSurface.tsx",
   );
   assert.match(riveSurface, /prefers-reduced-motion: reduce/);
-  assert.match(riveSurface, /method: "HEAD"/);
+  assert.doesNotMatch(riveSurface, /method:\s*"HEAD"/);
   assert.match(riveSurface, /MovieBuffStaticFallback/);
   assert.match(riveSurface, /MovieBuffRiveCanvas/);
-  assert.match(riveSurface, /onRuntimeError=\{\(\) => setAssetStatus\("failed"\)\}/);
+  assert.match(riveSurface, /onRuntimeReady/);
+  assert.match(riveSurface, /data-rive-runtime-status/);
+  assert.match(riveSurface, /motion_preference_pending/);
   assert.doesNotMatch(riveSurface, /router\.(push|replace)/);
-  assert.doesNotMatch(riveSurface, /method: "POST"/);
+  assert.doesNotMatch(riveSurface, /method:\s*"POST"/);
   assert.doesNotMatch(riveSurface, /supabase/i);
+});
+
+test("Game Menu contains focus, Escape, and opener restoration contracts", async () => {
+  const menu = await source(
+    "../src/components/movie-buff/visual/MovieBuffGameMenu.tsx",
+  );
+  assert.match(menu, /aria-modal="true"/);
+  assert.match(menu, /event\.key === "Escape"/);
+  assert.match(menu, /event\.key !== "Tab"/);
+  assert.match(menu, /closeButtonRef\.current\?\.focus\(\)/);
+  assert.match(menu, /openerRef\.current\?\.focus\(\)/);
+  assert.match(menu, /document\.body\.style\.overflow = "hidden"/);
+  assert.doesNotMatch(menu, /leave_movie_buff/i);
+  assert.doesNotMatch(menu, /\/api\/movie-buff/);
 });
 
 test("Buster and transitions remain passive Rive consumers", async () => {
