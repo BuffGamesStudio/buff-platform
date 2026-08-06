@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "manifestType": "movie-buff-validation-only-composition",
+  "generatedBy": "Agent 5 — Exact-SHA Composition and Integration-Candidate Assembly",
+  "assembledAtUtc": "2026-08-06T04:17:55Z",
+  "repository": "BuffGamesStudio/buff-platform",
+  "canonicalIntegrationTarget": "integration/movie-buff",
+  "validationBranch": "validation/movie-buff-integrated-candidate-v1",
+  "draftOnly": true,
+  "mergeProhibited": true,
+  "releaseClassification": "NO-GO",
+  "productComposition": {
+    "sha": "2be790c88bc7f34969fe607bb78fd7535b621190",
+    "treeSha": "cbd8061c9c4da410e39363beee02bf53194ed53f",
+    "timestampUtc": "2026-08-06T04:17:55Z",
+    "reconciliationBaseSha": "cbf1c3e7c3fdd6925cf3ba473f9729a05d5fdfc7",
+    "reconciliationBaseTreeSha": "1657aeaba849ec4f150fb297c975b73f08755200",
+    "controllerHeadResolution": "Resolve the live validation branch head after metadata commits; the immutable product SHA above is the build subject."
+  },
+  "components": [
+    {
+      "name": "integration baseline",
+      "sourceBranch": "integration/movie-buff",
+      "sha": "bf316a15a2120e32d8a32e479df2ae439081f9a1",
+      "treeSha": "12f425f4c56fb3f3c66df6f3a6543d7fd8b6ef34",
+      "inclusionMode": "ancestral baseline and comparison target"
+    },
+    {
+      "name": "PR #3 cinematic visuals",
+      "sourceBranch": "cursor/movie-buff-origin-main-integration-20260803-155410",
+      "sha": "f692e82a5d524c950011e0300908c9cbec2389cb",
+      "treeSha": "621bd5d39059f76773d84b5a0d1dce851e2ff0de",
+      "inclusionMode": "declared composition parent; accepted visual reconciliation preserved by reconciliation base"
+    },
+    {
+      "name": "PR #5 hardening/live-flow packet",
+      "sourceBranch": "automation/movie-buff-security-hardening-packet-20260804",
+      "sha": "91eac0d55abb1a9568017df687e8395771d24780",
+      "treeSha": "1ae3ed427b2c1b38c3731cc9532b5d0fb0c6336f",
+      "inclusionMode": "declared composition parent; accepted hardening reconciliation preserved by reconciliation base",
+      "validationCaveat": "Exact inclusion of every original PR #5 blob is not asserted. Security constraints require independent exact-tree validation."
+    },
+    {
+      "name": "MOV-15 strict-three matchmaking",
+      "sourceBranch": "copilot/MOV-15-public-matchmaking",
+      "sha": "dc9804cdae03d8627a89980dbcdf2292d2055372",
+      "treeSha": "86db75f79444b02c972ba4771244950cbec41b38",
+      "inclusionMode": "declared composition parent; accepted lane reconciliation preserved by reconciliation base"
+    },
+    {
+      "name": "MOV-16 VIP authority",
+      "sourceBranch": "copilot/MOV-16-vip-authority",
+      "sha": "4a5e5591113b005f69fd34361becb2fd8d024897",
+      "treeSha": "5d0fc27b1c5240196d76eabddee3d59186cda1d3",
+      "inclusionMode": "accepted reconciliation plus exact current workflow blob fcc47d8db07b075f1b6de30c5c7671700454631a"
+    },
+    {
+      "name": "MOV-17 authoritative phase machine",
+      "sourceBranch": "copilot/MOV-17-shared-phase-machine",
+      "sha": "f17234debfb8942e1998306a12dc33301c1c5440",
+      "treeSha": "56c63df56f085c256289a8e4510ba05cbea3d9d1",
+      "inclusionMode": "accepted reconciliation plus exact current results-page and contract-test blobs"
+    },
+    {
+      "name": "MOV-18 passive visual adapter",
+      "sourceBranch": "copilot/MOV-18-visual-motion-runtime",
+      "sha": "780153d0624a8186db1c628f6bd93906bca41a30",
+      "treeSha": "5a8dc53bc9e13c019675b8a95145422a8436c6de",
+      "inclusionMode": "accepted reconciliation plus four exact current adapter/test blobs"
+    },
+    {
+      "name": "PR #12 migration encoding",
+      "sourceBranch": "copilot/MOV-14-migration-encoding",
+      "sha": "f86689895cb810831d9b4d6346ee95eed9439495",
+      "treeSha": "6db263611f8a4ef8fd4fbce096d5ff919dac8de6",
+      "inclusionMode": "BOM-clean SQL bytes retained from reconciliation base; exact current validator script and test blobs applied"
+    },
+    {
+      "name": "MOV-19 independent validator",
+      "sourceBranch": "copilot/MOV-19-security-validation",
+      "sha": "46c549675d44f19c22a7786421cf2581dc22af3c",
+      "treeSha": "d37a8ec456ff079da9f83da5c9fa058867ddf401",
+      "inclusionMode": "eleven exact current validator workflow, script, test, and documentation blobs applied"
+    }
+  ],
+  "excludedInputs": [
+    {
+      "name": "PR #13 validation twin",
+      "reason": "closed, not merged, and explicitly superseded; not an accepted candidate input"
+    }
+  ],
+  "commitOrder": [
+    "bf316a15a2120e32d8a32e479df2ae439081f9a1 integration baseline",
+    "cbf1c3e7c3fdd6925cf3ba473f9729a05d5fdfc7 accepted reconciled product base",
+    "exact current MOV-16 narrow delta",
+    "exact current MOV-17 narrow delta",
+    "exact current MOV-18 narrow delta",
+    "exact current PR #12 validator delta",
+    "exact current MOV-19 validator package",
+    "2be790c88bc7f34969fe607bb78fd7535b621190 immutable product composition"
+  ],
+  "overlapMatrix": [
+    {
+      "paths": [
+        "src/app/games/movie-buff/board-preview/page.tsx",
+        "src/app/games/movie-buff/play/page.tsx"
+      ],
+      "lanes": ["PR #3", "PR #5", "MOV-17"],
+      "resolution": "Preserve the previously accepted reconciled blobs; no new functional merge resolution by Agent 5.",
+      "conflictOwner": "Owning visual/live-flow lanes",
+      "compositionBlocking": false
+    },
+    {
+      "paths": ["src/components/movie-buff/MovieBuffBoardRoomClient.tsx"],
+      "lanes": ["PR #5", "MOV-17"],
+      "resolution": "Preserve the previously accepted reconciled blob; no Agent 5 logic edits.",
+      "conflictOwner": "MOV-17 with PR #5 security review",
+      "compositionBlocking": false
+    },
+    {
+      "paths": ["package.json", "package-lock.json"],
+      "lanes": ["PR #5", "MOV-18"],
+      "resolution": "Preserve the accepted dependency reconciliation from the product base.",
+      "conflictOwner": "MOV-18 for presentation dependency; PR #5 for hardening compatibility",
+      "compositionBlocking": false
+    },
+    {
+      "paths": ["nine historical Movie Buff SQL migrations"],
+      "lanes": ["MOV-17", "PR #12"],
+      "resolution": "Keep PR #12 BOM-clean bytes already present in the reconciled base; current PR #12 changed validators only.",
+      "conflictOwner": "PR #12 encoding lane for byte identity; MOV-17 for SQL semantics",
+      "compositionBlocking": false
+    }
+  ],
+  "protectedBlobAssertions": {
+    "src/app/games/movie-buff/board-preview/page.tsx": "ee4ef8bae382aebc1e2242a8342d3858ecbc922c",
+    "src/app/games/movie-buff/play/page.tsx": "2115b1f81a1dd64fa0998ebffcd2ca4ef605f0d5",
+    "src/components/movie-buff/MovieBuffBoardRoomClient.tsx": "da8ea21aba760e51ffb37fa32e8906e5825cf86f"
+  },
+  "mergeBaseRecording": {
+    "status": "UNKNOWN until exact workflow execution",
+    "method": "The Agent 5 workflow records git merge-base between the integration baseline and every component SHA into the evidence artifact."
+  },
+  "classifications": {
+    "sourceAssembly": "UNKNOWN",
+    "dependencyInstall": "UNKNOWN",
+    "focusedTests": "UNKNOWN",
+    "typescript": "UNKNOWN",
+    "productionBuild": "UNKNOWN",
+    "sqlEncoding": "UNKNOWN",
+    "changedFileOwnership": "UNKNOWN",
+    "secretScan": "UNKNOWN",
+    "cleanWorktree": "UNKNOWN",
+    "database": "UNKNOWN",
+    "browser": "UNKNOWN",
+    "hostedSecurity": "FAIL",
+    "isolatedStaging": "UNKNOWN",
+    "rollback": "UNKNOWN",
+    "production": "NOT APPLICABLE"
+  },
+  "downstreamRecipients": ["Agent 6", "Agent 7", "Agent 8", "Agent 9", "Agent 10"],
+  "invariants": [
+    "No production deployment or promotion.",
+    "No hosted or production Supabase mutation.",
+    "No silent functional conflict repair.",
+    "No release-readiness claim from source assembly or build evidence alone.",
+    "Any moved component SHA invalidates evidence tied to the prior component identity."
+  ]
+}
