@@ -66,7 +66,6 @@ jobs:
 
           $common = @{
             ExpectedBranch = '${{ github.head_ref || github.ref_name }}'
-            ExpectedSha = '${{ github.event.pull_request.head.sha || github.sha }}'
             ExpectedTree = '${{ steps.identity.outputs.tree }}'
             PackageOnly = $true
           }
@@ -81,6 +80,7 @@ jobs:
           Assert-Refusal -Name 'hosted-target' -ExpectedMessage 'Refusing non-localhost database target' -Action {
             ./scripts/movie-buff-agent9-staging-rehearsal.ps1 @common `
               -Mode DryRun `
+              -ExpectedSha '${{ github.event.pull_request.head.sha || github.sha }}' `
               -DatabaseUrl 'postgresql://example.invalid/movie_buff' `
               -EvidenceDirectory '${{ runner.temp }}/agent9-negative-hosted-target'
           }
@@ -88,6 +88,7 @@ jobs:
           Assert-Refusal -Name 'evidence-inside-checkout' -ExpectedMessage 'EvidenceDirectory must be outside the source checkout' -Action {
             ./scripts/movie-buff-agent9-staging-rehearsal.ps1 @common `
               -Mode Preflight `
+              -ExpectedSha '${{ github.event.pull_request.head.sha || github.sha }}' `
               -EvidenceDirectory './agent9-invalid-evidence'
           }
 
