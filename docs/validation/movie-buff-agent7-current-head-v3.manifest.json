@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 3,
+  "agent": "Agent 7 — Exact-SHA Integration and Validation Lab",
+  "repository": "BuffGamesStudio/buff-platform",
+  "branch": "validation/MOV-17-encoding-twin-v2",
+  "integration": {"sha":"bf316a15a2120e32d8a32e479df2ae439081f9a1","treeSha":"12f425f4c56fb3f3c66df6f3a6543d7fd8b6ef34"},
+  "candidate": {"sha":"d6a173aa585941db447ba53a6c387f49a5784bfd","treeSha":"197387d7bed0e36dff576f98c13f0fde14e22924","controllerFilesIncluded":false},
+  "components": {
+    "pr3_visuals":"f692e82a5d524c950011e0300908c9cbec2389cb",
+    "pr5_hardening":"91eac0d55abb1a9568017df687e8395771d24780",
+    "mov15":"48d44bb156b71060d1b9adcc7a2a3f014cf92060",
+    "mov16":"f169d652a9199a65afd5369c52c0584f635d7031",
+    "mov17":"f17234debfb8942e1998306a12dc33301c1c5440",
+    "mov18":"00fee0da08a6b84232ab2385c63fdceb2886b847",
+    "pr12_encoding":"d1f7ca58b534cbccd3071743d542f5788c0e9173"
+  },
+  "compositionCorrections": [
+    "restored nine MOV-16-owned files that the v2 product tree omitted relative to current MOV-16 head",
+    "no source-lane file was edited; exact current-head blobs were imported unchanged"
+  ],
+  "staleCandidates": [
+    {"sha":"d70d758c730d32d71525c9381b9f98b80e0e1e83","reason":"lane heads moved"},
+    {"sha":"5c2378cae045b0ae8ace8cec2c04c34e5c4f7257","reason":"incomplete MOV-16 owned-file composition"}
+  ],
+  "resultsTransfer": false,
+  "knownGate": {"scope":"no gameplay Start/Continue/Next","classification":"FAIL","reason":"current MOV-15 lobby still renders Start Match connected to handleQuickStart"},
+  "initialClassifications": {"linux":"UNKNOWN","windows":"UNKNOWN","database":"UNKNOWN","mov16":"UNKNOWN","races":"UNKNOWN","browser":"UNKNOWN","hosted":"NOT APPLICABLE","staging":"UNKNOWN","production":"NOT APPLICABLE","release":"NO-GO"},
+  "prohibitions": ["do not merge","do not deploy","do not promote Vercel","do not mutate hosted or production Supabase","do not request ARM","do not issue GO"]
+}
