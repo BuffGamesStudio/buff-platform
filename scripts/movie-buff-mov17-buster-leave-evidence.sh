@@ -3,7 +3,7 @@ set -euo pipefail
 
 EXPECTED_SHA="${1:?expected SHA required}"
 EVIDENCE_DIR="${2:?evidence directory required}"
-EXPECTED_BRANCH="validation/movie-buff-combined-race-matrix-v1"
+EXPECTED_BRANCH="validation/movie-buff-candidate-v6-runtime-opened-20260806"
 PRODUCT_SHA="c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6"
 PRODUCT_TREE="a995a9aeb2fca76d2c1b216ece3a2645c2393c71"
 SOURCE_ROOT="$(git rev-parse --show-toplevel)"
