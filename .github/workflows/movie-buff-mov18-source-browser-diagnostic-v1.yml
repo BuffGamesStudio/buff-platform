@@ -1,0 +1,56 @@
+name: MOV-18 exact source browser artifact diagnostic
+
+on:
+  push:
+    branches: [validation/movie-buff-mov18-source-browser-diagnostic-v1]
+    paths: [".github/workflows/movie-buff-mov18-source-browser-diagnostic-v1.yml"]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect-artifact:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind exact diagnostic ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor ed9d4f08692c892258415d88d68f06b41a174b24 HEAD
+          test -z "$(git status --porcelain)"
+      - uses: actions/download-artifact@v4
+        with:
+          name: mov18-browser-evidence-ed9d4f08692c892258415d88d68f06b41a174b24
+          path: ${{ runner.temp }}/mov18-source-browser-artifact
+          run-id: 31063857308
+          github-token: ${{ github.token }}
+      - name: Print sanitized exact browser evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/mov18-source-browser-artifact"
+          echo "--- metadata ---"
+          cat "$root/metadata.txt"
+          echo "--- browser exit ---"
+          cat "$root/browser.exit"
+          echo "--- browser stdout ---"
+          cat "$root/browser.stdout.log"
+          echo "--- browser stderr ---"
+          cat "$root/browser.stderr.log"
+          echo "--- browser JSON ---"
+          cat "$root/browser-evidence.json"
+          echo "--- internal manifest ---"
+          (cd "$root" && sha256sum -c sha256.txt)
+      - name: Verify clean postflight
+        if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
