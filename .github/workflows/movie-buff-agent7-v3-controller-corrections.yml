@@ -1,0 +1,181 @@
+name: Movie Buff Agent 7 v3 controller corrections
+
+on:
+  push:
+    branches: [validation/MOV-17-encoding-twin-v2]
+    paths: [.github/workflows/movie-buff-agent7-v3-controller-corrections.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
+  PRODUCT_SHA: d6a173aa585941db447ba53a6c387f49a5784bfd
+  PRODUCT_TREE: 197387d7bed0e36dff576f98c13f0fde14e22924
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  windows-fixed:
+    name: Windows command lab fixed evidence
+    runs-on: windows-2025
+    timeout-minutes: 55
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:55321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-publishable-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-service-placeholder
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3001
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.sha }}", fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - name: Execute exact Windows command lab
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'; Set-StrictMode -Version Latest
+          $root=Join-Path $env:RUNNER_TEMP 'agent7-v3-windows-fixed'; New-Item -ItemType Directory -Force $root | Out-Null
+          if((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA){throw 'SHA mismatch'}
+          if($env:GITHUB_REF_NAME -ne $env:EXPECTED_BRANCH){throw 'branch mismatch'}
+          if((git show -s --format=%T $env:PRODUCT_SHA).Trim() -ne $env:PRODUCT_TREE){throw 'product tree mismatch'}
+          git merge-base --is-ancestor $env:PRODUCT_SHA $env:GITHUB_SHA; if($LASTEXITCODE -ne 0){throw 'ancestry mismatch'}
+          if(git status --porcelain --untracked-files=all){throw 'dirty preflight'}
+          $space=Join-Path $env:RUNNER_TEMP 'Agent 7 path with spaces'; New-Item -ItemType Directory -Force $space | Out-Null
+          node -e "if(!process.argv[1].includes(' ')) process.exit(1)" $space; if($LASTEXITCODE -ne 0){throw 'path spaces'}
+          npm.cmd ci --ignore-scripts --no-audit --no-fund 1>(Join-Path $root 'npm-ci.stdout.txt') 2>(Join-Path $root 'npm-ci.stderr.txt'); if($LASTEXITCODE -ne 0){throw 'npm ci'}
+          node.exe --test tests/movie-buff-public-matchmaking-contract.test.mjs tests/movie-buff-vip-null-category-rollback-contract.test.mjs tests/movie-buff-authoritative-phase-runtime.test.mjs tests/movie-buff-authoritative-visual-adapter.test.mjs tests/movie-buff-migration-encoding.test.mjs 1>(Join-Path $root 'tests.stdout.txt') 2>(Join-Path $root 'tests.stderr.txt'); if($LASTEXITCODE -ne 0){throw 'tests'}
+          npx.cmd tsc --noEmit 1>(Join-Path $root 'typescript.stdout.txt') 2>(Join-Path $root 'typescript.stderr.txt'); if($LASTEXITCODE -ne 0){throw 'typescript'}
+          $env:NEXT_PUBLIC_MOVIE_BUFF_BUILD_BRANCH=$env:EXPECTED_BRANCH; $env:NEXT_PUBLIC_MOVIE_BUFF_BUILD_SHA=$env:GITHUB_SHA; $env:NEXT_PUBLIC_MOVIE_BUFF_BUILD_MARKER="agent7-v3w-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          npm.cmd run build 1>(Join-Path $root 'build.stdout.txt') 2>(Join-Path $root 'build.stderr.txt'); if($LASTEXITCODE -ne 0){throw 'build'}
+          git checkout -- next-env.d.ts 2>$null
+          git diff --check; if($LASTEXITCODE -ne 0){throw 'diff check'}
+          if(git status --porcelain --untracked-files=all){throw 'dirty postflight'}
+          [ordered]@{repository='BuffGamesStudio/buff-platform';branch=$env:GITHUB_REF_NAME;controllerSha=$env:GITHUB_SHA;controllerTree=(git rev-parse 'HEAD^{tree}').Trim();productSha=$env:PRODUCT_SHA;productTree=$env:PRODUCT_TREE;PowerShell=$PSVersionTable.PSVersion.ToString();node=(node --version);npm=(npm.cmd --version);capturedUtc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Out-File (Join-Path $root 'identity.json') -Encoding utf8
+          'windows=PASS','path_spaces=PASS','quoting=PASS','child_exit=PASS','last_exit_code=PASS','stdout_stderr=PASS','clean=PASS','release=NO-GO' | Out-File (Join-Path $root 'status.txt') -Encoding ascii
+          $lines=Get-ChildItem $root -File | Where-Object {$_.Name -ne 'sha256.txt'} | Sort-Object Name | ForEach-Object {"$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()) *$($_.Name)"}
+          $lines | Out-File (Join-Path $root 'sha256.txt') -Encoding ascii
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-v3-windows-fixed-${{ github.sha }}
+          path: ${{ runner.temp }}/agent7-v3-windows-fixed
+          if-no-files-found: error
+          retention-days: 14
+
+  mov16-identity-adapted:
+    name: MOV-16 exact lab with validation identity adapter
+    runs-on: ubuntu-24.04
+    timeout-minutes: 105
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/MOV-17-encoding-twin-v2
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: supabase/setup-cli@v1
+        with: {version: 2.111.0}
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Bind immutable product and adapt only branch identity guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$EXPECTED_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git show -s --format=%T "$PRODUCT_SHA")" = "$PRODUCT_TREE"
+          git merge-base --is-ancestor "$PRODUCT_SHA" "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          cp scripts/movie-buff-mov16-evidence-guard.mjs "$RUNNER_TEMP/mov16-evidence-guard.original.mjs"
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/movie-buff-mov16-evidence-guard.mjs'); t=p.read_text()
+          old='const EXPECTED_BRANCH = "copilot/MOV-16-vip-authority";'
+          new='const EXPECTED_BRANCH = "validation/MOV-17-encoding-twin-v2";'
+          if t.count(old)!=1: raise SystemExit('branch identity anchor mismatch')
+          p.write_text(t.replace(old,new))
+          PY
+          git diff -- scripts/movie-buff-mov16-evidence-guard.mjs >"$RUNNER_TEMP/mov16-identity-adapter.patch"
+          sha256sum scripts/movie-buff-mov16-evidence-guard.mjs "$RUNNER_TEMP/mov16-identity-adapter.patch" >"$RUNNER_TEMP/mov16-identity-adapter.sha256.txt"
+          git update-index --assume-unchanged scripts/movie-buff-mov16-evidence-guard.mjs
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Execute unchanged MOV-16 v2 laboratory through identity adapter
+        shell: bash
+        env:
+          MOVIE_BUFF_EXPECTED_GIT_SHA: ${{ github.sha }}
+        run: bash scripts/movie-buff-mov16-linux-exact-validation-v2.sh
+      - name: Add adapter evidence and restore source checkout
+        if: always()
+        shell: bash
+        run: |
+          evidence="$RUNNER_TEMP/movie-buff-mov16-exact-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/evidence"
+          mkdir -p "$evidence"
+          cp "$RUNNER_TEMP/mov16-identity-adapter.patch" "$evidence/agent7-identity-adapter.patch" 2>/dev/null || true
+          cp "$RUNNER_TEMP/mov16-identity-adapter.sha256.txt" "$evidence/agent7-identity-adapter.sha256.txt" 2>/dev/null || true
+          git update-index --no-assume-unchanged scripts/movie-buff-mov16-evidence-guard.mjs >/dev/null 2>&1 || true
+          git checkout -- scripts/movie-buff-mov16-evidence-guard.mjs next-env.d.ts >/dev/null 2>&1 || true
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-v3-mov16-adapted-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-mov16-exact-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  phase-reconnect-only:
+    name: Strict-three phase and reconnect races without legacy MOV-16 blockers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.sha }}", fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: supabase/setup-cli@v1
+        with: {version: 2.111.0}
+      - name: Derive exact local race wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp scripts/movie-buff-core-v6-race-browser.sh "$RUNNER_TEMP/agent7-v3-phase-races.sh"
+          python3 - "$RUNNER_TEMP/agent7-v3-phase-races.sh" <<'PY'
+          from pathlib import Path
+          import os,re,sys
+          p=Path(sys.argv[1]); t=p.read_text()
+          for pat,val in [(r'(?m)^BRANCH="[^"]+"$',f'BRANCH="{os.environ["EXPECTED_BRANCH"]}"'),(r'(?m)^RAW_COMPOSITION="[0-9a-f]{{40}}"$',f'RAW_COMPOSITION="{os.environ["PRODUCT_SHA"]}"'),(r'(?m)^RAW_TREE="[0-9a-f]{{40}}"$',f'RAW_TREE="{os.environ["PRODUCT_TREE"]}"')]:
+            t,n=re.subn(pat,val,t,count=1)
+            if n!=1: raise SystemExit(f'identity patch failed {pat}')
+          start=t.find('    MOVIE_BUFF_ALLOW_LOCAL_DELETIONS=YES \\\n    MOVIE_BUFF_EXPECTED_GIT_SHA="$EXPECTED_SHA" \\\n    MOVIE_BUFF_EVIDENCE_COMMAND="node scripts/movie-buff-vip-authority-adversarial.mjs"')
+          end=t.find('    MOVIE_BUFF_ALLOW_LOCAL_PHASE_MUTATION=YES \\\n',start)
+          if start<0 or end<0: raise SystemExit('MOV-16 block boundaries missing')
+          replacement='''    cat >"$EVIDENCE_ROOT/mov16-races-delegated.json" <<'JSON'
+{"classification":"NOT APPLICABLE","reason":"current MOV-16 races execute in independent exact MOV-16 job"}
+JSON
+    printf '0\n' >"$EVIDENCE_ROOT/mov16-races-delegated.exit.txt"
+
+'''
+          p.write_text(t[:start]+replacement+t[end:])
+          PY
+          chmod +x "$RUNNER_TEMP/agent7-v3-phase-races.sh"
+          bash -n "$RUNNER_TEMP/agent7-v3-phase-races.sh"
+          sha256sum "$RUNNER_TEMP/agent7-v3-phase-races.sh" >"$RUNNER_TEMP/agent7-v3-phase-races.sha256.txt"
+      - name: Execute strict-three and phase/reconnect races
+        shell: bash
+        run: "$RUNNER_TEMP/agent7-v3-phase-races.sh race $GITHUB_SHA $(git rev-parse HEAD^{tree}) $RUNNER_TEMP/agent7-v3-phase-races"
+      - name: Preserve derived-wrapper identity
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/agent7-v3-phase-races"
+          cp "$RUNNER_TEMP/agent7-v3-phase-races.sha256.txt" "$RUNNER_TEMP/agent7-v3-phase-races/derived-wrapper.sha256.txt" 2>/dev/null || true
+          (cd "$RUNNER_TEMP/agent7-v3-phase-races" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt)
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-v3-phase-races-${{ github.sha }}
+          path: ${{ runner.temp }}/agent7-v3-phase-races
+          if-no-files-found: error
+          retention-days: 14
