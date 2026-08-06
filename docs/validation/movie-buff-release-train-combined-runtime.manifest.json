@@ -8,6 +8,7 @@
   "historicalBranchParent": "ac7d6a92cddffff49b87cd720145ab1a09dc0db6",
   "releaseTrainCutoffUtc": "2026-08-06T21:54:00Z",
   "executionRequestedUtc": "2026-08-06T23:00:00Z",
+  "dispatchAttemptUtc": "2026-08-06T23:12:00Z",
   "components": {
     "integration": "bf316a15a2120e32d8a32e479df2ae439081f9a1",
     "mov15": "48d44bb156b71060d1b9adcc7a2a3f014cf92060",
@@ -45,7 +46,8 @@
     "production": "NOT APPLICABLE"
   },
   "dispatch": {
-    "method": "registered-push-branch-fast-forward",
+    "method": "registered-push-branch-contents-api",
+    "attempt": 2,
     "classification": "REQUESTED"
   }
 }
