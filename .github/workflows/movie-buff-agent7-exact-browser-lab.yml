@@ -1,0 +1,252 @@
+name: Movie Buff Agent 7 exact-SHA ephemeral browser lab
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-agent7-browser-lab-f6ce058
+    paths:
+      - .github/workflows/movie-buff-agent7-exact-browser-lab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_REPOSITORY: BuffGamesStudio/buff-platform
+  TARGET_BRANCH: validation/movie-buff-full-candidate-v3-canonical-mov17
+  TARGET_SHA: f6ce05803567e71ab16752d583451721092a13ed
+  TARGET_TREE: 079eb809e32147fb2a16f8b8419c8c497e967cbc
+  TARGET_PARENT: bf316a15a2120e32d8a32e479df2ae439081f9a1
+  COMPONENT_PR79_HEAD: 85bf54b2cc05fcfe430562705709e8ab3737e2f4
+  COMPONENT_CLEANUP_COMMIT: 1e17ae9d134b595e7d97c617be7ca63f389068fc
+  COMPONENT_CANONICAL_MOV17_SOURCE: b6aa1b5bd8cf18770db0cac7bf3630a09a7d86b1
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  unmodified-full-journey-v2:
+    name: Unmodified candidate full journey v2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+
+    steps:
+      - name: Check out exact candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Install deterministic media tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Bind exact candidate and record static identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          identity="${RUNNER_TEMP}/movie-buff-agent7-controller"
+          mkdir -p "${identity}"
+          test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
+          test "$(git rev-parse HEAD^{tree})" = "${TARGET_TREE}"
+          test "$(git remote get-url origin)" = "https://github.com/${TARGET_REPOSITORY}"
+          git merge-base --is-ancestor "${TARGET_PARENT}" HEAD
+          test -z "$(git status --porcelain)"
+          node --check scripts/movie-buff-three-client-full-journey-v2.mjs
+          node --check scripts/movie-buff-three-client-full-journey-v3-runner.mjs
+          test "$(supabase --version)" = "2.111.0"
+          {
+            echo "repository=${TARGET_REPOSITORY}"
+            echo "branch=${TARGET_BRANCH}"
+            echo "sha=${TARGET_SHA}"
+            echo "tree=${TARGET_TREE}"
+            echo "integration_baseline=${TARGET_PARENT}"
+            echo "component_pr79_head=${COMPONENT_PR79_HEAD}"
+            echo "component_cleanup_commit=${COMPONENT_CLEANUP_COMMIT}"
+            echo "component_canonical_mov17_source=${COMPONENT_CANONICAL_MOV17_SOURCE}"
+            echo "component_mov15_head=UNRESOLVED"
+            echo "component_mov16_head=UNRESOLVED"
+            echo "component_mov18_head=UNRESOLVED"
+            echo "component_pr3_head=UNRESOLVED"
+            echo "component_pr5_head=UNRESOLVED"
+            echo "environment_classification=ephemeral-disposable-localhost"
+            echo "localhost_url=http://127.0.0.1:3001"
+            echo "server_start_command=npm run start -- --hostname 127.0.0.1 --port 3001"
+            echo "node_version=$(node --version)"
+            echo "npm_version=$(npm --version)"
+            echo "supabase_cli_version=$(supabase --version)"
+            echo "ffmpeg_version=$(ffmpeg -version | head -1)"
+            echo "operating_system=$(uname -a)"
+            echo "start_time_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "controller_workflow_run_id=${GITHUB_RUN_ID}"
+            echo "controller_commit=${GITHUB_SHA}"
+          } >"${identity}/identity.txt"
+          cat /etc/os-release >"${identity}/os-release.txt"
+          git show -s --format=fuller HEAD >"${identity}/candidate-commit.txt"
+          git status --porcelain=v1 >"${identity}/candidate-status.txt"
+
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Extract reviewed unmodified browser laboratory
+        shell: bash
+        run: |
+          set -euo pipefail
+          archived=".github/validation-archive/movie-buff-three-client-full-journey-v2.yml"
+          output="${RUNNER_TEMP}/movie-buff-agent7-execute.sh"
+          python3 - "${archived}" "${output}" <<'PY'
+          from pathlib import Path
+          import sys
+
+          source = Path(sys.argv[1])
+          output = Path(sys.argv[2])
+          lines = source.read_text(encoding="utf-8").splitlines()
+          marker = "- name: Execute disposable exact-SHA browser journey v2"
+          start = next(i for i, line in enumerate(lines) if line.strip() == marker)
+          run_line = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == "run: |")
+          run_indent = len(lines[run_line]) - len(lines[run_line].lstrip())
+          body = []
+          for line in lines[run_line + 1:]:
+              if line.strip() and len(line) - len(line.lstrip()) <= run_indent:
+                  break
+              body.append(line[run_indent + 2:] if line.strip() else "")
+          execute = "\n".join(body) + "\n"
+
+          pid_anchor = "            app_pid=$!\n"
+          pid_insert = """            app_pid=$!
+            echo "${app_pid}" >"${raw}/application.pid"
+            printf '%s\\n' 'npm run start -- --hostname 127.0.0.1 --port 3001' >"${raw}/server-start-command.txt"
+            ps -p "${app_pid}" -o pid=,ppid=,lstart=,args= >"${raw}/application-process.txt" 2>&1 || true
+"""
+          if execute.count(pid_anchor) != 1:
+              raise SystemExit("application PID anchor missing")
+          execute = execute.replace(pid_anchor, pid_insert)
+
+          health_anchor = "            echo \"${app_health}\" >\"${raw}/application-health.exit\"\n"
+          health_insert = """            echo "${app_health}" >"${raw}/application-health.exit"
+            ss -ltnp >"${raw}/listening-ports.txt" 2>&1 || true
+            curl --silent --show-error --dump-header "${raw}/sign-in.headers" http://127.0.0.1:3001/sign-in -o /dev/null || true
+"""
+          if execute.count(health_anchor) != 1:
+              raise SystemExit("application health anchor missing")
+          execute = execute.replace(health_anchor, health_insert)
+
+          version_anchor = "            playwright_exit=$?; echo \"${playwright_exit}\" >\"${raw}/playwright-install.exit\"\n"
+          version_insert = """            playwright_exit=$?; echo "${playwright_exit}" >"${raw}/playwright-install.exit"
+            if [ "${playwright_exit}" -eq 0 ]; then
+              (cd "${playwright_root}" && npx playwright --version) >"${raw}/playwright-version.txt" 2>&1
+              browser_path="$(node -e \"const {chromium}=require('${playwright_root}/node_modules/playwright');process.stdout.write(chromium.executablePath())\")"
+              printf '%s\\n' "${browser_path}" >"${raw}/browser-executable.txt"
+              "${browser_path}" --version >"${raw}/browser-version.txt" 2>&1 || true
+            fi
+"""
+          if execute.count(version_anchor) != 1:
+              raise SystemExit("Playwright version anchor missing")
+          execute = execute.replace(version_anchor, version_insert)
+
+          output.write_text(execute, encoding="utf-8")
+          PY
+          bash -n "${output}"
+          sha256sum "${archived}" scripts/movie-buff-three-client-full-journey-v2.mjs "${output}" \
+            >"${RUNNER_TEMP}/movie-buff-agent7-controller/laboratory-input-sha256.txt"
+
+      - name: Execute exact candidate browser journey
+        shell: bash
+        run: |
+          set -o pipefail
+          env \
+            GITHUB_REF_NAME="${TARGET_BRANCH}" \
+            GITHUB_SHA="${TARGET_SHA}" \
+            EXPECTED_BRANCH="${TARGET_BRANCH}" \
+            PARENT_SHA="${TARGET_PARENT}" \
+            bash "${RUNNER_TEMP}/movie-buff-agent7-execute.sh"
+
+      - name: Finalize Agent 7 evidence and scenario ledger
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          raw="${RUNNER_TEMP}/movie-buff-three-client-full-v2-raw"
+          identity="${RUNNER_TEMP}/movie-buff-agent7-controller"
+          mkdir -p "${evidence}/agent7-controller"
+          cp -a "${identity}/." "${evidence}/agent7-controller/" 2>/dev/null || true
+          if [ -d "${raw}" ]; then
+            mkdir -p "${evidence}/agent7-controller/raw"
+            cp -a "${raw}/." "${evidence}/agent7-controller/raw/" 2>/dev/null || true
+          fi
+          cat >"${evidence}/agent7-controller/scenario-ledger-initial.md" <<'EOF'
+          # Agent 7 scenario ledger
+
+          Classification is evidence-driven. This primary run executes only the exact checked-in unmodified v2 harness. A scenario not explicitly exercised by that harness remains UNKNOWN, regardless of related passing behavior.
+
+          - complete three-player automatic journey: PENDING_ARTIFACT_INSPECTION
+          - strict-three matchmaking / no 2+1 split: PENDING_ARTIFACT_INSPECTION
+          - private VIP lock/pass and aggregate-only visibility: PENDING_ARTIFACT_INSPECTION
+          - synchronized board / selector authority / transition / playback / answer / results / next round: PENDING_ARTIFACT_INSPECTION
+          - playback refresh: PENDING_ARTIFACT_INSPECTION
+          - playback offline reconnect: PENDING_ARTIFACT_INSPECTION
+          - refresh during Round Intro: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - refresh during VIP: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - refresh during board: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - refresh during results: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - reconnect immediately before VIP expiry: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - reconnect immediately after VIP expiry: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - concurrent reconnect and expiry finalization: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - selector disconnect: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - nonselector disconnect: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - duplicate expiry workers: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - browser back / forward: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - multiple tabs for one player: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - stale build/client rejection: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - clock skew: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - keyboard-only / modal focus / visible focus: UNKNOWN_NOT_FULLY_EXECUTED_BY_PRIMARY_HARNESS
+          - screen-reader names / responsive widths / reduced motion: PENDING_ARTIFACT_INSPECTION
+          - missing visual asset fallback: PENDING_ARTIFACT_INSPECTION
+          - WebGL failure: UNKNOWN_NOT_EXECUTED_BY_PRIMARY_HARNESS
+          - hydration / console / failed network / unhandled rejection: PENDING_ARTIFACT_INSPECTION
+          EOF
+          {
+            echo "finished_time_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hosted_staging=UNTOUCHED"
+            echo "production=UNTOUCHED"
+            echo "candidate_source_modified=NO"
+            echo "overall_candidate_classification=NO_GO_PREEXISTING_RED_GATES"
+          } >>"${evidence}/agent7-controller/identity.txt"
+          (
+            cd "${evidence}" || exit 1
+            find . -type f ! -name agent7-sha256.txt -print0 | sort -z | xargs -0 sha256sum >agent7-sha256.txt
+            sha256sum -c agent7-sha256.txt
+          )
+
+      - name: Upload Agent 7 exact browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-agent7-browser-${{ env.TARGET_SHA }}
+          path: ${{ runner.temp }}/movie-buff-three-client-full-v2
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify exact candidate postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
+          test "$(git rev-parse HEAD^{tree})" = "${TARGET_TREE}"
