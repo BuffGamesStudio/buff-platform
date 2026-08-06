@@ -2,10 +2,13 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 
-import { MovieBuffRiveCanvas } from "./MovieBuffRiveCanvas";
+import {
+  MovieBuffRiveCanvas,
+  type MovieBuffRiveFailureReason,
+} from "./MovieBuffRiveCanvas";
 import { MovieBuffStaticFallback } from "./MovieBuffStaticFallback";
 
-type AssetStatus = "checking" | "ready" | "failed";
+type RuntimeStatus = "idle" | "loading" | "ready" | "failed";
 
 export type MovieBuffRiveSurfaceProps = {
   assetSource: string;
@@ -19,9 +22,10 @@ export type MovieBuffRiveSurfaceProps = {
 /**
  * Fail-closed presentation boundary around the Rive WebGL2 canvas.
  *
- * Asset availability, reduced-motion preference, or renderer failure may only
- * change what is painted. They never change a Movie Buff phase, deadline,
- * selector, score, navigation target, or other authoritative state.
+ * Availability is never inferred from HTTP status. The surface is considered
+ * connected only after the real Rive loader reports successful initialization.
+ * Missing assets, parse failure, renderer failure, WebGL context loss, and
+ * reduced motion may only change what is painted; they cannot mutate gameplay.
  */
 export function MovieBuffRiveSurface({
   assetSource,
@@ -31,8 +35,10 @@ export function MovieBuffRiveSurface({
   canvasClassName,
   children,
 }: MovieBuffRiveSurfaceProps) {
-  const [assetStatus, setAssetStatus] = useState<AssetStatus>("checking");
-  const [reducedMotion, setReducedMotion] = useState(false);
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus>("idle");
+  const [failureReason, setFailureReason] =
+    useState<MovieBuffRiveFailureReason | null>(null);
+  const [reducedMotion, setReducedMotion] = useState<boolean | null>(null);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -43,75 +49,77 @@ export function MovieBuffRiveSurface({
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
     const normalizedSource = assetSource.trim();
+    setFailureReason(null);
 
     if (!normalizedSource) {
-      setAssetStatus("failed");
-      return () => controller.abort();
+      setRuntimeStatus("failed");
+      setFailureReason("asset_load_error");
+      return;
     }
 
-    setAssetStatus("checking");
-    void fetch(normalizedSource, {
-      method: "HEAD",
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then((response) => setAssetStatus(response.ok ? "ready" : "failed"))
-      .catch((error: unknown) => {
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
-          setAssetStatus("failed");
-        }
-      });
+    if (reducedMotion === false) {
+      setRuntimeStatus("loading");
+    } else {
+      setRuntimeStatus("idle");
+    }
+  }, [assetSource, reducedMotion]);
 
-    return () => controller.abort();
-  }, [assetSource]);
+  const renderStaticFallback = (
+    description: string,
+    reason: string,
+  ) => (
+    <MovieBuffStaticFallback title={label} description={description}>
+      <div data-movie-buff-static-fallback-reason={reason}>{children}</div>
+    </MovieBuffStaticFallback>
+  );
 
-  if (reducedMotion) {
-    return (
-      <MovieBuffStaticFallback
-        title={label}
-        description="Reduced-motion mode is active. The authoritative phase and deadline continue without decorative movement."
-      >
-        {children}
-      </MovieBuffStaticFallback>
+  if (reducedMotion === null) {
+    return renderStaticFallback(
+      "Motion preference is being resolved before any decorative animation is mounted.",
+      "motion_preference_pending",
     );
   }
 
-  if (assetStatus === "failed") {
-    return (
-      <MovieBuffStaticFallback
-        title={label}
-        description="The motion asset or renderer could not load. Gameplay continues from authoritative server state."
-      >
-        {children}
-      </MovieBuffStaticFallback>
+  if (reducedMotion) {
+    return renderStaticFallback(
+      "Reduced-motion mode is active. The authoritative phase and deadline continue without decorative movement.",
+      "reduced_motion",
+    );
+  }
+
+  if (runtimeStatus === "failed") {
+    return renderStaticFallback(
+      "The motion asset, parser, or renderer could not initialize. The authoritative server state remains visible in a static presentation.",
+      failureReason ?? "renderer_error",
     );
   }
 
   return (
     <div
       data-rive-source={assetSource}
-      data-rive-asset-status={assetStatus}
-      data-rive-runtime-status={assetStatus === "ready" ? "connected" : "checking"}
+      data-rive-asset-status={runtimeStatus === "ready" ? "parsed" : "unverified"}
+      data-rive-runtime-status={runtimeStatus === "ready" ? "connected" : "loading"}
       aria-label={label}
-      aria-busy={assetStatus === "checking"}
+      aria-busy={runtimeStatus !== "ready"}
       className="relative min-h-64 overflow-hidden rounded-3xl"
     >
-      {assetStatus === "ready" ? (
-        <MovieBuffRiveCanvas
-          assetSource={assetSource}
-          label={label}
-          artboard={artboard}
-          stateMachines={stateMachines}
-          className={canvasClassName}
-          onRuntimeError={() => setAssetStatus("failed")}
-        />
-      ) : null}
+      <MovieBuffRiveCanvas
+        assetSource={assetSource}
+        label={label}
+        artboard={artboard}
+        stateMachines={stateMachines}
+        className={canvasClassName}
+        onRuntimeReady={() => setRuntimeStatus("ready")}
+        onRuntimeError={(reason) => {
+          setFailureReason(reason);
+          setRuntimeStatus("failed");
+        }}
+      />
       <div className="relative z-10">{children}</div>
-      {assetStatus === "checking" ? (
+      {runtimeStatus !== "ready" ? (
         <span className="sr-only" role="status" aria-live="polite">
-          Checking cinematic asset availability.
+          Initializing the cinematic visual runtime. Static authoritative content remains available.
         </span>
       ) : null}
     </div>
