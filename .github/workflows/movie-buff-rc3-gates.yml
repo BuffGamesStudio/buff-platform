@@ -1,0 +1,124 @@
+name: Movie Buff immutable RC-3 gates
+
+on:
+  pull_request:
+    branches: [integration/movie-buff]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [validation/movie-buff-rc3-controller-20260806]
+    paths:
+      - ".github/workflows/movie-buff-rc3-gates.yml"
+      - "docs/release/movie-buff-rc-2026-08-06-01-rc3.manifest.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manifest-ledger:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PRODUCT_SHA: 6a2e352ccec53caafceeac0bb884f607bb6eb613
+      PRODUCT_TREE: 9dbeb29dab9ed6a579a59ed64409c92423529e0b
+      VALIDATOR_SHA: e2d14447d7036cf9dc645514c4713bd4d8e42db1
+      MANIFEST: docs/release/movie-buff-rc-2026-08-06-01-rc3.manifest.json
+      EVIDENCE: ${{ runner.temp }}/movie-buff-rc3-evidence
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Hash manifest and controller
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE}"
+          sha256sum "${MANIFEST}" | tee "${EVIDENCE}/composition-manifest.sha256"
+          cp "${MANIFEST}" "${EVIDENCE}/composition-manifest.json"
+          printf 'controller_sha=%s\ncontroller_tree=%s\nproduct_sha=%s\nproduct_tree=%s\nvalidator_sha=%s\n' \
+            "$(git rev-parse HEAD)" "$(git rev-parse HEAD^{tree})" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${VALIDATOR_SHA}" \
+            > "${EVIDENCE}/identity.txt"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+          path: product
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify product and generate full SQL ledger
+        run: |
+          set -euo pipefail
+          test "$(git -C product rev-parse HEAD)" = "${PRODUCT_SHA}"
+          test "$(git -C product rev-parse HEAD^{tree})" = "${PRODUCT_TREE}"
+          test "$(git -C product rev-parse HEAD:src/lib/game/movieBuffAuthoritativePhaseClient.ts)" = "be7c76af8ef151e3ee401c964f6d808857291366"
+          test "$(git -C product rev-parse HEAD:src/app/api/movie-buff/match/view/route.ts)" = "44f47d7f2aa3266d139a9c0e4246818b3f18e31d"
+          test "$(git -C product rev-parse HEAD:supabase/migrations/20260806214500_movie_buff_staging_security_independent_clearance.sql)" = "82afe9c28bf8c2ff058bd90a3dfae9ec599b126d"
+          test ! -e product/.github/workflows/movie-buff-mov19-validation.yml
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          from datetime import datetime,timezone
+          root=pathlib.Path('product')
+          def rows(folder):
+            out=[]
+            for p in sorted((root/folder).glob('*.sql')):
+              b=p.read_bytes(); rel=p.relative_to(root).as_posix()
+              blob=subprocess.check_output(['git','-C',str(root),'hash-object',rel],text=True).strip()
+              out.append({'path':rel,'gitBlob':blob,'sha256':hashlib.sha256(b).hexdigest(),'bytes':len(b)})
+            return out
+          migrations=rows('supabase/migrations'); rollbacks=rows('supabase/rollbacks')
+          rb={pathlib.Path(x['path']).name.removesuffix('.rollback.sql') for x in rollbacks}
+          scoped=[pathlib.Path(x['path']).stem for x in migrations if pathlib.Path(x['path']).stem.startswith(('2026080407','2026080408','2026080515','2026080516','20260806214500'))]
+          missing=sorted(set(scoped)-rb)
+          data={'schemaVersion':1,'generatedAtUtc':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),'productSha':os.environ['PRODUCT_SHA'],'productTree':os.environ['PRODUCT_TREE'],'validatorSha':os.environ['VALIDATOR_SHA'],'migrationCount':len(migrations),'rollbackCount':len(rollbacks),'migrations':migrations,'rollbacks':rollbacks,'releaseScopedMissingRollbacks':missing}
+          target=pathlib.Path(os.environ['EVIDENCE'],'migration-rollback-ledger.json'); target.write_text(json.dumps(data,indent=2)+'\n')
+          pathlib.Path(os.environ['EVIDENCE'],'release-gate.txt').write_text('FAIL\n' if missing else 'PASS\n')
+          print(json.dumps({'migrationCount':len(migrations),'rollbackCount':len(rollbacks),'missing':missing},indent=2))
+          PY
+      - name: Hash and upload evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          (cd "${EVIDENCE}" && find . -type f ! -name sha256.txt -printf '%P\0' | sort -z | xargs -0 sha256sum > sha256.txt && sha256sum -c sha256.txt)
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-rc3-manifest-ledger-${{ github.run_id }}
+          path: ${{ runner.temp }}/movie-buff-rc3-evidence
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce rollback completeness
+        if: always()
+        run: test "$(cat "${EVIDENCE}/release-gate.txt")" = PASS
+
+  source-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      PRODUCT_SHA: 6a2e352ccec53caafceeac0bb884f607bb6eb613
+      PRODUCT_TREE: 9dbeb29dab9ed6a579a59ed64409c92423529e0b
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: local-placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: local-placeholder-service-role-key
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+      MOVIE_BUFF_BUILD_SHA: 6a2e352ccec53caafceeac0bb884f607bb6eb613
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+      - run: test "$(git rev-parse HEAD)" = "${PRODUCT_SHA}" && test "$(git rev-parse HEAD^{tree})" = "${PRODUCT_TREE}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Focused contracts
+        run: node --test tests/movie-buff-lobby-auth-bootstrap.test.mjs tests/movie-buff-authoritative-phase-runtime.test.mjs tests/movie-buff-authoritative-visual-adapter.test.mjs tests/movie-buff-active-leave-boundary.test.mjs tests/movie-buff-current-hardening-reconciliation.test.mjs tests/movie-buff-public-matchmaking-contract.test.mjs tests/movie-buff-vip-authority.test.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npm run build
+      - name: Clean postflight
+        if: always()
+        run: test -z "$(git status --porcelain)"
