@@ -1,0 +1,615 @@
+name: Movie Buff Agent 7 current-head exact composition
+
+on:
+  push:
+    branches:
+      - validation/MOV-17-encoding-twin-v2
+    paths:
+      - .github/workflows/movie-buff-agent7-exact-composition.yml
+      - docs/validation/movie-buff-agent7-current-head.manifest.json
+      - docs/validation/movie-buff-agent7-current-head.md
+      - scripts/movie-buff-agent7-windows-digital-twin.ps1
+      - scripts/movie-buff-agent7-lobby-control-audit.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
+  PRODUCT_SHA: d70d758c730d32d71525c9381b9f98b80e0e1e83
+  PRODUCT_TREE: b0e9cfa1963d8fbca9c72dfe7fc64a9dbe2cbe8f
+  INTEGRATION_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
+  MOV15_SHA: 48d44bb156b71060d1b9adcc7a2a3f014cf92060
+  MOV16_SHA: 4a5e5591113b005f69fd34361becb2fd8d024897
+  MOV17_SHA: f17234debfb8942e1998306a12dc33301c1c5440
+  MOV18_SHA: 780153d0624a8186db1c628f6bd93906bca41a30
+  PR3_SHA: f692e82a5d524c950011e0300908c9cbec2389cb
+  PR5_SHA: 91eac0d55abb1a9568017df687e8395771d24780
+  PR12_SHA: f86689895cb810831d9b4d6346ee95eed9439495
+  V2_HARNESS_BLOB: 3b08204937f26af9287f303906509dc057b399dc
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  linux-source-build:
+    name: Linux identity, contracts, TypeScript, build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:55321
+      SUPABASE_URL: http://127.0.0.1:55321
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+      APP_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: local-anon-placeholder
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-publishable-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-service-role-placeholder
+      SUPABASE_SECRET_KEY: local-secret-placeholder
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Bind exact composition and ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/movie-buff-agent7-linux"
+          mkdir -p "$evidence"
+          echo "EVIDENCE_DIR=$evidence" >> "$GITHUB_ENV"
+          test "$GITHUB_REF_NAME" = "$EXPECTED_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git show -s --format=%T "$PRODUCT_SHA")" = "$PRODUCT_TREE"
+          git merge-base --is-ancestor "$PRODUCT_SHA" "$GITHUB_SHA"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          test "$(git rev-parse "$GITHUB_SHA:tests/movie-buff-public-matchmaking-contract.test.mjs")" = "$(git rev-parse "$MOV15_SHA:tests/movie-buff-public-matchmaking-contract.test.mjs")"
+
+          cat > "$evidence/components.tsv" <<EOF
+          integration	$INTEGRATION_SHA
+          pr3_visuals	$PR3_SHA
+          pr5_hardening	$PR5_SHA
+          mov15	$MOV15_SHA
+          mov16	$MOV16_SHA
+          mov17	$MOV17_SHA
+          mov18	$MOV18_SHA
+          pr12_encoding	$PR12_SHA
+          product	$PRODUCT_SHA
+          controller	$GITHUB_SHA
+          EOF
+
+          git diff --name-only "$PRODUCT_SHA" "$GITHUB_SHA" | sort > "$evidence/controller-delta.txt"
+          cat > "$evidence/allowed-controller-delta.txt" <<'EOF'
+          .github/workflows/movie-buff-agent7-exact-composition.yml
+          docs/validation/movie-buff-agent7-current-head.manifest.json
+          docs/validation/movie-buff-agent7-current-head.md
+          scripts/movie-buff-agent7-lobby-control-audit.mjs
+          scripts/movie-buff-agent7-windows-digital-twin.ps1
+          EOF
+          sort -o "$evidence/allowed-controller-delta.txt" "$evidence/allowed-controller-delta.txt"
+          diff -u "$evidence/allowed-controller-delta.txt" "$evidence/controller-delta.txt"
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const manifest = JSON.parse(fs.readFileSync('docs/validation/movie-buff-agent7-current-head.manifest.json', 'utf8'));
+          if (manifest.productComposition.sha !== process.env.PRODUCT_SHA) throw new Error('product SHA mismatch');
+          if (manifest.productComposition.treeSha !== process.env.PRODUCT_TREE) throw new Error('product tree mismatch');
+          if (manifest.initialLaboratoryClassification.release !== 'NO-GO') throw new Error('release must remain NO-GO');
+          NODE
+
+          {
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "branch=$GITHUB_REF_NAME"
+            echo "controller_sha=$GITHUB_SHA"
+            echo "controller_tree=$(git rev-parse HEAD^{tree})"
+            echo "product_sha=$PRODUCT_SHA"
+            echo "product_tree=$PRODUCT_TREE"
+            echo "captured_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "$evidence/identity.txt"
+
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run focused current-head contracts
+        id: tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test \
+            tests/movie-buff-public-matchmaking-contract.test.mjs \
+            tests/movie-buff-public-matchmaking-handoff.test.mjs \
+            tests/movie-buff-vip-authority.test.mjs \
+            tests/movie-buff-vip-finalize-contract.test.mjs \
+            tests/movie-buff-authoritative-phase-runtime.test.mjs \
+            tests/movie-buff-server-phase-machine.test.mjs \
+            tests/movie-buff-visual-runtime.test.mjs \
+            tests/movie-buff-migration-encoding.test.mjs \
+            tests/movie-buff-current-hardening-reconciliation.test.mjs \
+            tests/movie-buff-independent-security-validation.test.mjs \
+            tests/movie-buff-release-evidence-integrity.test.mjs \
+            2>&1 | tee "$EVIDENCE_DIR/focused-tests.log"
+
+      - name: Run TypeScript
+        id: typescript
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npx tsc --noEmit 2>&1 | tee "$EVIDENCE_DIR/typescript.log"
+
+      - name: Verify SQL encoding
+        id: encoding
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/movie-buff-migration-bom-only-check.mjs \
+            --baseline "$INTEGRATION_SHA" \
+            --current "$PRODUCT_SHA" \
+            2>&1 | tee "$EVIDENCE_DIR/migration-encoding.log"
+
+      - name: Production build with exact visible marker
+        id: build
+        continue-on-error: true
+        shell: bash
+        env:
+          NEXT_PUBLIC_MOVIE_BUFF_BUILD_BRANCH: ${{ env.EXPECTED_BRANCH }}
+          NEXT_PUBLIC_MOVIE_BUFF_BUILD_SHA: ${{ github.sha }}
+          NEXT_PUBLIC_MOVIE_BUFF_BUILD_MARKER: agent7-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee "$EVIDENCE_DIR/production-build.log"
+
+      - name: Finalize Linux evidence
+        if: always()
+        shell: bash
+        env:
+          TESTS: ${{ steps.tests.outcome }}
+          TYPESCRIPT: ${{ steps.typescript.outcome }}
+          ENCODING: ${{ steps.encoding.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+        run: |
+          set -u
+          git checkout -- next-env.d.ts >/dev/null 2>&1 || true
+          clean=PASS
+          git diff --check || clean=FAIL
+          test -z "$(git status --porcelain --untracked-files=all)" || clean=FAIL
+          classify() { test "$1" = success && printf PASS || printf FAIL; }
+          {
+            echo "exact_identity=PASS"
+            echo "ownership_matrix=PASS"
+            echo "focused_contracts=$(classify "$TESTS")"
+            echo "typescript=$(classify "$TYPESCRIPT")"
+            echo "migration_encoding=$(classify "$ENCODING")"
+            echo "production_build=$(classify "$BUILD")"
+            echo "clean_worktree=$clean"
+            echo "database=UNKNOWN"
+            echo "browser=UNKNOWN"
+            echo "release=NO-GO"
+          } > "$EVIDENCE_DIR/status.txt"
+          (cd "$EVIDENCE_DIR" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt)
+          test "$TESTS" = success
+          test "$TYPESCRIPT" = success
+          test "$ENCODING" = success
+          test "$BUILD" = success
+          test "$clean" = PASS
+
+      - name: Upload Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-linux-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-agent7-linux
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-command-lab:
+    name: Windows PowerShell command lab
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Execute checked-in Windows digital twin
+        shell: pwsh
+        run: |
+          ./scripts/movie-buff-agent7-windows-digital-twin.ps1 `
+            -ExpectedSha '${{ github.sha }}' `
+            -ProductSha '${{ env.PRODUCT_SHA }}' `
+            -ProductTree '${{ env.PRODUCT_TREE }}' `
+            -ExpectedBranch '${{ env.EXPECTED_BRANCH }}' `
+            -EvidenceRoot '${{ runner.temp }}\movie-buff-agent7-windows'
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-windows-${{ github.sha }}
+          path: ${{ runner.temp }}\movie-buff-agent7-windows
+          if-no-files-found: error
+          retention-days: 14
+
+  disposable-database-core:
+    name: Disposable database composition, rollback, reapply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Patch reviewed local-only database wrapper identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp scripts/movie-buff-core-v6-db.sh "$RUNNER_TEMP/agent7-core-db.sh"
+          python3 - "$RUNNER_TEMP/agent7-core-db.sh" <<'PY'
+          from pathlib import Path
+          import os, sys
+          path=Path(sys.argv[1]); text=path.read_text()
+          replacements={
+            'BRANCH="validation/movie-buff-core-v6"': f'BRANCH="{os.environ["EXPECTED_BRANCH"]}"',
+            'RAW_COMPOSITION="91b8b65f85d53a950eae15544af39e2efd108c5c"': f'RAW_COMPOSITION="{os.environ["PRODUCT_SHA"]}"',
+            'RAW_TREE="40d72195ced550771ad257054a6325c51f183a28"': f'RAW_TREE="{os.environ["PRODUCT_TREE"]}"',
+          }
+          for old,new in replacements.items():
+            if text.count(old) != 1: raise SystemExit(f'identity anchor mismatch: {old}')
+            text=text.replace(old,new)
+          path.write_text(text)
+          PY
+          chmod +x "$RUNNER_TEMP/agent7-core-db.sh"
+          bash -n "$RUNNER_TEMP/agent7-core-db.sh"
+      - name: Execute disposable database laboratory
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/agent7-core-db.sh" \
+            "$GITHUB_SHA" \
+            "$(git rev-parse HEAD^{tree})" \
+            "$RUNNER_TEMP/movie-buff-agent7-core-db"
+      - name: Upload database evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-core-db-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-agent7-core-db
+          if-no-files-found: error
+          retention-days: 14
+
+  disposable-database-mov17:
+    name: MOV-17 rollback and forward-reapply lab
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Execute MOV-17 local Supabase evidence wrapper
+        shell: bash
+        run: |
+          bash scripts/movie-buff-mov17-local-supabase-evidence.sh \
+            "$GITHUB_SHA" \
+            "$RUNNER_TEMP/movie-buff-agent7-mov17-db"
+      - name: Upload MOV-17 database evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-mov17-db-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-agent7-mov17-db
+          if-no-files-found: error
+          retention-days: 14
+
+  disposable-race-lab:
+    name: Strict-three, VIP, phase, reconnect races
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Patch reviewed race wrapper identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp scripts/movie-buff-core-v6-race-browser.sh "$RUNNER_TEMP/agent7-race.sh"
+          python3 - "$RUNNER_TEMP/agent7-race.sh" <<'PY'
+          from pathlib import Path
+          import os, sys, re
+          path=Path(sys.argv[1]); text=path.read_text()
+          text,n=re.subn(r'BRANCH="validation/movie-buff-core-v6"', f'BRANCH="{os.environ["EXPECTED_BRANCH"]}"', text, count=1)
+          if n != 1: raise SystemExit('branch anchor mismatch')
+          text,n=re.subn(r'RAW_COMPOSITION="[0-9a-f]{40}"', f'RAW_COMPOSITION="{os.environ["PRODUCT_SHA"]}"', text, count=1)
+          if n != 1: raise SystemExit('composition anchor mismatch')
+          text,n=re.subn(r'RAW_TREE="[0-9a-f]{40}"', f'RAW_TREE="{os.environ["PRODUCT_TREE"]}"', text, count=1)
+          if n != 1: raise SystemExit('tree anchor mismatch')
+          path.write_text(text)
+          PY
+          chmod +x "$RUNNER_TEMP/agent7-race.sh"
+          bash -n "$RUNNER_TEMP/agent7-race.sh"
+      - name: Execute disposable race laboratory
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/agent7-race.sh" race \
+            "$GITHUB_SHA" \
+            "$(git rev-parse HEAD^{tree})" \
+            "$RUNNER_TEMP/movie-buff-agent7-race"
+      - name: Upload race evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-race-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-agent7-race
+          if-no-files-found: error
+          retention-days: 14
+
+  ephemeral-three-client-browser:
+    name: Three authenticated clients, full journey, UI audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Install deterministic media tooling
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Install exact application dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute disposable full browser journey
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          evidence="$RUNNER_TEMP/movie-buff-agent7-browser"
+          raw="$RUNNER_TEMP/movie-buff-agent7-browser-raw"
+          work="$RUNNER_TEMP/movie-buff-agent7-browser-stack"
+          users="$RUNNER_TEMP/movie-buff-agent7-browser-users.json"
+          playwright_root="$RUNNER_TEMP/movie-buff-agent7-playwright"
+          fixture="public/media/movie-buff/browser-journey-fixture.mp4"
+          app_pid=""
+          overall=0
+          failure_step=""
+          build_marker="agent7-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$evidence" "$raw" "$work" "$(dirname "$fixture")"
+          cp -a supabase "$work/supabase"
+
+          python3 - "$work/supabase/config.toml" "agent7-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" <<'PY'
+          import pathlib,re,sys
+          p=pathlib.Path(sys.argv[1]); text=p.read_text(); project=sys.argv[2]
+          text,n=re.subn(r'(?m)^project_id\s*=\s*"[^"]+"\s*$',f'project_id = "{project}"',text,count=1)
+          text,m=re.subn(r'(?ms)(^\[db\.seed\]\s*.*?^enabled\s*=\s*)true(\s*$)',r'\1false\2',text,count=1)
+          if n != 1 or m != 1: raise SystemExit('ephemeral config rewrite failed')
+          p.write_text(text)
+          PY
+          test $? -eq 0 || { overall=1; failure_step=config; }
+
+          if [ "$overall" -eq 0 ]; then
+            (cd "$work" && supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor) >"$raw/supabase-start.log" 2>&1
+            test $? -eq 0 || { overall=1; failure_step=supabase-start; }
+          fi
+          if [ "$overall" -eq 0 ]; then
+            (cd "$work" && supabase db reset --local) >"$raw/database-reset.log" 2>&1
+            test $? -eq 0 || { overall=1; failure_step=database-reset; }
+          fi
+          if [ "$overall" -eq 0 ]; then
+            status_env="$(cd "$work" && supabase status -o env 2>"$raw/supabase-status.error")"
+            test $? -eq 0 || { overall=1; failure_step=supabase-status; }
+            if [ "$overall" -eq 0 ]; then
+              eval "$status_env"
+              api_url="${API_URL:-http://127.0.0.1:55321}"
+              publishable_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+              service_key="${SECRET_KEY:-${SERVICE_ROLE_KEY:-}}"
+              database_url="${DB_URL:-}"
+              test -n "$publishable_key" -a -n "$service_key" -a -n "$database_url" || { overall=1; failure_step=credential-shape; }
+            fi
+          fi
+          if [ "$overall" -eq 0 ]; then
+            psql "$database_url" -X -v ON_ERROR_STOP=1 \
+              -c "truncate table public.movie_categories, public.clips, public.movies, public.categories, public.content_types restart identity cascade" \
+              >"$raw/content-reset.log" 2>&1
+            test $? -eq 0 || { overall=1; failure_step=content-reset; }
+          fi
+          if [ "$overall" -eq 0 ]; then
+            psql "$database_url" -X -v ON_ERROR_STOP=1 -f scripts/generated/movie-buff-launch-bootstrap.sql \
+              >"$raw/content-bootstrap.log" 2>&1
+            test $? -eq 0 || { overall=1; failure_step=content-bootstrap; }
+          fi
+          if [ "$overall" -eq 0 ]; then
+            ffmpeg -hide_banner -loglevel error -y \
+              -f lavfi -i "testsrc2=size=640x360:rate=24:duration=60" \
+              -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=60" \
+              -c:v libx264 -preset ultrafast -crf 24 -pix_fmt yuv420p \
+              -c:a aac -b:a 128k -shortest -movflags +faststart "$fixture" \
+              >"$raw/fixture-generation.log" 2>&1
+            test $? -eq 0 || { overall=1; failure_step=fixture-generation; }
+          fi
+          if [ "$overall" -eq 0 ]; then
+            psql "$database_url" -X -v ON_ERROR_STOP=1 \
+              -c "update public.clips set clip_type='video', media_url='/media/movie-buff/browser-journey-fixture.mp4', source_url=null where is_active=true" \
+              >"$raw/fixture-bind.log" 2>&1
+            test $? -eq 0 || { overall=1; failure_step=fixture-bind; }
+          fi
+          if [ "$overall" -eq 0 ]; then
+            NEXT_PUBLIC_SUPABASE_URL="$api_url" \
+            SUPABASE_SERVICE_ROLE_KEY="$service_key" \
+            MOVIE_BUFF_LOCAL_USERS_OUTPUT="$users" \
+            MOVIE_BUFF_LOCAL_RUN_ID="agent7-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+              node scripts/movie-buff-core-v11-local-users.mjs >"$raw/local-users.log" 2>&1
+            test $? -eq 0 || { overall=1; failure_step=local-users; }
+          fi
+          if [ "$overall" -eq 0 ]; then
+            NEXT_PUBLIC_SUPABASE_URL="$api_url" \
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$publishable_key" \
+            SUPABASE_SERVICE_ROLE_KEY="$service_key" \
+            MOVIE_BUFF_APP_URL="http://127.0.0.1:3001" \
+            NEXT_PUBLIC_MOVIE_BUFF_BUILD_BRANCH="$EXPECTED_BRANCH" \
+            NEXT_PUBLIC_MOVIE_BUFF_BUILD_SHA="$GITHUB_SHA" \
+            NEXT_PUBLIC_MOVIE_BUFF_BUILD_MARKER="$build_marker" \
+              npm run build >"$raw/build.log" 2>&1
+            test $? -eq 0 || { overall=1; failure_step=build; }
+          fi
+          if [ "$overall" -eq 0 ]; then
+            NEXT_PUBLIC_SUPABASE_URL="$api_url" \
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$publishable_key" \
+            SUPABASE_SERVICE_ROLE_KEY="$service_key" \
+            MOVIE_BUFF_APP_URL="http://127.0.0.1:3001" \
+            NEXT_PUBLIC_MOVIE_BUFF_BUILD_BRANCH="$EXPECTED_BRANCH" \
+            NEXT_PUBLIC_MOVIE_BUFF_BUILD_SHA="$GITHUB_SHA" \
+            NEXT_PUBLIC_MOVIE_BUFF_BUILD_MARKER="$build_marker" \
+              npm run start -- --hostname 127.0.0.1 --port 3001 >"$raw/application.log" 2>&1 &
+            app_pid=$!
+            healthy=1
+            for attempt in $(seq 1 120); do
+              curl -fsS http://127.0.0.1:3001/sign-in >/dev/null 2>&1 && { healthy=0; break; }
+              sleep 1
+            done
+            test "$healthy" -eq 0 || { overall=1; failure_step=application-health; }
+          fi
+          if [ "$overall" -eq 0 ]; then
+            mkdir -p "$playwright_root"
+            (
+              cd "$playwright_root"
+              npm init -y >/dev/null 2>&1
+              npm install --ignore-scripts --no-audit --no-fund playwright@1.54.2
+              npx playwright install --with-deps chrome
+            ) >"$raw/playwright-install.log" 2>&1
+            test $? -eq 0 || { overall=1; failure_step=playwright-install; }
+          fi
+
+          audit_exit=99
+          journey_exit=99
+          if [ "$overall" -eq 0 ]; then
+            MOVIE_BUFF_EXPECTED_BRANCH="$EXPECTED_BRANCH" \
+            MOVIE_BUFF_EXPECTED_GIT_SHA="$GITHUB_SHA" \
+            MOVIE_BUFF_BUILD_MARKER="$build_marker" \
+            MOVIE_BUFF_APP_URL="http://127.0.0.1:3001" \
+            MOVIE_BUFF_LOCAL_USERS_OUTPUT="$users" \
+            MOVIE_BUFF_EVIDENCE_DIR="$evidence" \
+            PLAYWRIGHT_PACKAGE_ROOT="$playwright_root" \
+              node scripts/movie-buff-agent7-lobby-control-audit.mjs >"$raw/lobby-audit.log" 2>&1
+            audit_exit=$?
+
+            MOVIE_BUFF_V2_HARNESS_BLOB="$V2_HARNESS_BLOB" \
+            MOVIE_BUFF_EXPECTED_BRANCH="$EXPECTED_BRANCH" \
+            MOVIE_BUFF_EXPECTED_GIT_SHA="$GITHUB_SHA" \
+            MOVIE_BUFF_BUILD_MARKER="$build_marker" \
+            MOVIE_BUFF_PARENT_SHA="$PRODUCT_SHA" \
+            MOVIE_BUFF_APP_URL="http://127.0.0.1:3001" \
+            MOVIE_BUFF_LOCAL_USERS_OUTPUT="$users" \
+            MOVIE_BUFF_EVIDENCE_DIR="$evidence" \
+            PLAYWRIGHT_PACKAGE_ROOT="$playwright_root" \
+              node scripts/movie-buff-three-client-full-journey-v3-runner.mjs >"$raw/full-journey.log" 2>&1
+            journey_exit=$?
+            if [ "$audit_exit" -ne 0 ]; then overall=1; failure_step=lobby-control-audit; fi
+            if [ "$journey_exit" -ne 0 ]; then overall=1; test -n "$failure_step" || failure_step=full-journey; fi
+          fi
+
+          echo "$audit_exit" > "$evidence/lobby-audit.exit.txt"
+          echo "$journey_exit" > "$evidence/full-journey.exit.txt"
+          echo "$failure_step" > "$evidence/failure-step.txt"
+
+          if [ -n "$app_pid" ]; then
+            kill "$app_pid" >/dev/null 2>&1 || true
+            wait "$app_pid" >/dev/null 2>&1 || true
+          fi
+          (cd "$work" && supabase stop --no-backup) >"$raw/cleanup.log" 2>&1
+          cleanup_exit=$?
+          echo "$cleanup_exit" > "$evidence/cleanup.exit.txt"
+          test "$cleanup_exit" -eq 0 || overall=1
+
+          python3 - "$raw" "$evidence" <<'PY'
+          import pathlib,re,sys
+          raw=pathlib.Path(sys.argv[1]); out=pathlib.Path(sys.argv[2]); out.mkdir(exist_ok=True)
+          patterns=[
+            (r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[REDACTED_JWT]'),
+            (r'postgres(?:ql)?://[^\s]+','postgresql://[REDACTED_LOCAL_DB_URL]'),
+            (r'sb_(?:secret|publishable)_[A-Za-z0-9_-]+','[REDACTED_SUPABASE_KEY]'),
+            (r'(?i)(authorization:\s*bearer\s+)[A-Za-z0-9._-]+',r'\1[REDACTED]'),
+          ]
+          for file in raw.glob('*'):
+            if not file.is_file(): continue
+            text=file.read_text(errors='replace')
+            for pattern,replacement in patterns: text=re.sub(pattern,replacement,text)
+            (out/file.name).write_text(text)
+          PY
+
+          rm -rf "$work" "$users" "$playwright_root"
+          rm -f "$fixture"
+          rm -rf public/media/movie-buff/runtime-generated
+          git checkout -- next-env.d.ts >/dev/null 2>&1 || true
+          rmdir public/media/movie-buff public/media 2>/dev/null || true
+          git_status="$(git status --porcelain --untracked-files=all)"
+          printf '%s\n' "$git_status" > "$evidence/git-status.txt"
+          test -z "$git_status" || overall=1
+          {
+            echo "browser_environment=PASS"
+            echo "lobby_control_audit=$([ "$audit_exit" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "full_journey=$([ "$journey_exit" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "cleanup=$([ "$cleanup_exit" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "hosted=NOT APPLICABLE"
+            echo "release=NO-GO"
+          } > "$evidence/status.txt"
+          (cd "$evidence" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt)
+          exit "$overall"
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-browser-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-agent7-browser
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Final emergency cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -f public/media/movie-buff/browser-journey-fixture.mp4
+          rm -rf public/media/movie-buff/runtime-generated
+          git checkout -- next-env.d.ts >/dev/null 2>&1 || true
+          rmdir public/media/movie-buff public/media 2>/dev/null || true
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
