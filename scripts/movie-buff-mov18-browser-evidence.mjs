@@ -55,6 +55,14 @@ function sha256(filePath) {
   return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
+async function openPreview(page) {
+  await page.goto(`${parsedAppUrl.origin}/games/movie-buff/visual-runtime-preview`, {
+    waitUntil: "domcontentloaded",
+  });
+  await page.getByRole("heading", { name: "Movie Buff visual runtime" }).waitFor();
+  await page.locator("[data-movie-buff-canonical-adapter='passive']").waitFor();
+}
+
 async function captureViewport(browser, viewport, name) {
   const context = await browser.newContext({ viewport, reducedMotion: "no-preference" });
   const page = await context.newPage();
@@ -82,11 +90,7 @@ async function captureViewport(browser, viewport, name) {
     }
   });
 
-  await page.goto(`${parsedAppUrl.origin}/games/movie-buff/visual-runtime-preview`, {
-    waitUntil: "networkidle",
-  });
-  await page.getByRole("heading", { name: "Movie Buff visual runtime" }).waitFor();
-  await page.locator("[data-movie-buff-canonical-adapter='passive']").waitFor();
+  await openPreview(page);
 
   const selectorTile = page.getByRole("button", {
     name: /Preview Opening Shots, 100 points, Cold Open/i,
@@ -156,9 +160,7 @@ async function captureReducedMotion(browser) {
     evidence.pageErrors.push({ name: "reduced-motion", message: error.message });
   });
 
-  await page.goto(`${parsedAppUrl.origin}/games/movie-buff/visual-runtime-preview`, {
-    waitUntil: "networkidle",
-  });
+  await openPreview(page);
   await page
     .locator("[data-movie-buff-static-fallback-reason='reduced_motion']")
     .first()
@@ -180,9 +182,7 @@ async function captureReducedMotion(browser) {
 async function captureHighZoom(browser) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
-  await page.goto(`${parsedAppUrl.origin}/games/movie-buff/visual-runtime-preview`, {
-    waitUntil: "networkidle",
-  });
+  await openPreview(page);
   await page.evaluate(() => {
     document.documentElement.style.fontSize = "200%";
   });
