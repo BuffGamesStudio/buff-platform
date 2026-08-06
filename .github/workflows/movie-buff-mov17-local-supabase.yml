@@ -8,7 +8,7 @@ on:
     paths:
       - ".github/workflows/movie-buff-mov17-local-supabase.yml"
       - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
-      - "scripts/movie-buff-buster-leave-local-evidence.sh"
+      - "scripts/movie-buff-mov17-buster-leave-evidence.sh"
       - "scripts/movie-buff-redact-evidence.py"
       - "scripts/movie-buff-redact-evidence-test.py"
       - "supabase/config.toml"
@@ -18,15 +18,15 @@ on:
       - "supabase/tests/movie_buff_reconnect_buster_rollback_probe.sql"
       - "supabase/tests/movie_buff_match_start_handoff_test.sql"
       - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
-      - "supabase/tests/movie_buff_buster_leave_authority_repair_test.sql"
-      - "supabase/tests/movie_buff_buster_leave_authority_rollback_test.sql"
+      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_test.sql"
+      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_rollback_test.sql"
   pull_request:
     branches:
       - integration/movie-buff
     paths:
       - ".github/workflows/movie-buff-mov17-local-supabase.yml"
       - "scripts/movie-buff-mov17-local-supabase-evidence.sh"
-      - "scripts/movie-buff-buster-leave-local-evidence.sh"
+      - "scripts/movie-buff-mov17-buster-leave-evidence.sh"
       - "scripts/movie-buff-redact-evidence.py"
       - "scripts/movie-buff-redact-evidence-test.py"
       - "supabase/config.toml"
@@ -36,8 +36,8 @@ on:
       - "supabase/tests/movie_buff_reconnect_buster_rollback_probe.sql"
       - "supabase/tests/movie_buff_match_start_handoff_test.sql"
       - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
-      - "supabase/tests/movie_buff_buster_leave_authority_repair_test.sql"
-      - "supabase/tests/movie_buff_buster_leave_authority_rollback_test.sql"
+      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_test.sql"
+      - "supabase/tests/movie_buff_active_leave_and_buster_boundary_rollback_test.sql"
   workflow_dispatch:
 
 permissions:
@@ -112,7 +112,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(supabase --version)" = "2.111.0"
-          bash -n scripts/movie-buff-buster-leave-local-evidence.sh
+          bash -n scripts/movie-buff-mov17-buster-leave-evidence.sh
           python3 -B - <<'PY'
           from pathlib import Path
           for name in (
@@ -131,7 +131,7 @@ jobs:
         run: |
           set -uo pipefail
           set +e
-          bash scripts/movie-buff-buster-leave-local-evidence.sh \
+          bash scripts/movie-buff-mov17-buster-leave-evidence.sh \
             "${EXPECTED_SHA}" \
             "${EVIDENCE_DIR}"
           wrapper_exit=$?
