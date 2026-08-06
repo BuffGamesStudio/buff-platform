@@ -50,7 +50,7 @@ function Get-GitBlobSha256 {
     $copyTask = $process.StandardOutput.BaseStream.CopyToAsync($memory)
     $errorTask = $process.StandardError.ReadToEndAsync()
     $process.WaitForExit()
-    $copyTask.GetAwaiter().GetResult()
+    $null = $copyTask.GetAwaiter().GetResult()
     $stderr = $errorTask.GetAwaiter().GetResult()
 
     if ($process.ExitCode -ne 0) {
