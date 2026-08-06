@@ -1,0 +1,21 @@
+{
+  "markerVersion": 1,
+  "branch": "validation/movie-buff-integrated-candidate-v1",
+  "productCompositionSha": "2be790c88bc7f34969fe607bb78fd7535b621190",
+  "productTreeSha": "cbd8061c9c4da410e39363beee02bf53194ed53f",
+  "assembledAtUtc": "2026-08-06T04:17:55Z",
+  "buildTimestampUtc": null,
+  "buildTimestampStatus": "UNKNOWN until an exact deployment or workflow records it",
+  "releaseClassification": "NO-GO",
+  "components": {
+    "integration": "bf316a15a2120e32d8a32e479df2ae439081f9a1",
+    "pr3Visuals": "f692e82a5d524c950011e0300908c9cbec2389cb",
+    "pr5Hardening": "91eac0d55abb1a9568017df687e8395771d24780",
+    "mov15": "dc9804cdae03d8627a89980dbcdf2292d2055372",
+    "mov16": "4a5e5591113b005f69fd34361becb2fd8d024897",
+    "mov17": "f17234debfb8942e1998306a12dc33301c1c5440",
+    "mov18": "780153d0624a8186db1c628f6bd93906bca41a30",
+    "pr12Encoding": "f86689895cb810831d9b4d6346ee95eed9439495",
+    "mov19Validator": "46c549675d44f19c22a7786421cf2581dc22af3c"
+  }
+}
