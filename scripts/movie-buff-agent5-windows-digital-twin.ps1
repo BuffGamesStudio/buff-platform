@@ -69,8 +69,9 @@ if ($actualSha -ne $ExpectedSha) {
   throw "Wrong controller SHA. Expected $ExpectedSha, got $actualSha."
 }
 
-if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME -ne $ExpectedBranch) {
-  throw "Wrong branch. Expected $ExpectedBranch, got $($env:GITHUB_REF_NAME)."
+$actualBranch = if ($env:GITHUB_HEAD_REF) { $env:GITHUB_HEAD_REF } else { $env:GITHUB_REF_NAME }
+if ($actualBranch -and $actualBranch -ne $ExpectedBranch) {
+  throw "Wrong branch. Expected $ExpectedBranch, got $actualBranch."
 }
 
 $productTree = (git show -s --format=%T $ProductSha).Trim()
