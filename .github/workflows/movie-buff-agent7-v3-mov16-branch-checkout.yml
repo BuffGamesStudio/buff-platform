@@ -1,0 +1,63 @@
+name: Movie Buff Agent 7 v3 MOV-16 branch checkout
+
+on:
+  push:
+    branches: [validation/MOV-17-encoding-twin-v2]
+    paths: [.github/workflows/movie-buff-agent7-v3-mov16-branch-checkout.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
+  PRODUCT_SHA: d6a173aa585941db447ba53a6c387f49a5784bfd
+  PRODUCT_TREE: 197387d7bed0e36dff576f98c13f0fde14e22924
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  mov16-exact-composition:
+    name: Current MOV-16 exact composition laboratory
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/MOV-17-encoding-twin-v2
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: supabase/setup-cli@v1
+        with: {version: 2.111.0}
+      - name: Bind exact branch and product
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$EXPECTED_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git show -s --format=%T "$PRODUCT_SHA")" = "$PRODUCT_TREE"
+          git merge-base --is-ancestor "$PRODUCT_SHA" "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute unchanged current MOV-16 exact wrapper
+        shell: bash
+        env:
+          MOVIE_BUFF_EXPECTED_GIT_SHA: ${{ github.sha }}
+        run: bash scripts/movie-buff-mov16-linux-exact-validation-v2.sh
+      - name: Upload MOV-16 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-v3-mov16-branch-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-mov16-exact-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+          if-no-files-found: error
+          retention-days: 14
+      - name: Final clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git checkout -- next-env.d.ts >/dev/null 2>&1 || true
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
