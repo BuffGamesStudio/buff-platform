@@ -21,10 +21,12 @@ env:
   VALIDATION_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
   EXPECTED_BRANCH: validation/movie-buff-three-client-browser-current-v7
   PRODUCT_BRANCH: validation/movie-buff-current-head-browser-product-v7
-  PARENT_SHA: 558915d8c2f724aeefd59d4161b59ebe66ce9b94
-  PARENT_TREE: b2f4afe32edf532599e21d9c00e3399c1e3a645f
-  ARCHIVE_SOURCE_SHA: d90a7eb73ef724b4ef5205343e655c7597dcf978
-  ARCHIVE_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
+  PRODUCT_SHA: 558915d8c2f724aeefd59d4161b59ebe66ce9b94
+  PRODUCT_TREE: b2f4afe32edf532599e21d9c00e3399c1e3a645f
+  V2_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
+  V7_ARCHIVE_BLOB: 94b9165526992825e0830e8658d07ed24181e3bc
+  V2_HARNESS_BLOB: 3b08204937f26af9287f303906509dc057b399dc
+  V3_RUNNER_BLOB: 5a7bb9da3a578e76a3f23879e80988201808f75b
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
 
@@ -53,7 +55,7 @@ jobs:
         with:
           version: 2.111.0
 
-      - name: Bind immutable product and materialize reviewed laboratory
+      - name: Bind controller and materialize reviewed product laboratory
         shell: bash
         run: |
           set -euo pipefail
@@ -65,38 +67,40 @@ jobs:
             https://github.com/BuffGamesStudio/buff-platform|https://github.com/BuffGamesStudio/buff-platform.git) ;;
             *) exit 1 ;;
           esac
-          test "$(git rev-parse HEAD^)" = "${PARENT_SHA}"
-          test "$(git rev-parse "${PARENT_SHA}^{tree}")" = "${PARENT_TREE}"
+          test "$(git rev-parse HEAD^)" = "${PRODUCT_SHA}"
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
           test -z "$(git status --porcelain --untracked-files=all)"
 
           python3 - <<'PY'
           import os
           import subprocess
 
-          parent = os.environ["PARENT_SHA"]
+          product = os.environ["PRODUCT_SHA"]
           expected = {".github/workflows/movie-buff-agent7-three-client-browser-current-v7.yml"}
           actual = set(subprocess.check_output(
-              ["git", "diff", "--name-only", f"{parent}..HEAD"],
+              ["git", "diff", "--name-only", f"{product}..HEAD"],
               text=True,
           ).splitlines())
           if actual != expected:
               raise SystemExit(f"unexpected product-to-controller delta: {sorted(actual)}")
           PY
 
+          test "$(git rev-parse HEAD:.github/validation-archive/movie-buff-three-client-full-journey-v2.yml)" = "${V2_WORKFLOW_BLOB}"
+          test "$(git rev-parse HEAD:.github/validation-archive/movie-buff-three-client-full-journey-v7.yml)" = "${V7_ARCHIVE_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-three-client-full-journey-v2.mjs)" = "${V2_HARNESS_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-three-client-full-journey-v3-runner.mjs)" = "${V3_RUNNER_BLOB}"
           node --test tests/movie-buff-lobby-auth-bootstrap.test.mjs
           node --check scripts/movie-buff-three-client-full-journey-v2.mjs
+          node --check scripts/movie-buff-three-client-full-journey-v3-runner.mjs
           node --check scripts/movie-buff-core-v11-local-users.mjs
 
-          git fetch --no-tags --depth=1 origin "${ARCHIVE_SOURCE_SHA}"
-          test "$(git rev-parse "${ARCHIVE_SOURCE_SHA}:.github/validation-archive/movie-buff-three-client-full-journey-v2.yml")" = "${ARCHIVE_WORKFLOW_BLOB}"
-          git show "${ARCHIVE_SOURCE_SHA}:.github/validation-archive/movie-buff-three-client-full-journey-v2.yml" > "${RUNNER_TEMP}/agent7-reviewed-lab.yml"
-
-          python3 - "${RUNNER_TEMP}" "${RUNNER_TEMP}/agent7-reviewed-lab.yml" <<'PY'
+          python3 - "${RUNNER_TEMP}" <<'PY'
           from pathlib import Path
           import sys
 
           output = Path(sys.argv[1])
-          lines = Path(sys.argv[2]).read_text(encoding="utf-8").splitlines()
+          archive = Path(".github/validation-archive/movie-buff-three-client-full-journey-v2.yml")
+          lines = archive.read_text(encoding="utf-8").splitlines()
 
           def extract(step_name: str) -> str:
               marker = f"- name: {step_name}"
@@ -118,10 +122,94 @@ jobs:
           preflight = extract("Bind exact source and validate harness")
           execute = extract("Execute disposable exact-SHA browser journey v2")
 
+          source = Path("scripts/movie-buff-three-client-full-journey-v2.mjs").read_text(
+              encoding="utf-8"
+          )
+
+          intro_anchor = '''    const noVip = page.locator("button").filter({ hasText: /^No VIP/ });
+    await noVip.waitFor({ state: "visible", timeout: 30_000 });
+    const snapshot = await page.evaluate(() => {
+      const body = document.body.innerText.replace(/\\s+/g, " ");
+      const match = body.match(/Server Countdown\\s+(\\d+)/i);
+      return { privateVipVisible: body.includes("Private VIP Selection"), countdown: match ? Number(match[1]) : null };
+    });'''
+          intro_replacement = '''    await page.waitForFunction(() => {
+      const body = document.body.innerText.replace(/\\s+/g, " ");
+      const match = body.match(/Server Countdown\\s+(\\d+)/i);
+      return /private vip selection/i.test(body)
+        && Boolean(match)
+        && Number(match?.[1] ?? 0) > 0;
+    }, null, { timeout: 30_000 });
+    const noVip = page.locator("button").filter({ hasText: /^No VIP/ });
+    await noVip.waitFor({ state: "visible", timeout: 30_000 });
+    const snapshot = await page.evaluate(() => {
+      const body = document.body.innerText.replace(/\\s+/g, " ");
+      const match = body.match(/Server Countdown\\s+(\\d+)/i);
+      return { privateVipVisible: /private vip selection/i.test(body), countdown: match ? Number(match[1]) : null };
+    });'''
+          if intro_anchor not in source:
+              raise SystemExit("Round Intro stabilization anchor missing")
+          derived = source.replace(intro_anchor, intro_replacement, 1)
+
+          legacy_route = "/\\/games\\/movie-buff\\/board\\?/"
+          canonical_route = "/\\/games\\/movie-buff\\/board-preview\\?/"
+          if derived.count(legacy_route) != 2:
+              raise SystemExit("expected exactly two legacy board route assertions")
+          derived = derived.replace(legacy_route, canonical_route)
+
+          return_anchor = '''  await screenshotAll("board-return");
+
+  await pages[0].goto(`${target.origin}/games/movie-buff/visual-runtime-preview`, { waitUntil: "domcontentloaded", timeout: 60_000 });'''
+          return_replacement = '''  await screenshotAll("board-return");
+
+  await Promise.all(pages.map(async (page, index) => {
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 });
+    await page.waitForURL(/\\/games\\/movie-buff\\/board-preview\\?/, { timeout: 60_000 });
+    await assertMarker(page, index + 1);
+  }));
+  const persistedUsedTiles = await Promise.all(pages.map((page) => page.evaluate(() => {
+    const complete = [...document.querySelectorAll("button")].filter((button) => button.textContent?.includes("Scene Complete"));
+    return {
+      count: complete.length,
+      disabled: complete.filter((button) => button.disabled).length,
+      buster: complete.filter((button) => button.textContent?.includes("Buster slate stamped")).length,
+    };
+  })));
+  assert.ok(
+    persistedUsedTiles.every((item) => item.count >= 1 && item.disabled === item.count && item.buster >= 1),
+    JSON.stringify(persistedUsedTiles),
+  );
+  pass("all-three-refresh-preserves-used-tile-buster", { persistedUsedTiles });
+  await screenshotAll("board-return-all-three-refreshed");
+
+  await pages[0].goto(`${target.origin}/games/movie-buff/visual-runtime-preview`, { waitUntil: "domcontentloaded", timeout: 60_000 });'''
+          if return_anchor not in derived:
+              raise SystemExit("all-three board-return persistence anchor missing")
+          derived = derived.replace(return_anchor, return_replacement, 1)
+
+          fallback_anchor = '''  await pages[0].getByText("The motion asset or renderer could not load", { exact: false }).waitFor({ timeout: 60_000 });'''
+          fallback_replacement = '''  const fallbackMessages = pages[0].getByText("The motion asset or renderer could not load", { exact: false });
+  const fallbackCount = await fallbackMessages.count();
+  assert.ok(fallbackCount >= 2, `expected Curtain and Buster fallback surfaces, got ${fallbackCount}`);
+  await Promise.all(Array.from({ length: fallbackCount }, (_, index) =>
+    fallbackMessages.nth(index).waitFor({ state: "visible", timeout: 60_000 })
+  ));'''
+          if fallback_anchor not in derived:
+              raise SystemExit("scoped fallback assertion anchor missing")
+          derived = derived.replace(fallback_anchor, fallback_replacement, 1)
+
+          derived_path = output / "movie-buff-three-client-current-v7.mjs"
+          derived_path.write_text(derived, encoding="utf-8")
+
           execute = execute.replace(
               'git status --porcelain >"${raw}/git-status-before-repair.txt"',
               'git status --porcelain --untracked-files=all >"${raw}/git-status-before-repair.txt"',
           )
+          command_anchor = 'node scripts/movie-buff-three-client-full-journey-v2.mjs >"${raw}/three-client-browser-v2.log" 2>&1'
+          command_replacement = 'node "${RUNNER_TEMP}/movie-buff-three-client-current-v7.mjs" >"${raw}/three-client-browser-v2.log" 2>&1'
+          if command_anchor not in execute:
+              raise SystemExit("browser command anchor missing")
+          execute = execute.replace(command_anchor, command_replacement, 1)
 
           old_shape = "\n".join([
               'allowed={"next-env.d.ts",fixture}',
@@ -161,69 +249,53 @@ jobs:
               raise SystemExit("runtime-generated cleanup anchor missing")
           execute = execute.replace(cleanup_anchor, cleanup_replacement)
 
-          identity_replacements = {
-              'NEXT_PUBLIC_MOVIE_BUFF_BUILD_BRANCH="${GITHUB_REF_NAME}"':
-                  'NEXT_PUBLIC_MOVIE_BUFF_BUILD_BRANCH="${PRODUCT_BRANCH}"',
-              'NEXT_PUBLIC_MOVIE_BUFF_BUILD_SHA="${GITHUB_SHA}"':
-                  'NEXT_PUBLIC_MOVIE_BUFF_BUILD_SHA="${PARENT_SHA}"',
-              'MOVIE_BUFF_EXPECTED_BRANCH="${EXPECTED_BRANCH}"':
-                  'MOVIE_BUFF_EXPECTED_BRANCH="${PRODUCT_BRANCH}"',
-              'MOVIE_BUFF_EXPECTED_GIT_SHA="${GITHUB_SHA}"':
-                  'MOVIE_BUFF_EXPECTED_GIT_SHA="${PARENT_SHA}"',
-          }
-          for old, new in identity_replacements.items():
-              if old not in execute:
-                  raise SystemExit(f"product identity anchor missing: {old}")
-              execute = execute.replace(old, new)
-
-          transformed = []
-          marker_count = 0
-          for line in execute.splitlines():
-              transformed.append(line)
-              if line.strip() == 'NEXT_PUBLIC_MOVIE_BUFF_BUILD_MARKER="${build_marker}" \\':
-                  indent = line[:len(line) - len(line.lstrip())]
-                  transformed.append(
-                      indent + 'NEXT_PUBLIC_MOVIE_BUFF_SOURCE_SHA="${PARENT_SHA}" \\'
-                  )
-                  transformed.append(indent + 'GITHUB_SHA="${PARENT_SHA}" \\')
-                  marker_count += 1
-          if marker_count != 2:
-              raise SystemExit(f"expected two build/runtime identity markers, got {marker_count}")
-          execute = "\n".join(transformed) + "\n"
-
           required = [
               "--untracked-files=all",
+              "movie-buff-three-client-current-v7.mjs",
               'allowed_prefixes=("public/media/movie-buff/runtime-generated/",)',
               "rm -rf public/media/movie-buff/runtime-generated",
-              'NEXT_PUBLIC_MOVIE_BUFF_BUILD_SHA="${PARENT_SHA}"',
-              'MOVIE_BUFF_EXPECTED_GIT_SHA="${PARENT_SHA}"',
-              'NEXT_PUBLIC_MOVIE_BUFF_SOURCE_SHA="${PARENT_SHA}"',
-              'GITHUB_SHA="${PARENT_SHA}"',
           ]
           for marker in required:
               if marker not in execute:
                   raise SystemExit(f"missing transformed marker: {marker}")
 
-          (output / "agent7-preflight.sh").write_text(preflight, encoding="utf-8")
-          (output / "agent7-execute.sh").write_text(execute, encoding="utf-8")
+          (output / "product-preflight.sh").write_text(preflight, encoding="utf-8")
+          (output / "product-execute.sh").write_text(execute, encoding="utf-8")
           PY
 
-          bash -n "${RUNNER_TEMP}/agent7-preflight.sh"
-          bash -n "${RUNNER_TEMP}/agent7-execute.sh"
+          node --check "${RUNNER_TEMP}/movie-buff-three-client-current-v7.mjs"
+          bash -n "${RUNNER_TEMP}/product-preflight.sh"
+          bash -n "${RUNNER_TEMP}/product-execute.sh"
 
-      - name: Execute reviewed preflight
+      - name: Detach to exact immutable product
         shell: bash
         run: |
-          GITHUB_SHA="${CONTROLLER_SHA}" \
-          GITHUB_REF_NAME="${EXPECTED_BRANCH}" \
-            bash "${RUNNER_TEMP}/agent7-preflight.sh"
+          set -euo pipefail
+          git checkout --detach "${PRODUCT_SHA}"
+          test "$(git rev-parse HEAD)" = "${PRODUCT_SHA}"
+          test "$(git rev-parse HEAD^{tree})" = "${PRODUCT_TREE}"
+          test -z "$(git status --porcelain --untracked-files=all)"
 
-      - name: Install exact dependency graph
+      - name: Execute reviewed product preflight
+        shell: bash
+        run: |
+          GITHUB_SHA="${PRODUCT_SHA}" \
+          GITHUB_REF_NAME="${PRODUCT_BRANCH}" \
+          EXPECTED_BRANCH="${PRODUCT_BRANCH}" \
+          PARENT_SHA="${PRODUCT_SHA}" \
+            bash "${RUNNER_TEMP}/product-preflight.sh"
+
+      - name: Install exact product dependency graph
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Execute disposable three-client journey
+      - name: Execute disposable three-client product journey
         shell: bash
-        run: bash "${RUNNER_TEMP}/agent7-execute.sh"
+        run: |
+          GITHUB_SHA="${PRODUCT_SHA}" \
+          GITHUB_REF_NAME="${PRODUCT_BRANCH}" \
+          EXPECTED_BRANCH="${PRODUCT_BRANCH}" \
+          PARENT_SHA="${PRODUCT_SHA}" \
+            bash "${RUNNER_TEMP}/product-execute.sh"
 
       - name: Bind, redact-scan, and rehash exact evidence
         if: always()
@@ -233,11 +305,11 @@ jobs:
           evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
           mkdir -p "${evidence}"
           {
-            echo "product_sha=${PARENT_SHA}"
-            echo "product_tree=${PARENT_TREE}"
+            echo "product_sha=${PRODUCT_SHA}"
+            echo "product_tree=${PRODUCT_TREE}"
             echo "product_branch=${PRODUCT_BRANCH}"
-            echo "controller_sha=$(git rev-parse HEAD)"
-            echo "controller_tree=$(git rev-parse HEAD^{tree})"
+            echo "controller_sha=${CONTROLLER_SHA}"
+            echo "controller_tree=$(git rev-parse "${CONTROLLER_SHA}^{tree}")"
             echo "controller_branch=${EXPECTED_BRANCH}"
             echo "workflow_event=${GITHUB_EVENT_NAME}"
             echo "workflow_run_id=${GITHUB_RUN_ID}"
@@ -287,9 +359,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Verify clean postflight
+      - name: Verify clean product postflight
         if: always()
         shell: bash
         run: |
+          test "$(git rev-parse HEAD)" = "${PRODUCT_SHA}"
+          test "$(git rev-parse HEAD^{tree})" = "${PRODUCT_TREE}"
           git diff --check
           test -z "$(git status --porcelain --untracked-files=all)"
