@@ -1,0 +1,157 @@
+name: Movie Buff RC-2 exact PR gates
+
+on:
+  pull_request:
+    branches:
+      - integration/movie-buff
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manifest-and-product-ledger:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PRODUCT_SHA: 2c36032f32ed84711312045d65506af1313e3f40
+      PRODUCT_TREE: 9fe62aba99c4710a59e39f60b8ecd5a5a70ae9c0
+      VALIDATOR_SHA: e2d14447d7036cf9dc645514c4713bd4d8e42db1
+      MANIFEST_PATH: docs/release/movie-buff-rc-2026-08-06-01-rc2.manifest.json
+      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-rc2-pr-evidence
+
+    steps:
+      - name: Check out controller
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Hash controller manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          test -f "${MANIFEST_PATH}"
+          sha256sum "${MANIFEST_PATH}" | tee "${EVIDENCE_DIR}/composition-manifest.sha256"
+          cp "${MANIFEST_PATH}" "${EVIDENCE_DIR}/composition-manifest.json"
+          {
+            echo "controller_sha=$(git rev-parse HEAD)"
+            echo "controller_tree=$(git rev-parse HEAD^{tree})"
+            echo "product_sha=${PRODUCT_SHA}"
+            echo "product_tree=${PRODUCT_TREE}"
+            echo "validator_sha=${VALIDATOR_SHA}"
+          } > "${EVIDENCE_DIR}/identity.txt"
+          test -z "$(git status --porcelain)"
+
+      - name: Check out exact product
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+          path: product
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify product and generate full ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C product rev-parse HEAD)" = "${PRODUCT_SHA}"
+          test "$(git -C product rev-parse HEAD^{tree})" = "${PRODUCT_TREE}"
+          test -z "$(git -C product status --porcelain)"
+          (
+            cd product
+            test "$(git rev-parse HEAD:src/app/api/movie-buff/match/view/route.ts)" = "44f47d7f2aa3266d139a9c0e4246818b3f18e31d"
+            test "$(git rev-parse HEAD:src/lib/game/movieBuffAuthoritativePhaseClient.ts)" = "505ce6445c0b9bff1c80e62807c860d25000e257"
+            test "$(git rev-parse HEAD:src/app/games/movie-buff/lobby/LobbyAuthBootstrap.tsx)" = "0b8f21a92c6a739e3bd8f853b9e4426f5c5aa957"
+            test "$(git rev-parse HEAD:supabase/migrations/20260806214500_movie_buff_staging_security_independent_clearance.sql)" = "82afe9c28bf8c2ff058bd90a3dfae9ec599b126d"
+            test ! -e .github/workflows/movie-buff-mov19-validation.yml
+            test ! -e tests/movie-buff-independent-security-validation.test.mjs
+          )
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          from datetime import datetime, timezone
+
+          root = pathlib.Path("product")
+          def collect(folder):
+              rows=[]
+              for p in sorted((root/folder).glob("*.sql")):
+                  b=p.read_bytes()
+                  blob=subprocess.check_output(["git","-C",str(root),"hash-object",str(p.relative_to(root))],text=True).strip()
+                  rows.append({"path":p.relative_to(root).as_posix(),"gitBlob":blob,"sha256":hashlib.sha256(b).hexdigest(),"bytes":len(b)})
+              return rows
+          migrations=collect("supabase/migrations")
+          rollbacks=collect("supabase/rollbacks")
+          rb={pathlib.Path(x["path"]).name.removesuffix(".rollback.sql") for x in rollbacks}
+          scoped=[pathlib.Path(x["path"]).stem for x in migrations if pathlib.Path(x["path"]).stem.startswith(("2026080407","2026080408","2026080515","2026080516","20260806214500"))]
+          missing=sorted(set(scoped)-rb)
+          out={"schemaVersion":1,"generatedAtUtc":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),"productSha":os.environ["PRODUCT_SHA"],"productTree":os.environ["PRODUCT_TREE"],"validatorSha":os.environ["VALIDATOR_SHA"],"migrationCount":len(migrations),"rollbackCount":len(rollbacks),"migrations":migrations,"rollbacks":rollbacks,"releaseScopedMissingRollbacks":missing}
+          target=pathlib.Path(os.environ["EVIDENCE_DIR"],"migration-rollback-ledger.json")
+          target.write_text(json.dumps(out,indent=2)+"\n",encoding="utf-8")
+          pathlib.Path(os.environ["EVIDENCE_DIR"],"release-gate.txt").write_text("FAIL\n" if missing else "PASS\n",encoding="utf-8")
+          print(json.dumps({"migrationCount":len(migrations),"rollbackCount":len(rollbacks),"missing":missing},indent=2))
+          PY
+
+      - name: Hash portable evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -type f ! -name sha256.txt -printf '%P\0' | sort -z | xargs -0 sha256sum > sha256.txt
+            sha256sum -c sha256.txt
+          )
+
+      - name: Upload manifest and ledger
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-rc2-manifest-ledger-${{ github.run_id }}
+          path: ${{ runner.temp }}/movie-buff-rc2-pr-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce rollback completeness
+        if: always()
+        shell: bash
+        run: test "$(cat "${EVIDENCE_DIR}/release-gate.txt")" = "PASS"
+
+  source-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      PRODUCT_SHA: 2c36032f32ed84711312045d65506af1313e3f40
+      PRODUCT_TREE: 9fe62aba99c4710a59e39f60b8ecd5a5a70ae9c0
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: local-placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: local-placeholder-service-role-key
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+      MOVIE_BUFF_BUILD_SHA: 2c36032f32ed84711312045d65506af1313e3f40
+      NODE_OPTIONS: --max-old-space-size=4096
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+      - run: |
+          test "$(git rev-parse HEAD)" = "${PRODUCT_SHA}"
+          test "$(git rev-parse HEAD^{tree})" = "${PRODUCT_TREE}"
+          test -z "$(git status --porcelain)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Focused contracts
+        run: node --test tests/movie-buff-lobby-auth-bootstrap.test.mjs tests/movie-buff-authoritative-phase-runtime.test.mjs tests/movie-buff-authoritative-visual-adapter.test.mjs tests/movie-buff-current-hardening-reconciliation.test.mjs tests/movie-buff-public-matchmaking-contract.test.mjs tests/movie-buff-vip-authority.test.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npm run build
+      - name: Clean postflight
+        if: always()
+        run: test -z "$(git status --porcelain)"
