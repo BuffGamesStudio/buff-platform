@@ -4,17 +4,10 @@ on:
   push:
     branches:
       - validation/movie-buff-integrated-candidate-v1
-  pull_request:
-    branches:
-      - integration/movie-buff
   workflow_dispatch:
 
 permissions:
   contents: read
-
-concurrency:
-  group: agent5-movie-buff-candidate-${{ github.ref }}
-  cancel-in-progress: false
 
 env:
   EXPECTED_BRANCH: validation/movie-buff-integrated-candidate-v1
@@ -29,7 +22,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-agent5-linux-evidence
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       SUPABASE_URL: http://127.0.0.1:54321
       NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
@@ -51,17 +43,17 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Verify repository, branch, SHA, product tree, and clean checkout
+      - name: Initialize external evidence and verify exact identity
         shell: bash
         run: |
           set -euo pipefail
+          EVIDENCE_DIR="$RUNNER_TEMP/movie-buff-agent5-linux-evidence"
+          echo "EVIDENCE_DIR=$EVIDENCE_DIR" >> "$GITHUB_ENV"
           mkdir -p "$EVIDENCE_DIR"
           remote="$(git remote get-url origin)"
           [[ "$remote" =~ BuffGamesStudio/buff-platform(\.git)?$ ]] || { echo 'Wrong repository remote'; exit 1; }
-          [[ "$(git rev-parse HEAD)" == "${GITHUB_SHA}" ]] || { echo 'Controller SHA mismatch'; exit 1; }
-          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
-            [[ "${GITHUB_REF_NAME}" == "$EXPECTED_BRANCH" ]] || { echo 'Wrong branch'; exit 1; }
-          fi
+          [[ "$GITHUB_REF_NAME" == "$EXPECTED_BRANCH" ]] || { echo 'Wrong branch'; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]] || { echo 'Controller SHA mismatch'; exit 1; }
           git cat-file -e "${PRODUCT_SHA}^{commit}"
           [[ "$(git show -s --format=%T "$PRODUCT_SHA")" == "$PRODUCT_TREE" ]] || { echo 'Product tree mismatch'; exit 1; }
           [[ -z "$(git status --porcelain --untracked-files=all)" ]] || { echo 'Dirty checkout'; exit 1; }
@@ -75,7 +67,7 @@ jobs:
             echo "captured_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } | tee "$EVIDENCE_DIR/identity.txt"
 
-      - name: Verify manifest and source marker identities
+      - name: Verify manifest, marker, and NO-GO classification
         shell: bash
         run: |
           set -euo pipefail
@@ -83,20 +75,12 @@ jobs:
           const fs = require('node:fs');
           const manifest = JSON.parse(fs.readFileSync('docs/validation/movie-buff-integrated-candidate-v1.manifest.json', 'utf8'));
           const marker = JSON.parse(fs.readFileSync('public/movie-buff-build-marker.json', 'utf8'));
-          const productSha = process.env.PRODUCT_SHA;
-          const productTree = process.env.PRODUCT_TREE;
-          if (manifest.productComposition.sha !== productSha || manifest.productComposition.treeSha !== productTree) {
-            throw new Error('Manifest product identity mismatch');
-          }
-          if (marker.productCompositionSha !== productSha || marker.productTreeSha !== productTree) {
-            throw new Error('Build marker product identity mismatch');
-          }
-          if (manifest.releaseClassification !== 'NO-GO' || marker.releaseClassification !== 'NO-GO') {
-            throw new Error('Candidate must remain NO-GO');
-          }
+          if (manifest.productComposition.sha !== process.env.PRODUCT_SHA || manifest.productComposition.treeSha !== process.env.PRODUCT_TREE) throw new Error('Manifest identity mismatch');
+          if (marker.productCompositionSha !== process.env.PRODUCT_SHA || marker.productTreeSha !== process.env.PRODUCT_TREE) throw new Error('Marker identity mismatch');
+          if (manifest.releaseClassification !== 'NO-GO' || marker.releaseClassification !== 'NO-GO') throw new Error('Candidate must remain NO-GO');
           NODE
 
-      - name: Record component merge bases
+      - name: Record component identities and merge bases
         shell: bash
         run: |
           set -euo pipefail
@@ -119,14 +103,12 @@ jobs:
             printf '%s\t%s\t%s\t%s\n' "$name" "$sha" "$tree" "$merge_base" | tee -a "$EVIDENCE_DIR/merge-bases.tsv"
           done < "$EVIDENCE_DIR/components.tsv"
 
-      - name: Verify protected reconciled blobs and exact lane deltas
+      - name: Verify protected blobs and exact current lane deltas
         shell: bash
         run: |
           set -euo pipefail
           check_blob() {
-            local path="$1"
-            local expected="$2"
-            local actual
+            local path="$1" expected="$2" actual
             actual="$(git rev-parse "$PRODUCT_SHA:$path")"
             [[ "$actual" == "$expected" ]] || { echo "Blob mismatch: $path expected $expected got $actual"; exit 1; }
             printf '%s\t%s\n' "$path" "$actual" >> "$EVIDENCE_DIR/protected-blobs.tsv"
@@ -145,7 +127,7 @@ jobs:
           check_blob 'scripts/movie-buff-migration-bom-only-check.mjs' '67123ea020c9ed245c4dacf9c5cdbce1c3ea0a64'
           check_blob 'tests/movie-buff-migration-encoding.test.mjs' 'a88adaffe01d00a3af38c0a48da255f526199ce6'
 
-      - name: Verify changed-file ownership boundaries
+      - name: Verify product and controller ownership boundaries
         shell: bash
         run: |
           set -euo pipefail
@@ -183,10 +165,9 @@ jobs:
           done < "$EVIDENCE_DIR/controller-delta.txt"
 
       - name: Install dependencies without lifecycle scripts
-        shell: bash
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Run focused static contracts from every included lane
+      - name: Run focused contracts from every included lane
         shell: bash
         run: |
           set -euo pipefail
@@ -208,7 +189,7 @@ jobs:
         shell: bash
         run: npx tsc --noEmit 2>&1 | tee "$EVIDENCE_DIR/typescript.log"
 
-      - name: Reject BOM-bearing SQL and scan encoding
+      - name: Reject BOM-bearing SQL
         shell: bash
         run: |
           set -euo pipefail
@@ -216,25 +197,24 @@ jobs:
           const fs = require('node:fs');
           const path = require('node:path');
           const roots = ['supabase/migrations', 'supabase/rollbacks', 'supabase/tests'];
-          const sql = [];
+          const files = [];
           function walk(dir) {
             for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-              const p = path.join(dir, entry.name);
-              if (entry.isDirectory()) walk(p);
-              else if (entry.isFile() && p.endsWith('.sql')) sql.push(p);
+              const file = path.join(dir, entry.name);
+              if (entry.isDirectory()) walk(file);
+              else if (entry.isFile() && file.endsWith('.sql')) files.push(file);
             }
           }
           for (const root of roots) if (fs.existsSync(root)) walk(root);
-          const failures = [];
-          for (const file of sql) {
+          const failures = files.filter((file) => {
             const bytes = fs.readFileSync(file);
-            if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) failures.push(file);
-          }
-          console.log(`scanned_sql_files=${sql.length}`);
+            return bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
+          });
+          console.log(`scanned_sql_files=${files.length}`);
           if (failures.length) throw new Error(`UTF-8 BOM found: ${failures.join(', ')}`);
           NODE
 
-      - name: Scan candidate source for obvious secret material
+      - name: Scan for obvious secret material
         shell: bash
         run: |
           set -euo pipefail
@@ -244,26 +224,26 @@ jobs:
           fi
           echo 'obvious_secret_patterns=PASS' | tee "$EVIDENCE_DIR/secret-scan.txt"
 
-      - name: Inject runtime build timestamp into marker and build with localhost placeholders
+      - name: Build with localhost placeholders and runtime marker
         shell: bash
         run: |
           set -euo pipefail
           cp public/movie-buff-build-marker.json "$EVIDENCE_DIR/source-build-marker.json"
           node <<'NODE'
           const fs = require('node:fs');
-          const path = 'public/movie-buff-build-marker.json';
-          const marker = JSON.parse(fs.readFileSync(path, 'utf8'));
+          const file = 'public/movie-buff-build-marker.json';
+          const marker = JSON.parse(fs.readFileSync(file, 'utf8'));
           marker.controllerSha = process.env.GITHUB_SHA;
           marker.buildTimestampUtc = new Date().toISOString();
           marker.buildTimestampStatus = 'captured by exact-SHA GitHub Actions build';
           marker.workflowRunId = process.env.GITHUB_RUN_ID;
-          fs.writeFileSync(path, JSON.stringify(marker, null, 2) + '\n');
-          fs.copyFileSync(path, process.env.EVIDENCE_DIR + '/runtime-build-marker.json');
+          fs.writeFileSync(file, JSON.stringify(marker, null, 2) + '\n');
+          fs.copyFileSync(file, process.env.EVIDENCE_DIR + '/runtime-build-marker.json');
           NODE
           npm run build 2>&1 | tee "$EVIDENCE_DIR/production-build.log"
           git checkout -- public/movie-buff-build-marker.json
 
-      - name: Verify diff hygiene and clean worktree postflight
+      - name: Clean-worktree postflight and evidence hashes
         shell: bash
         run: |
           set -euo pipefail
@@ -302,7 +282,6 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 30
     env:
-      EVIDENCE_DIR: ${{ runner.temp }}\movie-buff-agent5-windows-evidence
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       SUPABASE_URL: http://127.0.0.1:54321
       NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
