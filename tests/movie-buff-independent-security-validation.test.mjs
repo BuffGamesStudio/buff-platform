@@ -14,6 +14,12 @@ function read(relativePath) {
   return fs.existsSync(fullPath) ? fs.readFileSync(fullPath, "utf8") : null;
 }
 
+function stripSqlComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/--[^\r\n]*/g, "");
+}
+
 const collector = read("scripts/movie-buff-security-evidence.mjs");
 const mov15MigrationPath =
   "supabase/migrations/20260804081500_movie_buff_atomic_three_player_matchmaking.sql";
@@ -94,11 +100,12 @@ test("MOV-15 static source declares strict-three compatibility guards", (t) => {
     return;
   }
 
-  assert.match(mov15Migration, /movie_buff_public_match_size\(\)/);
-  assert.match(mov15Migration, /select\s+3\s*;/i);
-  assert.match(mov15Migration, /public_matchmaking_key/i);
-  assert.match(mov15Migration, /unique\s+index/i);
-  assert.doesNotMatch(mov15Migration, /skip\s+locked/i);
+  const executableMov15 = stripSqlComments(mov15Migration);
+  assert.match(executableMov15, /movie_buff_public_match_size\(\)/);
+  assert.match(executableMov15, /select\s+3\s*;/i);
+  assert.match(executableMov15, /public_matchmaking_key/i);
+  assert.match(executableMov15, /unique\s+index/i);
+  assert.doesNotMatch(executableMov15, /skip\s+locked/i);
 });
 
 test("public waiting-room source has no known two-player browser start rule", (t) => {
@@ -240,7 +247,10 @@ test("MOV-18 renderer failure is wired through the real Rive canvas", (t) => {
 
   assert.match(riveCanvas, /@rive-app\/react-webgl2/);
   assert.match(riveCanvas, /useRive\s*\(/);
-  assert.match(riveCanvas, /onLoadError:\s*onRuntimeError/);
+  assert.match(
+    riveCanvas,
+    /onLoadError:\s*(?:onRuntimeError|\(\s*\)\s*=>\s*onRuntimeError\(\s*["']asset_load_error["']\s*\))/,
+  );
   assert.match(riveSurface, /<MovieBuffRiveCanvas/);
   assert.match(
     riveSurface,
