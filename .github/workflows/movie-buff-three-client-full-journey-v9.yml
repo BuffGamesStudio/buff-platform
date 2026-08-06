@@ -15,11 +15,11 @@ permissions:
 
 env:
   EXPECTED_BRANCH: validation/movie-buff-full-candidate-v3-canonical-mov17
-  PARENT_SHA: 0f46eaaecf0aa94c644cfb9f396a18a15ca0b4c7
+  PARENT_SHA: bb8840c4b852e392a26ec3a58fd8965628d87d2c
   MOV15_SOURCE_SHA: dc9804cdae03d8627a89980dbcdf2292d2055372
   MOV15_SOURCE_TREE: 86db75f79444b02c972ba4771244950cbec41b38
-  MOV16_SOURCE_SHA: 04ff6e5cb8ec8278c625ff832205c7ed2e64ce52
-  MOV16_SOURCE_TREE: e6cbf5353dd28301c57752d904941a5452347db6
+  MOV16_SOURCE_SHA: 12c3a8a09cd135152134a7b765976019de7be1a4
+  MOV16_SOURCE_TREE: b251559cbac789a7fbfb90816e41c15d6650f26c
   MOV17_SOURCE_SHA: f17234debfb8942e1998306a12dc33301c1c5440
   MOV17_SOURCE_TREE: 56c63df56f085c256289a8e4510ba05cbea3d9d1
   ENCODING_SOURCE_SHA: bf5e6d6f251f6840d17eed2fc68e0d580295437f
@@ -32,8 +32,9 @@ env:
   MOV16_RACE_BLOB: 7522a6ca2f6248cf484e09580aac35ff2e78f5d8
   MOV16_ADVERSARIAL_V3_BLOB: 4a05eee9f564c6b37ccb47e01d38c55fc9176f8c
   MOV16_GUARD_BLOB: 676c1a21f868a0463e286d314816d3c66e8350f2
-  MOV16_V2_SOURCE_BLOB: 84bbde0e57252d8aba4271827603d631b6d251de
-  MOV16_V2_DERIVED_BLOB: 4f0568680f3ecbeec302f76220f2be4d17a3011f
+  MOV16_EVIDENCE_VERIFY_BLOB: 62aa4e43e4aeb0ffc440ac62a869f466bbbe11cc
+  MOV16_V2_SOURCE_BLOB: 6775b620f128c687e62f3a9b06d7189c274599c3
+  MOV16_V2_DERIVED_BLOB: 7c75d21d55345ec82a80920c776eb21d81a90ac8
   MOV16_LINUX_SOURCE_BLOB: a04985abe5e4ed83eab3ce8805824220f0321a3e
   MOV16_WINDOWS_BLOB: 58abb8a679616cc4240c332caa3a35884b16d2a1
   MOV16_CONTAINMENT_BLOB: 96e8bcd81385773dc84da58cd2842adbf87fafd7
@@ -187,6 +188,7 @@ jobs:
           test "$(git rev-parse HEAD:scripts/movie-buff-mov16-deadline-release-race.mjs)" = "${MOV16_RACE_BLOB}"
           test "$(git rev-parse HEAD:scripts/movie-buff-mov16-adversarial-v3-wrapper.mjs)" = "${MOV16_ADVERSARIAL_V3_BLOB}"
           test "$(git rev-parse HEAD:scripts/movie-buff-mov16-evidence-guard.mjs)" = "${MOV16_GUARD_BLOB}"
+          test "$(git rev-parse HEAD:scripts/movie-buff-mov16-evidence-verify-v2.mjs)" = "${MOV16_EVIDENCE_VERIFY_BLOB}"
           test "$(git rev-parse ${MOV16_SOURCE_SHA}:scripts/movie-buff-mov16-linux-exact-validation-v2.sh)" = "${MOV16_V2_SOURCE_BLOB}"
           test "$(git rev-parse HEAD:scripts/movie-buff-mov16-linux-exact-validation-v2.sh)" = "${MOV16_V2_DERIVED_BLOB}"
           test "$(git rev-parse HEAD:scripts/movie-buff-mov16-linux-exact-validation.sh)" = "${MOV16_LINUX_SOURCE_BLOB}"
@@ -232,6 +234,7 @@ jobs:
             echo "mov16_race_blob=${MOV16_RACE_BLOB}"
             echo "mov16_adversarial_v3_blob=${MOV16_ADVERSARIAL_V3_BLOB}"
             echo "mov16_guard_blob=${MOV16_GUARD_BLOB}"
+            echo "mov16_evidence_verify_blob=${MOV16_EVIDENCE_VERIFY_BLOB}"
             echo "mov16_v2_source_blob=${MOV16_V2_SOURCE_BLOB}"
             echo "mov16_v2_derived_blob=${MOV16_V2_DERIVED_BLOB}"
             echo "mov16_linux_source_blob=${MOV16_LINUX_SOURCE_BLOB}"
