@@ -26,7 +26,9 @@ concurrency:
 env:
   EXPECTED_BRANCH: copilot/MOV-18-visual-motion-runtime
   EXPECTED_INTEGRATION_SHA: bf316a15a2120e32d8a32e479df2ae439081f9a1
-  REVIEWED_MOV17_SHA: f17234debfb8942e1998306a12dc33301c1c5440
+  REVIEWED_MOV17_SHA: 9239fcdc731ec05594c75d3ef9961e6cd4d36bbf
+  REVIEWED_MOV17_TREE: 57a00c385e210717bd705b14d2146908736482fe
+  REVIEWED_MOV17_PHASE_CLIENT_BLOB: 9830f47460d0ccba0cac161c93ca1f284c1b53e1
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
 
@@ -61,7 +63,12 @@ jobs:
           test -f src/components/movie-buff/visual/MovieBuffAuthoritativePhaseVisualAdapter.tsx
           test -f tests/movie-buff-authoritative-visual-adapter.test.mjs
           node --check tests/movie-buff-authoritative-visual-adapter.test.mjs
+          git cat-file -e "${REVIEWED_MOV17_SHA}^{commit}"
+          test "$(git rev-parse "${REVIEWED_MOV17_SHA}^{tree}")" = "${REVIEWED_MOV17_TREE}"
+          test "$(git rev-parse "${REVIEWED_MOV17_SHA}:src/lib/game/movieBuffAuthoritativePhaseClient.ts")" = "${REVIEWED_MOV17_PHASE_CLIENT_BLOB}"
           mkdir -p "${RUNNER_TEMP}/mov18-authoritative-adapter"
+          git show "${REVIEWED_MOV17_SHA}:src/lib/game/movieBuffAuthoritativePhaseClient.ts" \
+            >"${RUNNER_TEMP}/mov18-authoritative-adapter/reviewed-mov17-phase-client.ts"
 
       - name: Install committed dependency graph
         shell: bash
@@ -127,6 +134,12 @@ jobs:
             classification=PASS
           fi
 
+          if grep -Eq 'schemaVersion|schema_version' "$evidence/reviewed-mov17-phase-client.ts"; then
+            mov17_schema_version_field=PRESENT
+          else
+            mov17_schema_version_field=ABSENT
+          fi
+
           {
             echo "lane=MOV-18-authoritative-visual-adapter"
             echo "classification=$classification"
@@ -136,6 +149,9 @@ jobs:
             echo "source_tree=$(git rev-parse HEAD^{tree})"
             echo "integration_sha=${EXPECTED_INTEGRATION_SHA}"
             echo "reviewed_mov17_sha=${REVIEWED_MOV17_SHA}"
+            echo "reviewed_mov17_tree=${REVIEWED_MOV17_TREE}"
+            echo "reviewed_mov17_phase_client_blob=${REVIEWED_MOV17_PHASE_CLIENT_BLOB}"
+            echo "reviewed_mov17_schema_version_field=$mov17_schema_version_field"
             echo "workflow_run_id=${GITHUB_RUN_ID}"
             echo "workflow_job=${GITHUB_JOB}"
             echo "contracts_exit=$contracts_exit"
@@ -157,6 +173,7 @@ jobs:
             tests/movie-buff-authoritative-visual-adapter.test.mjs \
             tests/movie-buff-visual-runtime.test.mjs \
             .github/workflows/movie-buff-mov18-authoritative-adapter-evidence.yml \
+            "$evidence/reviewed-mov17-phase-client.ts" \
             >"$evidence/source-sha256.txt"
 
           if grep -R -E \
