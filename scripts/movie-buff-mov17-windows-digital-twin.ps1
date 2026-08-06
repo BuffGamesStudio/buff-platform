@@ -89,10 +89,11 @@ try {
     throw 'Worktree is not clean before validation.'
   }
 
+  $actualTree = (git rev-parse 'HEAD^{tree}').Trim()
   @(
     'lane=MOV-17-canonical'
     "source_sha=$actualSha"
-    "source_tree=$((git rev-parse HEAD^{tree}).Trim())"
+    "source_tree=$actualTree"
     "powershell_version=$($PSVersionTable.PSVersion)"
     "node_version=$((node --version).Trim())"
     "npm_version=$((npm --version).Trim())"
