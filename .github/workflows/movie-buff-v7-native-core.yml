@@ -1,0 +1,265 @@
+name: Movie Buff v7 native exact core scopes
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-v7-native-controller
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-v7-native-controller
+  PRODUCT_SHA: 886b914ef83398b6384ce49e18955e026103a27c
+  PRODUCT_TREE: 7e1fe5b4cdc4787976b8929664e966b2aa09d83d
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  linux-source-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-mock-publishable-key
+      SUPABASE_SERVICE_ROLE_KEY: local-mock-service-role-key
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Bind exact controller and immutable product
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          python3 - <<'PY'
+          import subprocess
+          allowed=(".github/workflows/movie-buff-v7-native-","docs/validation/movie-buff-v7-controller.manifest.json","scripts/movie-buff-agent5-","scripts/movie-buff-release-train-")
+          changed=subprocess.check_output(["git","diff","--name-only","886b914ef83398b6384ce49e18955e026103a27c..HEAD"],text=True).splitlines()
+          bad=[p for p in changed if not any(p.startswith(a) for a in allowed)]
+          if bad: raise SystemExit(f"non-controller delta: {bad}")
+          PY
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Execute source, contract, encoding and build scope
+        shell: bash
+        run: |
+          set +e
+          evidence="${RUNNER_TEMP}/movie-buff-v7-linux"
+          mkdir -p "${evidence}"
+          overall=0
+          run(){ name="$1"; shift; "$@" >"${evidence}/${name}.log" 2>&1; code=$?; echo "$code" >"${evidence}/${name}.exit"; [ "$code" -eq 0 ] || overall=1; }
+          run npm-ci npm ci --ignore-scripts --no-audit --no-fund
+          run movie-buff-tests node --test tests/movie-buff-*.test.mjs
+          run typescript npx tsc --noEmit
+          run production-build npm run build
+          run migration-encoding node scripts/movie-buff-migration-encoding-check.mjs
+          run migration-bom-equivalence node scripts/movie-buff-migration-bom-only-check.mjs
+          {
+            echo "classification=$([ "$overall" -eq 0 ] && echo PASS || echo FAIL)"
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "branch=${GITHUB_REF_NAME}"
+            echo "controller_sha=$(git rev-parse HEAD)"
+            echo "controller_tree=$(git rev-parse HEAD^{tree})"
+            echo "product_sha=${PRODUCT_SHA}"
+            echo "product_tree=${PRODUCT_TREE}"
+            echo "scope=linux-source-contract-typescript-build-encoding"
+            echo "target=local-placeholder-only"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >"${evidence}/metadata.txt"
+          (cd "${evidence}" && find . -type f ! -name sha256.txt -printf '%P\0' | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt) || overall=1
+          exit "$overall"
+      - name: Upload Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-v7-linux-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-v7-linux
+          if-no-files-found: error
+          retention-days: 14
+      - name: Verify clean postflight
+        if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+  windows-digital-twin:
+    runs-on: windows-2025
+    timeout-minutes: 55
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-mock-publishable-key
+      SUPABASE_SERVICE_ROLE_KEY: local-mock-service-role-key
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Execute exact Windows command scope
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          $evidence = Join-Path $env:RUNNER_TEMP "movie-buff-v7-windows"
+          New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+          $overall = 0
+          function Invoke-Step([string]$Name,[scriptblock]$Action) {
+            & $Action *> (Join-Path $evidence "$Name.log")
+            $code=$LASTEXITCODE; if ($null -eq $code) {$code=0}
+            [IO.File]::WriteAllText((Join-Path $evidence "$Name.exit"),"$code`n",[Text.Encoding]::ASCII)
+            if ($code -ne 0) {$script:overall=1}
+          }
+          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) { throw "wrong controller SHA" }
+          if ((git rev-parse "$env:PRODUCT_SHA`^{tree}").Trim() -ne $env:PRODUCT_TREE) { throw "wrong product tree" }
+          git merge-base --is-ancestor $env:PRODUCT_SHA HEAD; if ($LASTEXITCODE -ne 0) { throw "product not ancestor" }
+          Invoke-Step npm-ci { npm ci --ignore-scripts --no-audit --no-fund }
+          Invoke-Step movie-buff-tests { node --test tests/movie-buff-*.test.mjs }
+          Invoke-Step typescript { npx tsc --noEmit }
+          Invoke-Step production-build { npm run build }
+          Invoke-Step migration-encoding { node scripts/movie-buff-migration-encoding-check.mjs }
+          @(
+            "classification=$(if($overall -eq 0){'PASS'}else{'FAIL'})",
+            "controller_sha=$env:GITHUB_SHA",
+            "controller_tree=$((git rev-parse 'HEAD^{tree}').Trim())",
+            "product_sha=$env:PRODUCT_SHA",
+            "product_tree=$env:PRODUCT_TREE",
+            "scope=windows-command-digital-twin"
+          ) | Set-Content -LiteralPath (Join-Path $evidence "metadata.txt") -Encoding utf8
+          Get-ChildItem $evidence -File | Where-Object Name -ne 'sha256.txt' | Sort-Object Name | ForEach-Object {
+            $h=(Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+            "$h  $($_.Name)"
+          } | Set-Content -LiteralPath (Join-Path $evidence "sha256.txt") -Encoding ascii
+          exit $overall
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-v7-windows-${{ github.sha }}
+          path: ${{ runner.temp }}\movie-buff-v7-windows
+          if-no-files-found: error
+          retention-days: 14
+      - name: Verify clean postflight
+        if: always()
+        shell: pwsh
+        run: |
+          git diff --check
+          if ((git status --porcelain --untracked-files=all) -join "") { throw "dirty postflight" }
+
+  security-rollback-reapply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Execute disposable security and recovery scope
+        shell: bash
+        run: |
+          tree="$(git rev-parse HEAD^{tree})"
+          ./scripts/movie-buff-agent6-security-package.sh \
+            "${GITHUB_SHA}" "$tree" "${PRODUCT_SHA}" "${PRODUCT_TREE}" \
+            "${RUNNER_TEMP}/movie-buff-v7-security"
+      - name: Upload security evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-v7-security-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-v7-security
+          if-no-files-found: error
+          retention-days: 14
+
+  combined-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Execute disposable admission, VIP, phase and race scope
+        shell: bash
+        run: |
+          cp scripts/movie-buff-release-train-combined-runtime-lab.sh "${RUNNER_TEMP}/movie-buff-v7-runtime.sh"
+          python3 - "${RUNNER_TEMP}/movie-buff-v7-runtime.sh" <<'PY'
+          import pathlib,sys
+          p=pathlib.Path(sys.argv[1]); text=p.read_text()
+          old='[[ "$(git -C "$SOURCE_ROOT" rev-parse HEAD^)" == "$PRODUCT_SHA" ]] || { fail_step wrong-product-parent; return; }'
+          new='git -C "$SOURCE_ROOT" merge-base --is-ancestor "$PRODUCT_SHA" HEAD || { fail_step product-not-ancestor; return; }'
+          if old not in text: raise SystemExit("runtime identity anchor missing")
+          p.write_text(text.replace(old,new,1))
+          PY
+          bash "${RUNNER_TEMP}/movie-buff-v7-runtime.sh" \
+            "${GITHUB_SHA}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${EXPECTED_BRANCH}" \
+            "${RUNNER_TEMP}/movie-buff-v7-runtime" \
+            "${RUNNER_TEMP}/movie-buff-v7-runtime-stack" \
+            "${RUNNER_TEMP}/movie-buff-v7-runtime-worktree" \
+            "${RUNNER_TEMP}/movie-buff-v7-runtime-users.json"
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-v7-runtime-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-v7-runtime
+          if-no-files-found: error
+          retention-days: 14
+
+  artifact-integrity:
+    if: always()
+    needs: [linux-source-build, windows-digital-twin, security-rollback-reapply, combined-runtime]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/movie-buff-v7-downloaded
+      - name: Build portable aggregate
+        shell: bash
+        run: |
+          root="${RUNNER_TEMP}/movie-buff-v7-downloaded"; out="${RUNNER_TEMP}/movie-buff-v7-aggregate"
+          mkdir -p "$root" "$out"
+          find "$root" -type f -print0 | sort -z | xargs -0 -r sha256sum >"$out/files.sha256"
+          {
+            echo "controller_sha=${GITHUB_SHA}"
+            echo "product_sha=${PRODUCT_SHA}"
+            echo "product_tree=${PRODUCT_TREE}"
+            echo "linux=${{ needs.linux-source-build.result }}"
+            echo "windows=${{ needs.windows-digital-twin.result }}"
+            echo "security=${{ needs.security-rollback-reapply.result }}"
+            echo "runtime=${{ needs.combined-runtime.result }}"
+          } >"$out/metadata.txt"
+          (cd "$out" && sha256sum metadata.txt files.sha256 >sha256.txt && sha256sum -c sha256.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-v7-aggregate-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-v7-aggregate
+          if-no-files-found: error
+          retention-days: 14
