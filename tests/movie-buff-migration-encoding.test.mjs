@@ -54,7 +54,7 @@ function createComparatorRepo({ baselineBytes, currentBytes, includeCurrent = tr
   if (includeCurrent) {
     fs.writeFileSync(path.join(repo, file), currentBytes);
     git(repo, ["add", file]);
-    git(repo, ["commit", "-m", "current"]);
+    git(repo, ["commit", "--allow-empty", "-m", "current"]);
   } else {
     fs.rmSync(path.join(repo, file));
     git(repo, ["add", "-A"]);
