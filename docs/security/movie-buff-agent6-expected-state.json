@@ -1,5 +1,5 @@
 {
-  "manifestVersion": 1,
+  "manifestVersion": 2,
   "classificationVocabulary": ["PASS", "FAIL", "UNKNOWN", "NOT APPLICABLE"],
   "repository": "BuffGamesStudio/buff-platform",
   "agent6Branch": "security/movie-buff-rls-acl-staging",
@@ -83,12 +83,12 @@
     "match_round_player_playback_select_self"
   ],
   "functionRules": {
-    "owner": "postgres",
+    "publicSchemaOwner": "postgres",
     "publicExecute": false,
     "anonExecute": false,
-    "authenticatedExecute": "EXACT_ALLOWLIST_ONLY",
-    "serviceRoleExecute": "ALL_HARDENED_FUNCTIONS_EXCEPT_DIRECT_RLS_EVENT_CALLBACK",
-    "searchPath": ["pg_catalog", "pg_catalog, public"],
+    "authenticatedExecute": "EXACT_BROWSER_RPC_ALLOWLIST_ONLY",
+    "serviceRoleExecute": "ALL_HARDENED_PUBLIC_FUNCTIONS_EXCEPT_DIRECT_RLS_EVENT_CALLBACK",
+    "publicSearchPath": ["pg_catalog", "pg_catalog, public"],
     "serviceOnlyVipFinalizer": "public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamp with time zone)",
     "rlsEventCallback": {
       "identity": "public.rls_auto_enable()",
@@ -97,6 +97,26 @@
       "searchPath": "pg_catalog",
       "directExecute": []
     }
+  },
+  "policyHelpers": {
+    "schema": "movie_buff_security",
+    "exposedByPostgREST": false,
+    "owner": "postgres",
+    "authenticatedSchemaPrivileges": ["USAGE"],
+    "authenticatedSchemaCreate": false,
+    "anonSchemaUsage": false,
+    "identities": [
+      "movie_buff_security.active_room_member(uuid)",
+      "movie_buff_security.active_board_member(uuid)",
+      "movie_buff_security.active_round_member(uuid)"
+    ],
+    "securityDefiner": true,
+    "searchPath": "pg_catalog",
+    "directExecute": ["authenticated", "service_role"],
+    "publicExecute": false,
+    "anonExecute": false,
+    "returnScope": "CALLER_OWN_ACTIVE_MEMBERSHIP_BOOLEAN_ONLY",
+    "rollback": "FUNCTIONS_AND_DEDICATED_SCHEMA_REMOVED_FAIL_CLOSED"
   },
   "personas": {
     "anon": "DENY",
@@ -115,8 +135,10 @@
   },
   "containment": {
     "authenticatedTableAccess": "REVOKED",
-    "authenticatedFunctionAccess": "REVOKED",
-    "serviceRoleContinuity": "PRESERVED",
+    "authenticatedPublicFunctionAccess": "REVOKED",
+    "policyHelperFunctions": "REMOVED",
+    "policyHelperSchema": "REMOVED_IF_EMPTY",
+    "serviceRoleContinuity": "PRESERVED_FOR_TARGET_TABLES_AND_APPROVED_PUBLIC_FUNCTIONS",
     "rls": "PRESERVED_ENABLED_AND_FORCED",
     "dataDeletion": false,
     "tableDrop": false,
@@ -126,15 +148,16 @@
     "required": [
       "exact source SHA and tree",
       "exact product SHA and tree",
-      "canonical SHA-256 manifest for every Agent 6 migration, rollback, and test",
+      "canonical SHA-256 manifest for every Agent 6 migration, rollback, test, wrapper, runbook, workflow and expected-state manifest",
       "migration ledger",
-      "forward pgTAP",
+      "53 public-function and six-table forward pgTAP assertions",
+      "25 policy-helper forward assertions",
       "persona behavior before containment",
       "ordered containment rollback",
-      "rollback pgTAP",
+      "28 rollback pgTAP assertions",
+      "4 policy-helper rollback assertions",
       "ordered forward reapply",
-      "forward pgTAP after reapply",
-      "persona behavior after reapply",
+      "all forward and persona assertions after reapply",
       "catalog byte equality before rollback and after reapply",
       "cleanup",
       "redaction",

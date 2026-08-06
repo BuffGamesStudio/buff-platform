@@ -14,7 +14,7 @@ on:
       - "supabase/rollbacks/2026080515*.sql"
       - "supabase/rollbacks/2026080516*.sql"
       - "supabase/tests/movie_buff_current_security_finalizer*.sql"
-      - "supabase/tests/movie_buff_agent6_persona_behavior_test.sql"
+      - "supabase/tests/movie_buff_agent6_*.sql"
   pull_request:
     branches:
       - integration/movie-buff
@@ -28,7 +28,7 @@ on:
       - "supabase/rollbacks/2026080515*.sql"
       - "supabase/rollbacks/2026080516*.sql"
       - "supabase/tests/movie_buff_current_security_finalizer*.sql"
-      - "supabase/tests/movie_buff_agent6_persona_behavior_test.sql"
+      - "supabase/tests/movie_buff_agent6_*.sql"
   workflow_dispatch:
 
 permissions:

@@ -52,9 +52,7 @@ values
   ('00000000-0000-0000-0000-000000005001','00000000-0000-0000-0000-000000002001','active','00000000-0000-0000-0000-000000001001',1),
   ('00000000-0000-0000-0000-000000005002','00000000-0000-0000-0000-000000002002','active','00000000-0000-0000-0000-000000001004',1);
 
-insert into public.movie_buff_board_categories (
-  id, board_id, display_order, label
-)
+insert into public.movie_buff_board_categories (id, board_id, display_order, label)
 values
   ('00000000-0000-0000-0000-000000006001','00000000-0000-0000-0000-000000005001',0,'Agent 6 A'),
   ('00000000-0000-0000-0000-000000006002','00000000-0000-0000-0000-000000005002',0,'Agent 6 B');
@@ -91,8 +89,18 @@ values
 -- Anonymous / unauthenticated browser: no table access.
 select set_config('request.jwt.claims','{"role":"anon"}',true);
 set local role anon;
-select throws_ok($$select count(*) from public.movie_buff_boards$$,'42501','anon cannot read boards');
-select throws_ok($$select count(*) from public.match_round_player_hints$$,'42501','anon cannot read hints');
+select throws_ok(
+  $$select count(*) from public.movie_buff_boards$$,
+  '42501',
+  'permission denied for table movie_buff_boards',
+  'anon cannot read boards'
+);
+select throws_ok(
+  $$select count(*) from public.match_round_player_hints$$,
+  '42501',
+  'permission denied for table match_round_player_hints',
+  'anon cannot read hints'
+);
 reset role;
 
 -- Authenticated nonmember: grants exist, but RLS returns no rows.
@@ -104,7 +112,12 @@ select is((select count(*)::integer from public.movie_buff_board_categories),0,'
 select is((select count(*)::integer from public.movie_buff_board_tiles),0,'nonmember sees no tile');
 select is((select count(*)::integer from public.match_round_player_hints),0,'nonmember sees no hint');
 select is((select count(*)::integer from public.match_round_player_playback),0,'nonmember sees no playback');
-select throws_ok($$select count(*) from public.movie_buff_board_events$$,'42501','nonmember cannot read raw events');
+select throws_ok(
+  $$select count(*) from public.movie_buff_board_events$$,
+  '42501',
+  'permission denied for table movie_buff_board_events',
+  'nonmember cannot read raw events'
+);
 reset role;
 
 -- Host and selector: active-room read, self-only hint/playback, no writes.
@@ -116,8 +129,18 @@ select is((select count(*)::integer from public.movie_buff_board_categories),1,'
 select is((select count(*)::integer from public.movie_buff_board_tiles),1,'host selector sees own room tile');
 select is((select count(*)::integer from public.match_round_player_hints),1,'host selector sees only own hint');
 select is((select count(*)::integer from public.match_round_player_playback),1,'host selector sees only own playback');
-select throws_ok($$update public.movie_buff_boards set status=status where id='00000000-0000-0000-0000-000000005001'$$,'42501','host selector cannot update board directly');
-select throws_ok($$select count(*) from public.movie_buff_board_events$$,'42501','host selector cannot read raw events');
+select throws_ok(
+  $$update public.movie_buff_boards set status=status where id='00000000-0000-0000-0000-000000005001'$$,
+  '42501',
+  'permission denied for table movie_buff_boards',
+  'host selector cannot update board directly'
+);
+select throws_ok(
+  $$select count(*) from public.movie_buff_board_events$$,
+  '42501',
+  'permission denied for table movie_buff_board_events',
+  'host selector cannot read raw events'
+);
 reset role;
 
 -- Active nonselector: observer read, self-only private rows, no writes.
@@ -129,10 +152,15 @@ select is((select count(*)::integer from public.movie_buff_board_categories),1,'
 select is((select count(*)::integer from public.movie_buff_board_tiles),1,'nonselector sees own room tile');
 select is((select count(*)::integer from public.match_round_player_hints),1,'nonselector sees only own hint');
 select is((select count(*)::integer from public.match_round_player_playback),1,'nonselector sees only own playback');
-select throws_ok($$update public.movie_buff_board_tiles set is_used=true where id='00000000-0000-0000-0000-000000007001'$$,'42501','nonselector cannot update tile directly');
+select throws_ok(
+  $$update public.movie_buff_board_tiles set is_used=true where id='00000000-0000-0000-0000-000000007001'$$,
+  '42501',
+  'permission denied for table movie_buff_board_tiles',
+  'nonselector cannot update tile directly'
+);
 reset role;
 
--- Cross-room identity: only its own room board, no row from room A despite a spoofed private row.
+-- Cross-room identity: only its own room board; spoofed private rows stay hidden.
 select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000001004',true);
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000001004","role":"authenticated"}',true);
 set local role authenticated;
@@ -161,7 +189,7 @@ select is((select count(*)::integer from public.match_round_player_hints),1,'rec
 select is((select count(*)::integer from public.match_round_player_playback),1,'reconnecting active member sees own playback');
 reset role;
 
--- Buster/system identity is not a human room member and receives no browser rows.
+-- Buster/system identity is not a human member and receives no browser rows.
 select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000001007',true);
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000001007","role":"authenticated"}',true);
 set local role authenticated;
@@ -178,7 +206,10 @@ select is((select count(*)::integer from public.movie_buff_board_tiles),2,'servi
 select is((select count(*)::integer from public.movie_buff_board_events),1,'service role reads raw events');
 select is((select count(*)::integer from public.match_round_player_hints),5,'service role reads all hints');
 select is((select count(*)::integer from public.match_round_player_playback),5,'service role reads all playback rows');
-select lives_ok($$update public.movie_buff_boards set status=status where id='00000000-0000-0000-0000-000000005001'$$,'service role retains board update continuity');
+select lives_ok(
+  $$update public.movie_buff_boards set status=status where id='00000000-0000-0000-0000-000000005001'$$,
+  'service role retains board update continuity'
+);
 reset role;
 
 select * from finish();
