@@ -1,0 +1,114 @@
+name: Movie Buff exact full three-client browser journey v3
+
+on:
+  push:
+    branches: [validation/MOV-15-19-integrated-twin-v3]
+    paths:
+      - ".github/workflows/movie-buff-three-client-full-journey-v3.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/MOV-15-19-integrated-twin-v3
+  PARENT_SHA: 67f4bedbc7249729e844a778608879a0a6074864
+  V2_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-full-three-client-browser-v3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Install deterministic media tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
+
+      - name: Extract exact reviewed v2 laboratory blocks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:.github/workflows/movie-buff-three-client-full-journey-v2.yml)" = "${V2_WORKFLOW_BLOB}"
+          python3 - "${RUNNER_TEMP}" <<'PY'
+          from pathlib import Path
+          import sys
+
+          source = Path('.github/workflows/movie-buff-three-client-full-journey-v2.yml')
+          lines = source.read_text(encoding='utf-8').splitlines()
+          output = Path(sys.argv[1])
+
+          def extract(step_name: str) -> str:
+              marker = f'- name: {step_name}'
+              start = next(i for i, line in enumerate(lines) if line.strip() == marker)
+              run_line = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'run: |')
+              run_indent = len(lines[run_line]) - len(lines[run_line].lstrip())
+              body = []
+              for line in lines[run_line + 1:]:
+                  if line.strip() and len(line) - len(line.lstrip()) <= run_indent:
+                      break
+                  body.append(line[run_indent + 2:] if line.strip() else '')
+              if not body:
+                  raise SystemExit(f'empty run block for {step_name}')
+              return '\n'.join(body) + '\n'
+
+          preflight = extract('Bind exact source and validate harness')
+          execute = extract('Execute disposable exact-SHA browser journey v2')
+          execute = execute.replace(
+              'git status --porcelain >"${raw}/git-status-before-repair.txt"',
+              'git status --porcelain --untracked-files=all >"${raw}/git-status-before-repair.txt"',
+          )
+          if '--untracked-files=all' not in execute:
+              raise SystemExit('fixture status normalization was not applied')
+          (output / 'movie-buff-v3-preflight.sh').write_text(preflight, encoding='utf-8')
+          (output / 'movie-buff-v3-execute.sh').write_text(execute, encoding='utf-8')
+          PY
+          bash -n "${RUNNER_TEMP}/movie-buff-v3-preflight.sh"
+          bash -n "${RUNNER_TEMP}/movie-buff-v3-execute.sh"
+
+      - name: Bind exact source and validate harness
+        shell: bash
+        run: bash "${RUNNER_TEMP}/movie-buff-v3-preflight.sh"
+
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Execute disposable exact-SHA browser journey v3
+        shell: bash
+        run: bash "${RUNNER_TEMP}/movie-buff-v3-execute.sh"
+
+      - name: Upload exact full browser evidence v3
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-three-client-full-v3-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-three-client-full-v2
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify clean postflight
+        if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
