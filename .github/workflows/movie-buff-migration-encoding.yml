@@ -231,13 +231,10 @@ jobs:
             $expectedHash = $Matches[1]
             $relativeName = $Matches[2]
             if ([System.IO.Path]::IsPathRooted($relativeName) -or
-                $relativeName.Contains('/') -or
-                $relativeName.Contains('\')) {
+                $relativeName -ne [System.IO.Path]::GetFileName($relativeName)) {
               throw "Nonportable evidence path: $relativeName"
             }
-            $actualHash = (Get-FileHash \
-              -LiteralPath (Join-Path $evidenceRoot $relativeName) \
-              -Algorithm SHA256).Hash.ToLowerInvariant()
+            $actualHash = (Get-FileHash -LiteralPath (Join-Path $evidenceRoot $relativeName) -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($actualHash -ne $expectedHash) {
               throw "Evidence hash mismatch: $relativeName"
             }
