@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "agent": "Agent 7 — Exact-SHA Integration and Validation Lab",
+  "repository": "BuffGamesStudio/buff-platform",
+  "branch": "validation/MOV-17-encoding-twin-v2",
+  "integration": {
+    "sha": "bf316a15a2120e32d8a32e479df2ae439081f9a1",
+    "treeSha": "12f425f4c56fb3f3c66df6f3a6543d7fd8b6ef34"
+  },
+  "productComposition": {
+    "sha": "d70d758c730d32d71525c9381b9f98b80e0e1e83",
+    "treeSha": "b0e9cfa1963d8fbca9c72dfe7fc64a9dbe2cbe8f",
+    "baseCompositionSha": "2be790c88bc7f34969fe607bb78fd7535b621190",
+    "baseCompositionTreeSha": "cbd8061c9c4da410e39363beee02bf53194ed53f",
+    "assembly": [
+      "start from Agent 5 immutable product composition",
+      "replace only tests/movie-buff-public-matchmaking-contract.test.mjs with current MOV-15 blob 4c4d77252d67ccbb5e972a4e634aac55065cf7e3"
+    ]
+  },
+  "components": {
+    "pr3_visuals": "f692e82a5d524c950011e0300908c9cbec2389cb",
+    "pr5_hardening": "91eac0d55abb1a9568017df687e8395771d24780",
+    "mov15": "48d44bb156b71060d1b9adcc7a2a3f014cf92060",
+    "mov16": "4a5e5591113b005f69fd34361becb2fd8d024897",
+    "mov17": "f17234debfb8942e1998306a12dc33301c1c5440",
+    "mov18": "780153d0624a8186db1c628f6bd93906bca41a30",
+    "pr12_encoding": "f86689895cb810831d9b4d6346ee95eed9439495"
+  },
+  "independentValidatorExcluded": {
+    "mov19": "46c549675d44f19c22a7786421cf2581dc22af3",
+    "reason": "MOV-19 remains outside functional composition as independent validator"
+  },
+  "ownershipResolution": [
+    {
+      "area": "rich board and play visuals",
+      "owner": "PR #3 / MOV-18 presentation",
+      "resolution": "preserve Agent 5 reconciled blobs; no Agent 7 edit"
+    },
+    {
+      "area": "authentication and route hardening",
+      "owner": "PR #5",
+      "resolution": "preserve Agent 5 reconciled blobs; no Agent 7 edit"
+    },
+    {
+      "area": "public admission and readiness",
+      "owner": "MOV-15",
+      "resolution": "take current MOV-15 contract-test-only head delta"
+    },
+    {
+      "area": "VIP selection/finalization",
+      "owner": "MOV-16",
+      "resolution": "preserve current head from Agent 5 composition"
+    },
+    {
+      "area": "active shared phase authority",
+      "owner": "MOV-17",
+      "resolution": "preserve current head from Agent 5 composition"
+    },
+    {
+      "area": "passive visual runtime",
+      "owner": "MOV-18",
+      "resolution": "preserve current head from Agent 5 composition"
+    },
+    {
+      "area": "historical migration byte encoding",
+      "owner": "PR #12",
+      "resolution": "preserve current head from Agent 5 composition"
+    }
+  ],
+  "knownPreLabFindings": [
+    {
+      "classification": "PASS",
+      "scope": "visible exact build marker source support",
+      "evidence": "src/app/games/movie-buff/layout.tsx renders data-testid movie-buff-build-marker when exact environment variables are supplied"
+    },
+    {
+      "classification": "FAIL",
+      "scope": "no gameplay Start/Continue/Next source gate",
+      "evidence": "src/app/games/movie-buff/lobby/LobbyClient.tsx renders Start Match connected to handleQuickStart"
+    }
+  ],
+  "initialLaboratoryClassification": {
+    "linuxSourceBuild": "UNKNOWN",
+    "windowsCommand": "UNKNOWN",
+    "disposableDatabase": "UNKNOWN",
+    "databaseRaces": "UNKNOWN",
+    "ephemeralBrowser": "UNKNOWN",
+    "hosted": "NOT APPLICABLE",
+    "staging": "UNKNOWN",
+    "production": "NOT APPLICABLE",
+    "release": "NO-GO"
+  },
+  "prohibitions": [
+    "do not merge",
+    "do not deploy or promote Vercel",
+    "do not mutate hosted or production Supabase",
+    "do not use production credentials or traffic",
+    "do not force-push",
+    "do not request ARM",
+    "do not issue GO"
+  ]
+}
