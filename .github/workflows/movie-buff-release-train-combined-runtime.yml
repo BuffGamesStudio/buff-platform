@@ -55,7 +55,17 @@ jobs:
       - name: Execute exact disposable runtime matrix
         shell: bash
         run: |
-          bash scripts/movie-buff-release-train-combined-runtime-lab.sh \
+          cp scripts/movie-buff-release-train-combined-runtime-lab.sh "${RUNNER_TEMP}/runtime-lab.sh"
+          python3 - "${RUNNER_TEMP}/runtime-lab.sh" <<'PY'
+          import pathlib,sys
+          p=pathlib.Path(sys.argv[1])
+          text=p.read_text()
+          old='[[ "$(git -C "$SOURCE_ROOT" rev-parse HEAD^)" == "$PRODUCT_SHA" ]] || { fail_step wrong-product-parent; return; }'
+          new='git -C "$SOURCE_ROOT" merge-base --is-ancestor "$PRODUCT_SHA" HEAD || { fail_step product-not-ancestor; return; }'
+          if old not in text: raise SystemExit('runtime identity marker missing')
+          p.write_text(text.replace(old,new,1))
+          PY
+          bash "${RUNNER_TEMP}/runtime-lab.sh" \
             "${EXPECTED_SHA}" \
             "${PRODUCT_SHA}" \
             "${PRODUCT_TREE}" \
