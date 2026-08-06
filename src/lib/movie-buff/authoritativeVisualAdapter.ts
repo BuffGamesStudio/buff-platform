@@ -122,12 +122,12 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
   view,
   lastAcceptedPhaseVersion,
   transitionPresentation = null,
-  schemaVersion = MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION,
+  schemaVersion,
 }: {
   view: MovieBuffAuthoritativePhaseViewForVisuals;
   lastAcceptedPhaseVersion: number | null;
   transitionPresentation?: MovieBuffTransitionPresentation | null;
-  schemaVersion?: number;
+  schemaVersion: number;
 }): MovieBuffAuthoritativeVisualAdapterResult {
   if (schemaVersion !== MOVIE_BUFF_AUTHORITATIVE_VISUAL_SCHEMA_VERSION) {
     return invalidAdapterResult(view, "UNKNOWN_AUTHORITATIVE_SCHEMA_VERSION");
