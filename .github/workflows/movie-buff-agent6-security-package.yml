@@ -75,6 +75,7 @@ jobs:
           test ! -f supabase/.temp/project-ref
           source_tree="$(git rev-parse HEAD^{tree})"
           echo "SOURCE_TREE=${source_tree}" >> "${GITHUB_ENV}"
+          git fetch --no-tags --depth=1 origin "${PRODUCT_SHA}"
           test "$(git rev-parse ${PRODUCT_SHA}^{tree})" = "${PRODUCT_TREE}"
           bash -n scripts/movie-buff-agent6-security-package.sh
           python3 - <<'PY'
