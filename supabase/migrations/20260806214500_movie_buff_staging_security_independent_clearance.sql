@@ -4,9 +4,6 @@
 
 begin;
 
--- Internal helpers accept arbitrary room/round/player identifiers. They remain
--- callable by trusted SECURITY DEFINER parents and service workers, but direct
--- browser execution is unnecessary and would expose cross-room timing oracles.
 do $required_internal_helpers$
 declare
   v_identity text;
@@ -38,8 +35,6 @@ alter function public.is_movie_buff_round_player_finished(uuid,uuid,timestamptz,
 revoke all on function public.is_movie_buff_round_player_finished(uuid,uuid,timestamptz,integer) from public, anon, authenticated, service_role;
 grant execute on function public.is_movie_buff_round_player_finished(uuid,uuid,timestamptz,integer) to service_role;
 
--- Preserve the browser-facing signature, but prove active membership in the
--- supplied room before any SECURITY DEFINER write.
 create or replace function public.mark_movie_buff_round_media_ready(p_room_id uuid)
 returns table(
   result_match_id uuid,
@@ -103,8 +98,6 @@ alter function public.mark_movie_buff_round_media_ready(uuid) set search_path = 
 revoke all on function public.mark_movie_buff_round_media_ready(uuid) from public, anon, authenticated, service_role;
 grant execute on function public.mark_movie_buff_round_media_ready(uuid) to authenticated, service_role;
 
--- This shared predicate is intentionally browser-callable. Keep it definer
--- based, but fix its search path and make its persona ACL explicit.
 do $required_content_manager$
 begin
   if pg_catalog.to_regprocedure('public.is_buff_content_manager()') is null then
@@ -118,9 +111,6 @@ alter function public.is_buff_content_manager() set search_path = pg_catalog, pu
 revoke all on function public.is_buff_content_manager() from public, anon, authenticated, service_role;
 grant execute on function public.is_buff_content_manager() to authenticated, service_role;
 
--- Exact current staging relations reported by the advisor. They are internal
--- server-state ledgers: no browser table privileges, FORCE RLS, and one explicit
--- restrictive false/false browser policy. Service-role ACLs remain unchanged.
 do $internal_table_clearance$
 declare
   v_table text;
@@ -158,8 +148,6 @@ begin
 end;
 $internal_table_clearance$;
 
--- Fail closed if any owner, fixed search path, grant, membership guard, RLS,
--- policy, or browser table-privilege assertion is not exactly satisfied.
 do $clearance_assertions$
 declare
   v_identity text;
@@ -209,7 +197,7 @@ begin
      or pg_catalog.has_function_privilege('anon', v_oid, 'execute')
      or not pg_catalog.has_function_privilege('authenticated', v_oid, 'execute')
      or not pg_catalog.has_function_privilege('service_role', v_oid, 'execute')
-     or pg_catalog.position('movie_buff_phase_require_access(p_room_id)' in v_definition) = 0 then
+     or pg_catalog.strpos(v_definition, 'movie_buff_phase_require_access(p_room_id)') = 0 then
     raise exception 'media-ready function security mismatch';
   end if;
 
