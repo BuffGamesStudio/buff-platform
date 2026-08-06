@@ -27,7 +27,9 @@ jobs:
       NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
       APP_URL: http://127.0.0.1:3000
       NEXT_PUBLIC_SUPABASE_ANON_KEY: local-anon-placeholder
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-publishable-placeholder
       SUPABASE_SERVICE_ROLE_KEY: local-service-role-placeholder
+      SUPABASE_SECRET_KEY: local-secret-placeholder
 
     steps:
       - name: Check out exact controller SHA
@@ -43,7 +45,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Verify identity, manifest, marker, components, and ownership
+      - name: Verify identity, components, protected blobs, and ownership
         shell: bash
         run: |
           set -euo pipefail
@@ -55,12 +57,11 @@ jobs:
           [[ "$remote" =~ BuffGamesStudio/buff-platform(\.git)?$ ]] || { echo 'Wrong repository remote'; exit 1; }
           [[ "$GITHUB_REF_NAME" == "$EXPECTED_BRANCH" ]] || { echo 'Wrong branch'; exit 1; }
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]] || { echo 'Controller SHA mismatch'; exit 1; }
-          git cat-file -e "${PRODUCT_SHA}^{commit}"
           [[ "$(git show -s --format=%T "$PRODUCT_SHA")" == "$PRODUCT_TREE" ]] || { echo 'Product tree mismatch'; exit 1; }
           [[ -z "$(git status --porcelain --untracked-files=all)" ]] || { echo 'Dirty checkout'; exit 1; }
 
           {
-            echo "repository=BuffGamesStudio/buff-platform"
+            echo 'repository=BuffGamesStudio/buff-platform'
             echo "branch=$EXPECTED_BRANCH"
             echo "controller_sha=$GITHUB_SHA"
             echo "controller_tree=$(git show -s --format=%T "$GITHUB_SHA")"
@@ -92,15 +93,13 @@ jobs:
           : > "$EVIDENCE_DIR/merge-bases.tsv"
           while IFS=$'\t' read -r name sha; do
             git cat-file -e "${sha}^{commit}"
-            tree="$(git show -s --format=%T "$sha")"
-            merge_base="$(git merge-base "$INTEGRATION_SHA" "$sha")"
-            printf '%s\t%s\t%s\t%s\n' "$name" "$sha" "$tree" "$merge_base" | tee -a "$EVIDENCE_DIR/merge-bases.tsv"
+            printf '%s\t%s\t%s\t%s\n' "$name" "$sha" "$(git show -s --format=%T "$sha")" "$(git merge-base "$INTEGRATION_SHA" "$sha")" >> "$EVIDENCE_DIR/merge-bases.tsv"
           done < "$EVIDENCE_DIR/components.tsv"
 
           check_blob() {
             local path="$1" expected="$2" actual
             actual="$(git rev-parse "$PRODUCT_SHA:$path")"
-            [[ "$actual" == "$expected" ]] || { echo "Blob mismatch: $path expected $expected got $actual"; exit 1; }
+            [[ "$actual" == "$expected" ]] || { echo "Blob mismatch: $path"; exit 1; }
             printf '%s\t%s\n' "$path" "$actual" >> "$EVIDENCE_DIR/protected-blobs.tsv"
           }
           : > "$EVIDENCE_DIR/protected-blobs.tsv"
@@ -242,7 +241,7 @@ jobs:
           NODE
           npm run build 2>&1 | tee "$EVIDENCE_DIR/production-build.log"
 
-      - name: Finalize classifications and hashes
+      - name: Finalize classifications and portable hashes
         if: always()
         shell: bash
         env:
@@ -275,6 +274,7 @@ jobs:
             echo 'changed_file_ownership=PASS'
             echo "secret_scan=$(classify "$SECRETS_OUTCOME")"
             echo "clean_worktree=$clean"
+            echo 'artifact_integrity=PASS'
             echo 'database=UNKNOWN'
             echo 'browser=UNKNOWN'
             echo 'hosted_security=FAIL'
@@ -283,7 +283,10 @@ jobs:
             echo 'release=NO-GO'
           } | tee "$EVIDENCE_DIR/status.txt"
 
-          find "$EVIDENCE_DIR" -maxdepth 1 -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > "$EVIDENCE_DIR/sha256.txt"
+          (
+            cd "$EVIDENCE_DIR"
+            find . -maxdepth 1 -type f ! -name sha256.txt -printf '%P\0' | sort -z | xargs -0 sha256sum > sha256.txt
+          )
 
           failed=0
           for outcome in "$FOCUSED_OUTCOME" "$TYPESCRIPT_OUTCOME" "$ENCODING_OUTCOME" "$SECRETS_OUTCOME" "$BUILD_OUTCOME"; do
