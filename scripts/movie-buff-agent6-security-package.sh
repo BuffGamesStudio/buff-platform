@@ -26,6 +26,10 @@ SECURITY_FILES=(
   supabase/tests/movie_buff_current_security_finalizer_test.sql
   supabase/tests/movie_buff_current_security_finalizer_rollback_test.sql
   supabase/tests/movie_buff_agent6_persona_behavior_test.sql
+  scripts/movie-buff-agent6-security-package.sh
+  docs/security/movie-buff-agent6-expected-state.json
+  docs/security/movie-buff-agent6-isolated-staging-runbook.md
+  .github/workflows/movie-buff-agent6-security-package.yml
 )
 
 mkdir -p "${EVIDENCE_ROOT}" "${RAW_ROOT}"
