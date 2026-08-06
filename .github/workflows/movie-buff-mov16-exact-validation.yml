@@ -1,0 +1,250 @@
+name: MOV-16 exact private VIP authority proof
+
+on:
+  push:
+    branches:
+      - copilot/MOV-16-vip-authority
+    paths:
+      - ".github/workflows/movie-buff-mov16-exact-validation.yml"
+      - "scripts/movie-buff-mov16-evidence-guard.mjs"
+      - "scripts/movie-buff-mov16-deadline-release-race.mjs"
+      - "scripts/movie-buff-mov16-linux-exact-validation.sh"
+      - "scripts/movie-buff-mov16-linux-exact-validation-v2.sh"
+      - "scripts/movie-buff-mov16-windows-digital-twin.ps1"
+      - "scripts/movie-buff-mov16-catalog-manifest.sql"
+      - "supabase/migrations/20260804073000_movie_buff_vip_authority.sql"
+      - "supabase/migrations/20260804073100_movie_buff_vip_null_category_fail_closed.sql"
+      - "supabase/migrations/20260804073200_movie_buff_vip_snapshot_release_hardening.sql"
+      - "supabase/migrations/20260804073300_movie_buff_vip_deadline_finalize.sql"
+      - "supabase/rollbacks/20260804073000_movie_buff_vip_authority.rollback.sql"
+      - "supabase/rollbacks/20260804073200_movie_buff_vip_snapshot_release_hardening.rollback.sql"
+      - "supabase/rollbacks/20260804073300_movie_buff_vip_deadline_finalize.rollback.sql"
+      - "supabase/rollbacks/20260804073310_movie_buff_vip_callable_containment.rollback.sql"
+      - "supabase/tests/movie_buff_vip_authority_test.sql"
+      - "supabase/tests/movie_buff_vip_deadline_finalize_test.sql"
+      - "supabase/tests/movie_buff_vip_snapshot_release_test.sql"
+      - "supabase/tests/movie_buff_vip_catalog_contract_test.sql"
+      - "scripts/movie-buff-vip-authority-adversarial.mjs"
+      - "scripts/movie-buff-vip-authority-personas.mjs"
+      - "scripts/movie-buff-vip-finalize-adversarial.mjs"
+      - "src/app/api/movie-buff/vip/**"
+      - "src/lib/game/movieBuffVip*.ts"
+      - "src/lib/server/movieBuffVip*.ts"
+      - "tests/movie-buff-vip-*.test.mjs"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: copilot/MOV-16-vip-authority
+  ENCODING_SHA: bf5e6d6f251f6840d17eed2fc68e0d580295437f
+  MOV17_SHA: f17234debfb8942e1998306a12dc33301c1c5440
+  HARNESS_SHA: fdbbbf31efae88c0815d349297d27474c7f701e7
+  HARNESS_BLOB: fde92b7d6b2b4e8f0a0dcf09235b13c4f93a5574
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  linux-exact-runtime:
+    name: Linux exact database, personas, races, rollback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact source SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Execute exact MOV-16 validation controller
+        shell: bash
+        env:
+          MOVIE_BUFF_EXPECTED_GIT_SHA: ${{ github.sha }}
+        run: bash scripts/movie-buff-mov16-linux-exact-validation-v2.sh
+
+      - name: Add portable MOV-16 source hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-mov16-exact-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/evidence"
+          files=(
+            supabase/migrations/20260804073000_movie_buff_vip_authority.sql
+            supabase/migrations/20260804073100_movie_buff_vip_null_category_fail_closed.sql
+            supabase/migrations/20260804073200_movie_buff_vip_snapshot_release_hardening.sql
+            supabase/migrations/20260804073300_movie_buff_vip_deadline_finalize.sql
+            supabase/rollbacks/20260804073000_movie_buff_vip_authority.rollback.sql
+            supabase/rollbacks/20260804073200_movie_buff_vip_snapshot_release_hardening.rollback.sql
+            supabase/rollbacks/20260804073300_movie_buff_vip_deadline_finalize.rollback.sql
+            supabase/rollbacks/20260804073310_movie_buff_vip_callable_containment.rollback.sql
+          )
+          for file in "${files[@]}"; do
+            test -f "${file}"
+          done
+          sha256sum "${files[@]}" >"${evidence}/mov16-source-sha256.txt"
+          (
+            cd "${evidence}"
+            find . -type f ! -name sha256.txt -print0 |
+              sort -z | xargs -0 sha256sum >sha256.txt
+            sha256sum -c sha256.txt
+          )
+
+      - name: Upload Linux exact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-mov16-linux-exact-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-mov16-exact-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify clean Linux postflight
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          if [ -n "$(git status --porcelain -- next-env.d.ts)" ]; then
+            git checkout -- next-env.d.ts
+          fi
+          test -z "$(git status --porcelain)"
+
+  windows-digital-twin:
+    name: Windows exact source and terminal digital twin
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-mock-publishable-key
+      SUPABASE_SERVICE_ROLE_KEY: local-mock-service-role-key
+      MOVIE_BUFF_APP_URL: http://127.0.0.1:3001
+    steps:
+      - name: Check out exact source SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Bind latest MOV-17 source contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          git fetch --no-tags origin $env:MOV17_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Unable to fetch exact MOV-17 SHA." }
+
+          New-Item -ItemType Directory -Force -Path $env:RUNNER_TEMP\movie-buff-mov16-windows | Out-Null
+
+          $paths = @(
+            git ls-tree -r --name-only $env:MOV17_SHA -- supabase/migrations |
+              Where-Object { $_ -match "^supabase/migrations/20260804083\d{3}_movie_buff_.*\.sql$" } |
+              Sort-Object
+          )
+          if ($paths.Count -lt 8) {
+            throw "Current MOV-17 migration set is incomplete."
+          }
+
+          $source = ($paths | ForEach-Object {
+            git show "$($env:MOV17_SHA):$_"
+            if ($LASTEXITCODE -ne 0) { throw "Unable to read $_ from MOV-17." }
+          }) -join "`n"
+
+          foreach ($token in @(
+            "open_movie_buff_vip_round_window",
+            "finalize_movie_buff_vip_round_window",
+            "release_movie_buff_vip_required_player",
+            "set_movie_buff_vip_activation_phase",
+            "public.open_movie_buff_vip_round_window(uuid,uuid,uuid,timestamptz,uuid[])",
+            "v_required_ids",
+            "array_agg(seat.original_player_id order by seat.seat_index)"
+          )) {
+            if (-not $source.Contains($token)) {
+              throw "MOV-17 exact source is missing $token."
+            }
+          }
+
+          $record = [ordered]@{
+            classification = "PASS"
+            mov17Sha = $env:MOV17_SHA
+            mov17Tree = (git rev-parse "$($env:MOV17_SHA)^{tree}").Trim()
+            migrationCount = $paths.Count
+            requiredCalls = @(
+              "open_movie_buff_vip_round_window(uuid,uuid,uuid,timestamptz,uuid[])"
+              "finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)"
+              "release_movie_buff_vip_required_player(uuid,uuid,uuid,text)"
+              "set_movie_buff_vip_activation_phase(uuid,uuid,text)"
+            )
+          }
+          $record | ConvertTo-Json -Depth 5 |
+            Out-File -FilePath $env:RUNNER_TEMP\movie-buff-mov16-windows\mov17-compatibility.json -Encoding utf8
+
+      - name: Execute Windows digital twin
+        shell: pwsh
+        run: |
+          ./scripts/movie-buff-mov16-windows-digital-twin.ps1 `
+            -ExpectedSha $env:GITHUB_SHA `
+            -ExpectedBranch $env:EXPECTED_BRANCH `
+            -EvidenceDirectory "$env:RUNNER_TEMP\movie-buff-mov16-windows"
+
+      - name: Add portable Windows hashes
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = "$env:RUNNER_TEMP\movie-buff-mov16-windows"
+          if (-not (Test-Path $root)) { throw "Windows evidence directory is missing." }
+          Get-ChildItem -Path $root -File |
+            Where-Object { $_.Name -ne "sha256.txt" } |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -Algorithm SHA256 -Path $_.FullName).Hash.ToLowerInvariant()
+              "$hash  ./$($_.Name)"
+            } | Out-File -FilePath (Join-Path $root "sha256.txt") -Encoding ascii
+
+      - name: Upload Windows digital-twin evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-mov16-windows-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-mov16-windows
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify clean Windows postflight
+        if: always()
+        shell: pwsh
+        run: |
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw "git diff --check failed." }
+          if (git status --porcelain -- next-env.d.ts) {
+            git checkout -- next-env.d.ts
+          }
+          if (git status --porcelain) {
+            throw "Checkout is dirty after Windows validation."
+          }

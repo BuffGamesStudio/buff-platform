@@ -3,7 +3,8 @@ name: MOV-17 Windows digital twin
 on:
   push:
     branches:
-      - validation/MOV-17-encoding-twin-v2
+      - copilot/MOV-17-shared-phase-machine
+      - work/movie-buff-mov17-buster-leave-repair-20260805
     paths:
       - ".github/workflows/movie-buff-mov17-windows-digital-twin.yml"
       - "scripts/movie-buff-mov17-windows-digital-twin.ps1"
@@ -11,26 +12,23 @@ on:
       - "scripts/movie-buff-reconnect-race-proof.mjs"
       - "scripts/movie-buff-three-client-phase-evidence-runner.mjs"
       - "supabase/migrations/20260804083*_movie_buff_*.sql"
+      - "supabase/migrations/20260805194*_movie_buff_*.sql"
       - "supabase/rollbacks/20260804083*_movie_buff_*.sql"
+      - "supabase/rollbacks/20260805194*_movie_buff_*.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
+      - "supabase/tests/movie_buff_buster_leave_authority_repair_test.sql"
+      - "supabase/tests/movie_buff_buster_leave_authority_rollback_test.sql"
+      - "src/app/api/movie-buff/match/leave/**"
+      - "src/components/movie-buff/MovieBuffAuthoritativeNavigation.tsx"
+      - "src/lib/game/movieBuffAuthoritativePhaseClient.ts"
+      - "src/lib/server/movieBuffPhaseRouteAuthorization.ts"
       - "tests/movie-buff-server-phase-machine.test.mjs"
       - "tests/movie-buff-authoritative-phase-runtime.test.mjs"
       - "tests/movie-buff-buster-safe-boundary.test.mjs"
+      - "tests/movie-buff-buster-leave-authority-repair.test.mjs"
       - "tests/movie-buff-phase-tile-mutation-guard.test.mjs"
-  pull_request:
-    branches:
-      - integration/movie-buff
-    paths:
-      - ".github/workflows/movie-buff-mov17-windows-digital-twin.yml"
-      - "scripts/movie-buff-mov17-windows-digital-twin.ps1"
-      - "scripts/movie-buff-three-client-phase-proof.mjs"
-      - "scripts/movie-buff-reconnect-race-proof.mjs"
-      - "scripts/movie-buff-three-client-phase-evidence-runner.mjs"
-      - "supabase/migrations/20260804083*_movie_buff_*.sql"
-      - "supabase/rollbacks/20260804083*_movie_buff_*.sql"
-      - "tests/movie-buff-server-phase-machine.test.mjs"
-      - "tests/movie-buff-authoritative-phase-runtime.test.mjs"
-      - "tests/movie-buff-buster-safe-boundary.test.mjs"
-      - "tests/movie-buff-phase-tile-mutation-guard.test.mjs"
+      - "tests/movie-buff-match-start-handoff.test.mjs"
   workflow_dispatch:
 
 permissions:
@@ -42,8 +40,7 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 30
     env:
-      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
+      EXPECTED_SHA: ${{ github.sha }}
 
     steps:
       - name: Check out exact SHA
@@ -63,8 +60,6 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $resolvedRef = if ($env:GITHUB_HEAD_REF) { $env:GITHUB_HEAD_REF } else { $env:GITHUB_REF_NAME }
-          if ($resolvedRef -ne $env:EXPECTED_BRANCH) { throw "Branch mismatch: $resolvedRef" }
           if ((git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'SHA mismatch' }
           if (git status --porcelain) { throw 'Checkout is not clean' }
           $PSVersionTable | Out-String

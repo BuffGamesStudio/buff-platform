@@ -3,7 +3,8 @@ name: MOV-17 repository validation evidence
 on:
   push:
     branches:
-      - validation/MOV-17-encoding-twin-v2
+      - copilot/MOV-17-shared-phase-machine
+      - work/movie-buff-mov17-buster-leave-repair-20260805
     paths:
       - ".github/workflows/movie-buff-mov17-validation.yml"
       - ".github/workflows/movie-buff-mov17-windows-digital-twin.yml"
@@ -12,12 +13,23 @@ on:
       - "scripts/movie-buff-reconnect-race-proof.mjs"
       - "scripts/movie-buff-three-client-phase-evidence-runner.mjs"
       - "supabase/migrations/20260804083*_movie_buff_*.sql"
+      - "supabase/migrations/20260805194500_movie_buff_buster_leave_authority_repair.sql"
       - "supabase/rollbacks/20260804083*_movie_buff_*.sql"
+      - "supabase/rollbacks/20260805194500_movie_buff_buster_leave_authority_repair.rollback.sql"
       - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
+      - "supabase/tests/movie_buff_buster_leave_authority_repair_test.sql"
+      - "src/app/api/movie-buff/match/leave/**"
+      - "src/components/movie-buff/MovieBuffAuthoritativeNavigation.tsx"
+      - "src/lib/game/movieBuffAuthoritativePhaseClient.ts"
+      - "src/lib/server/movieBuffPhaseRouteAuthorization.ts"
       - "tests/movie-buff-server-phase-machine.test.mjs"
       - "tests/movie-buff-authoritative-phase-runtime.test.mjs"
       - "tests/movie-buff-buster-safe-boundary.test.mjs"
+      - "tests/movie-buff-buster-leave-authority-repair.test.mjs"
       - "tests/movie-buff-phase-tile-mutation-guard.test.mjs"
+      - "tests/movie-buff-match-start-handoff.test.mjs"
   pull_request:
     branches:
       - integration/movie-buff
@@ -29,12 +41,23 @@ on:
       - "scripts/movie-buff-reconnect-race-proof.mjs"
       - "scripts/movie-buff-three-client-phase-evidence-runner.mjs"
       - "supabase/migrations/20260804083*_movie_buff_*.sql"
+      - "supabase/migrations/20260805194500_movie_buff_buster_leave_authority_repair.sql"
       - "supabase/rollbacks/20260804083*_movie_buff_*.sql"
+      - "supabase/rollbacks/20260805194500_movie_buff_buster_leave_authority_repair.rollback.sql"
       - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_test.sql"
+      - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
+      - "supabase/tests/movie_buff_buster_leave_authority_repair_test.sql"
+      - "src/app/api/movie-buff/match/leave/**"
+      - "src/components/movie-buff/MovieBuffAuthoritativeNavigation.tsx"
+      - "src/lib/game/movieBuffAuthoritativePhaseClient.ts"
+      - "src/lib/server/movieBuffPhaseRouteAuthorization.ts"
       - "tests/movie-buff-server-phase-machine.test.mjs"
       - "tests/movie-buff-authoritative-phase-runtime.test.mjs"
       - "tests/movie-buff-buster-safe-boundary.test.mjs"
+      - "tests/movie-buff-buster-leave-authority-repair.test.mjs"
       - "tests/movie-buff-phase-tile-mutation-guard.test.mjs"
+      - "tests/movie-buff-match-start-handoff.test.mjs"
   workflow_dispatch:
 
 permissions:
@@ -47,7 +70,7 @@ jobs:
     timeout-minutes: 25
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
+      EXPECTED_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
     steps:
       - name: Check out exact MOV-17 SHA
@@ -84,6 +107,7 @@ jobs:
           node --check scripts/movie-buff-three-client-phase-proof.mjs
           node --check scripts/movie-buff-reconnect-race-proof.mjs
           node --check scripts/movie-buff-three-client-phase-evidence-runner.mjs
+          bash -n scripts/movie-buff-mov17-local-supabase-evidence.sh
 
       - name: Run MOV-17 repository contract tests
         shell: bash
@@ -96,7 +120,9 @@ jobs:
             tests/movie-buff-server-phase-machine.test.mjs \
             tests/movie-buff-authoritative-phase-runtime.test.mjs \
             tests/movie-buff-buster-safe-boundary.test.mjs \
+            tests/movie-buff-buster-leave-authority-repair.test.mjs \
             tests/movie-buff-phase-tile-mutation-guard.test.mjs \
+            tests/movie-buff-match-start-handoff.test.mjs \
             2>&1 | tee "${EVIDENCE_DIR}/repository-contract-tests.tap"
 
       - name: Run TypeScript
@@ -134,8 +160,9 @@ jobs:
           set -euo pipefail
           mkdir -p "${EVIDENCE_DIR}"
           {
-            echo "lane=MOV-17-validation-twin-v2"
+            echo "lane=MOV-17"
             echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
             echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
             echo "runner_os=${RUNNER_OS}"
             echo "node_version=$(node --version)"

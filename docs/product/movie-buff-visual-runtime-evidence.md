@@ -1,0 +1,80 @@
+# MOV-18 visual runtime evidence
+
+This document separates committed implementation, executable evidence, and remaining UNKNOWN claims. It does not authorize merge, deployment, hosted mutation, or production action.
+
+## Frozen runtime implementation baseline
+
+- Branch: `copilot/MOV-18-visual-motion-runtime`
+- Draft PR: `#8`
+- Runtime implementation SHA: `d6ae404b520c753655dc6f1957aac4268b794266`
+- Minimal dependency-lock commit: `eb797d283b91465af93973394217fff715f83a31`
+
+This evidence document is committed after the frozen runtime SHA. Later evidence-only metadata changes do not alter the reviewed runtime implementation.
+
+## Present in repository
+
+- Figma write capability was verified through a reversible create/remove operation in the Movie Buff file with no net design change.
+- Read-only visual runtime state derivation exists and exposes no gameplay-advance capability.
+- Static fallback, used-tile stamp, reconnect state, Game Menu shell, Buster replacement visual, curtain/slate transition surface, motion wrapper, asset map, and contract tests exist.
+- `MovieBuffRiveCanvas` uses the isolated `useRive` wrapper from `@rive-app/react-webgl2`, contained/centered layout, a shared offscreen renderer, and disabled Rive listeners.
+- The live adapter exposes only a renderer-error callback to its fallback parent. It exposes no animation-complete, state-machine-input, navigation, phase, selector, score, room, VIP, playback, or hosted-state callback.
+- `MovieBuffRiveSurface` performs a read-only `HEAD` availability check before mounting the WebGL2 canvas and fails to accessible static content when the asset or renderer cannot load.
+- `MovieBuffRiveSurface` observes `prefers-reduced-motion` and renders static content without changing authoritative deadlines or phases.
+- Curtain, film-slate, and Buster replacement surfaces consume that passive Rive boundary. They do not invent production artboard or state-machine input names.
+- `/games/movie-buff/visual-runtime-preview` is an isolated presentation-only proof route. It does not import Supabase, call Movie Buff APIs, leave a room, or mutate gameplay.
+- The visual authority boundary explicitly leaves shared phase and navigation ownership to MOV-17.
+
+## Rive dependency status
+
+The synchronized npm pair is committed:
+
+- `@rive-app/react-webgl2`: exact `4.30.0`
+- transitive `@rive-app/webgl2`: exact `2.39.1`
+
+The final `package-lock.json` diff contains only:
+
+1. the root `@rive-app/react-webgl2` declaration;
+2. the `node_modules/@rive-app/react-webgl2` node generated from the npm registry;
+3. the `node_modules/@rive-app/webgl2` transitive node generated from the npm registry.
+
+All other lockfile content is byte-structure equivalent to `integration/movie-buff` after those three approved additions are removed. The workflow enforces this with a deep equality assertion against the integration lock. No unrelated dependency, version, integrity, platform metadata, bundled package, or lock entry is added, removed, upgraded, or downgraded.
+
+Production `.riv` files and their real artboard/state-machine names remain absent. The runtime therefore retains the static fallback and does not claim a production animation.
+
+## Executable PASS evidence
+
+### Frozen runtime
+
+GitHub Actions run `30921251194` executed against exact runtime SHA `d6ae404b520c753655dc6f1957aac4268b794266` with Node `22.23.1` and npm `10.9.8`.
+
+The run passed:
+
+- exact Rive manifest/lock validation;
+- `npm ci --ignore-scripts --no-audit --no-fund`;
+- 13 focused MOV-18 Node tests;
+- TypeScript `tsc --noEmit`;
+- production `next build` using explicit localhost-only Supabase placeholders;
+- package and lock diff checks.
+
+### Minimal lock convergence
+
+GitHub Actions run `30923479679` generated the registry-backed Rive nodes, reconstructed the lock from the exact integration lock plus only those nodes, deep-compared the stripped result to the integration lock, installed it with `npm ci`, ran the MOV-18 tests, TypeScript, and localhost-only production build, then committed the verified minimal lock as `eb797d283b91465af93973394217fff715f83a31`.
+
+The localhost build values were non-secret placeholders targeting `http://127.0.0.1:54321`. The workflows did not contact or mutate hosted Supabase.
+
+Vercel preview status for the frozen runtime and subsequent evidence commits succeeded. This is build evidence only; it does not prove production deployment, production data, or rendered visual correctness.
+
+## Correctly retained UNKNOWN evidence
+
+- Live initialization with a production `.riv` file.
+- Production artboard and state-machine name validation.
+- Real-browser missing-asset fallback rendering.
+- Real-browser WebGL context loss and recovery.
+- Reduced-motion screenshots.
+- Responsive screenshots at phone, tablet, desktop, and television dimensions.
+- Keyboard and screen-reader walkthrough.
+- Reconnect journey against the final MOV-17 server-owned phase view.
+- Integrated board, playback, results, menu, and Buster journeys after MOV-17 and MOV-16 convergence.
+- Final independent MOV-19 acceptance.
+
+A workflow or Vercel build success is not final visual acceptance. All unexecuted browser, asset, integration, and production claims remain UNKNOWN.
