@@ -1,0 +1,58 @@
+{
+  "acceptedCutoffComponents": [
+    {"id":"PR3","pr":3,"sha":"f692e82a5d524c950011e0300908c9cbec2389cb","tree":"621bd5d39059f76773d84b5a0d1dce851e2ff0de"},
+    {"id":"PR5","pr":5,"sha":"91eac0d55abb1a9568017df687e8395771d24780","tree":"1ae3ed427b2c1b38c3731cc9532b5d0fb0c6336f"},
+    {"id":"MOV15","pr":9,"sha":"48d44bb156b71060d1b9adcc7a2a3f014cf92060","tree":"e010c949920f84e5f7aaca9d50ebf39d6ea13309"},
+    {"id":"MOV16","pr":6,"sha":"1d3b947ca153214028b5ac97a7eea83c382b5c7d","tree":"94fd19ab499b02663b21880aa5efeec37c93ca9d"},
+    {"id":"MOV17_CUTOFF","pr":10,"sha":"9239fcdc731ec05594c75d3ef9961e6cd4d36bbf","tree":"57a00c385e210717bd705b14d2146908736482fe"},
+    {"id":"MOV18","pr":8,"sha":"a416dd1bf6b372d11abcc0541abd9584443b0672","tree":"a866c5610d09c45eb1ff3c3422306a46050e9ec7"},
+    {"id":"ENCODING","pr":12,"sha":"d1f7ca58b534cbccd3071743d542f5788c0e9173","tree":"ea817ad706f4107fc16482cbe6cc40ec6a012ee0"}
+  ],
+  "approvedCandidateFixes": [
+    {"id":"AGENT6_SECURITY_BASE","pr":105,"scope":"18 exact files","sha":"915877115479db3c14665ac3fcbe17a0d2ae8921","tree":"47175b18af9e3dd1dc6aa30e41bb3b5bd06aa272"},
+    {"id":"STAGING_SECURITY_CLEARANCE","pr":114,"scope":"6 exact files","sha":"55b317f9aece77a26968ddeebe1ce167cbc0664a","tree":"9f4ddfa93816869efdc793f79dc998572135a9c0"},
+    {"id":"LOBBY_SESSION_REPAIR","pr":36,"scope":"2 exact files","sha":"3d2743da175229de42847c82c71931657c2090da","tree":"52bd3a7a284ef2c7a4ae2d6ac14ec8b7120589c8"},
+    {"commit":"b9d491abeca26407ad3f6c680b15792cecf994c9","gitBlob":"44f47d7f2aa3266d139a9c0e4246818b3f18e31d","id":"MOV17_CANONICAL_RESPONSE_ROUTE","path":"src/app/api/movie-buff/match/view/route.ts"},
+    {"commit":"aff3c21d3870d8875a79ecf32bd111e38590e338","gitBlob":"505ce6445c0b9bff1c80e62807c860d25000e257","id":"MOV17_TYPED_CLIENT","path":"src/lib/game/movieBuffAuthoritativePhaseClient.ts"}
+  ],
+  "candidate": {
+    "branch":"release/movie-buff-rc-2026-08-06-01-rc2",
+    "classification":"NO-GO_PENDING_EVIDENCE",
+    "name":"RC-2",
+    "predecessorFailedRefs":[
+      {"sha":"78c35aa15ec7f1bb3cb3de316f260fec438f00dc","tree":"f8d3b3901ad0c0b1db1cfa4a6374f2a979dd5613"},
+      {"sha":"d1798058f360c96059c529ecdf141561a02a3f4f","tree":"0a6f575dcecb2c0b323f40dd6d3c6f25f577a16e"}
+    ],
+    "productSha":"2c36032f32ed84711312045d65506af1313e3f40",
+    "productTree":"9fe62aba99c4710a59e39f60b8ecd5a5a70ae9c0"
+  },
+  "compositionOrder":[
+    "cutoff product c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6",
+    "Agent6 exact 18-file overlay",
+    "PR114 exact six-file overlay",
+    "lobby exact two-file overlay",
+    "MOV17 exact two-product-file overlay",
+    "remove eleven MOV19 validator artifacts from product"
+  ],
+  "cutoffProduct":{"manifestGitBlob":"c86f23e1426774bfcb5f7a920ae17e84e92efcd9","sha":"c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6","tree":"a995a9aeb2fca76d2c1b216ece3a2645c2393c71"},
+  "externalValidationAndOperations":{
+    "controllers":[{"pr":111},{"pr":112},{"pr":116}],
+    "mov19":{"embeddedInProduct":false,"rulesetVersion":"v1","sha":"e2d14447d7036cf9dc645514c4713bd4d8e42db1"},
+    "operations":[{"pr":108},{"pr":117}]
+  },
+  "hashEvidenceContract":{
+    "canonicalManifestSha256ExcludingThisField":"94776e9ebb950ca273529dab7d40f7b9589e3248c9a5bda1d9581cf48a81ffb9",
+    "fullMigrationAndRollbackSha256Ledger":"generated externally against exact product SHA; must be attached before GO",
+    "workflow":".github/workflows/movie-buff-rc2-evidence.yml"
+  },
+  "integrationBase":{"branch":"integration/movie-buff","sha":"bf316a15a2120e32d8a32e479df2ae439081f9a1","tree":"12f425f4c56fb3f3c66df6f3a6543d7fd8b6ef34"},
+  "knownHardStops":[
+    {"classification":"FAIL_UNRESOLVED","id":"MOV17_83100_ROLLBACK_GAP","path":"supabase/migrations/20260804083100_movie_buff_server_phase_machine_hardening.sql","sha256":"602d64cf2c7de8135ec4d21b29f587e5420945d6eb3339b91b3a9fc028b9ab8f"},
+    {"classification":"UNKNOWN","id":"EXACT_RUNTIME_EVIDENCE"},
+    {"classification":"UNKNOWN","id":"EXACT_BROWSER_EVIDENCE"},
+    {"classification":"UNKNOWN","id":"PRODUCTION_TARGET_AND_BACKUP"},
+    {"classification":"UNKNOWN","id":"OPERATIONS_AUTHORITIES"}
+  ],
+  "releaseTrain":"2026-08-06-01",
+  "schemaVersion":1
+}
