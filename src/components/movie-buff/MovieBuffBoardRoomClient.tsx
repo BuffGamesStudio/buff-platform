@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   selectMovieBuffAuthoritativeTile,
@@ -73,18 +73,26 @@ async function loadMatchView(roomId: string): Promise<MatchViewResponse> {
 
 export default function MovieBuffBoardRoomClient({ roomId }: { roomId: string }) {
   const router = useRouter();
+  const latestLoadRequestRef = useRef(0);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [phase, setPhase] = useState<MovieBuffAuthoritativePhaseView | null>(null);
   const [error, setError] = useState("");
   const [pendingTile, setPendingTile] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    const requestId = ++latestLoadRequestRef.current;
+
     try {
       setError("");
       const result = await loadMatchView(roomId);
+
+      if (requestId !== latestLoadRequestRef.current) return;
+
       setPreview(result.board.preview);
       setPhase(result.view);
     } catch (loadError) {
+      if (requestId !== latestLoadRequestRef.current) return;
+
       if (loadError instanceof Error && loadError.message === "SIGN_IN_REQUIRED") {
         router.replace(
           `/sign-in?next=${encodeURIComponent(
@@ -102,9 +110,24 @@ export default function MovieBuffBoardRoomClient({ roomId }: { roomId: string })
   }, [roomId, router]);
 
   useEffect(() => {
-    void load();
-    const interval = window.setInterval(() => void load(), 750);
-    return () => window.clearInterval(interval);
+    let cancelled = false;
+    let timeout: number | null = null;
+
+    const poll = async () => {
+      await load();
+
+      if (!cancelled) {
+        timeout = window.setTimeout(() => void poll(), 750);
+      }
+    };
+
+    void poll();
+
+    return () => {
+      cancelled = true;
+      latestLoadRequestRef.current += 1;
+      if (timeout !== null) window.clearTimeout(timeout);
+    };
   }, [load]);
 
   async function select(tileId: string) {
