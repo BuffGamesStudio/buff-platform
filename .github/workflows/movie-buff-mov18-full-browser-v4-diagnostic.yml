@@ -1,0 +1,58 @@
+name: MOV-18 final full browser artifact diagnostic
+
+on:
+  push:
+    branches: [validation/movie-buff-mov18-full-browser-v4-diagnostic]
+    paths: [".github/workflows/movie-buff-mov18-full-browser-v4-diagnostic.yml"]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect-artifact:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind exact diagnostic ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 9e7fda7598cbcc604fb165f3428f27d65c7535d6 HEAD
+          test -z "$(git status --porcelain)"
+      - uses: actions/download-artifact@v4
+        with:
+          name: movie-buff-mov18-full-browser-9e7fda7598cbcc604fb165f3428f27d65c7535d6
+          path: ${{ runner.temp }}/mov18-full-artifact
+          run-id: 31063927570
+          github-token: ${{ github.token }}
+      - name: Print sanitized exact classification evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/mov18-full-artifact"
+          echo "--- inventory ---"
+          find "$root" -maxdepth 2 -type f -printf '%P\n' | sort
+          echo "--- metadata ---"
+          cat "$root/metadata.txt" 2>/dev/null || true
+          echo "--- child exit ---"
+          cat "$root/three-client-browser-v2.exit" 2>/dev/null || true
+          echo "--- journey JSON ---"
+          cat "$root/three-client-full-journey-v2.json" 2>/dev/null || true
+          echo "--- browser log tail ---"
+          tail -500 "$root/three-client-browser-v2.log" 2>/dev/null || true
+          echo "--- application log tail ---"
+          tail -250 "$root/application.log" 2>/dev/null || true
+          echo "--- internal manifest ---"
+          (cd "$root" && sha256sum -c sha256.txt)
+      - name: Verify clean postflight
+        if: always()
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
