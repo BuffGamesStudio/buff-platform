@@ -196,19 +196,21 @@ export function mapMovieBuffAuthoritativePhaseToVisualPhase(
       };
     case "playback":
     case "answer":
-    case "results":
+    case "results": {
       if (source.selectedTileId === null) {
         return invalidVisualPhase(
           source,
           `${source.phase.toUpperCase()}_MISSING_SELECTED_TILE`,
         );
       }
+      const phase: "playback" | "answer" | "results" = source.phase;
       return {
-        phase: source.phase,
+        phase,
         valid: true,
         reason: null,
         phaseVersion: source.phaseVersion,
       };
+    }
     case "finished":
       return {
         phase: "match_complete",
