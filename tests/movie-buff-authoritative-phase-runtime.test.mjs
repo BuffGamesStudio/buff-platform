@@ -38,6 +38,14 @@ const matchStatusPage = fs.readFileSync(
   "src/app/games/movie-buff/match-status/page.tsx",
   "utf8",
 );
+const resultsPage = fs.readFileSync(
+  "src/app/games/movie-buff/round-results/page.tsx",
+  "utf8",
+);
+const boardRoomClient = fs.readFileSync(
+  "src/components/movie-buff/MovieBuffBoardRoomClient.tsx",
+  "utf8",
+);
 
 test("canonical phases and server timestamps are durable", () => {
   for (const phase of [
@@ -145,6 +153,37 @@ test("legacy manual round advance is removed from authenticated callers", () => 
   assert.match(
     hardening,
     /grant execute on function public\.advance_movie_buff_round\(uuid\)[\s\S]*service_role/i,
+  );
+});
+
+test("results route consumes authoritative room state without manual advance", () => {
+  assert.match(resultsPage, /MovieBuffAuthoritativeResultsClient/);
+  assert.match(resultsPage, /searchParams/);
+  assert.match(resultsPage, /resolved\?\.roomId/);
+  assert.match(resultsPage, /redirect\("\/games\/movie-buff\/lobby"\)/);
+  assert.doesNotMatch(resultsPage, /roundId/);
+  assert.doesNotMatch(resultsPage, /advanceMovieBuffRound|handleNextRound|Next Round/);
+});
+
+test("board polling cannot apply an older preview after a newer request", () => {
+  assert.match(boardRoomClient, /useCallback, useEffect, useRef, useState/);
+  assert.match(boardRoomClient, /const latestLoadRequestRef = useRef\(0\)/);
+  assert.match(
+    boardRoomClient,
+    /const requestId = \+\+latestLoadRequestRef\.current/,
+  );
+  assert.match(
+    boardRoomClient,
+    /if \(requestId !== latestLoadRequestRef\.current\) return;/,
+  );
+  assert.match(
+    boardRoomClient,
+    /window\.setTimeout\(\(\) => void poll\(\), 750\)/,
+  );
+  assert.match(boardRoomClient, /latestLoadRequestRef\.current \+= 1/);
+  assert.doesNotMatch(
+    boardRoomClient,
+    /window\.setInterval\(\(\) => void load\(\), 750\)/,
   );
 });
 

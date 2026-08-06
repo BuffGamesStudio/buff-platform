@@ -61,12 +61,12 @@ select ok(
   'presence touch returns an explicit fail-closed resume result'
 );
 select ok(
-  position('v_state.phase <> ''board_select''' in pg_get_functiondef('public.movie_buff_activate_ready_busters(uuid)'::regprocedure)) > 0,
-  'Buster activation is limited to board_select'
+  position('v_state.phase not in (''board_select'', ''results'', ''round_intro'')' in pg_get_functiondef('public.movie_buff_activate_ready_busters(uuid)'::regprocedure)) > 0,
+  'delayed Buster activation is limited to declared safe boundaries'
 );
 select ok(
   position('''vip_lock''' in pg_get_functiondef('public.movie_buff_activate_ready_busters(uuid)'::regprocedure)) = 0,
-  'Buster activation does not occur during the private VIP window'
+  'delayed Buster activation does not occur during the private VIP window'
 );
 
 select has_trigger('public','answers','movie_buff_answers_require_authoritative_phase','answer phase guard trigger exists');

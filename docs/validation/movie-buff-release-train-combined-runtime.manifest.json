@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Release-train combined MOV-15/MOV-16/MOV-17 race and synchronization runtime",
+  "repository": "BuffGamesStudio/buff-platform",
+  "branch": "validation/movie-buff-combined-race-matrix-v1",
+  "productSha": "c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6",
+  "productTree": "a995a9aeb2fca76d2c1b216ece3a2645c2393c71",
+  "historicalBranchParent": "ac7d6a92cddffff49b87cd720145ab1a09dc0db6",
+  "releaseTrainCutoffUtc": "2026-08-06T21:54:00Z",
+  "executionRequestedUtc": "2026-08-06T23:00:00Z",
+  "components": {
+    "integration": "bf316a15a2120e32d8a32e479df2ae439081f9a1",
+    "mov15": "48d44bb156b71060d1b9adcc7a2a3f014cf92060",
+    "mov16": "1d3b947ca153214028b5ac97a7eea83c382b5c7d",
+    "mov17": "9239fcdc731ec05594c75d3ef9961e6cd4d36bbf",
+    "mov18": "a416dd1bf6b372d11abcc0541abd9584443b0672",
+    "migrationEncoding": "d1f7ca58b534cbccd3071743d542f5788c0e9173",
+    "pr3Visuals": "f692e82a5d524c950011e0300908c9cbec2389cb",
+    "pr5Hardening": "91eac0d55abb1a9568017df687e8395771d24780"
+  },
+  "declaredChecks": [
+    "three compatible callers converge into one room",
+    "no 2 plus 1 room split",
+    "no partial room start",
+    "fourth player and late third behavior",
+    "duplicate admission idempotency",
+    "lock contention convergence",
+    "private VIP required-human snapshot",
+    "private VIP deadline finalization",
+    "reconnect before and after expiry",
+    "reconnect racing expiry finalization",
+    "duplicate reconnect-expiry workers",
+    "duplicate expiry workers",
+    "exactly-once phase transitions",
+    "Buster inactivity during VIP",
+    "Buster activation only at board-safe boundary",
+    "selector timeout and rotation",
+    "exactly-once leave penalties"
+  ],
+  "scope": {
+    "databaseRuntime": "disposable-localhost",
+    "application": "localhost-only",
+    "renderedBrowser": "UNKNOWN",
+    "hosted": "NOT APPLICABLE",
+    "production": "NOT APPLICABLE"
+  },
+  "dispatch": {
+    "method": "registered-push-branch-fast-forward",
+    "classification": "REQUESTED"
+  }
+}
