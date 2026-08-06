@@ -48,7 +48,6 @@ jobs:
     timeout-minutes: 120
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      EVIDENCE_ROOT: ${{ runner.temp }}/movie-buff-agent6-security-evidence
 
     steps:
       - name: Check out exact Agent 6 source
@@ -98,19 +97,20 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          evidence_root="${RUNNER_TEMP}/movie-buff-agent6-security-evidence"
           bash scripts/movie-buff-agent6-security-package.sh \
             "${EXPECTED_SHA}" \
             "${SOURCE_TREE}" \
             "${PRODUCT_SHA}" \
             "${PRODUCT_TREE}" \
-            "${EVIDENCE_ROOT}"
+            "${evidence_root}"
 
       - name: Upload Agent 6 evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: movie-buff-agent6-security-${{ env.EXPECTED_SHA }}
-          path: ${{ env.EVIDENCE_ROOT }}
+          path: ${{ runner.temp }}/movie-buff-agent6-security-evidence
           if-no-files-found: error
           retention-days: 14
 
