@@ -13,6 +13,7 @@ on:
   pull_request:
     branches:
       - integration/movie-buff
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
