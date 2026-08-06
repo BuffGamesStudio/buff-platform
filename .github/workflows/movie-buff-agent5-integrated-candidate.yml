@@ -1,0 +1,149 @@
+name: Movie Buff Agent 5 exact integrated candidate v6
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-integrated-candidate-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/movie-buff-integrated-candidate-v1
+  PRODUCT_SHA: c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6
+  PRODUCT_TREE: a995a9aeb2fca76d2c1b216ece3a2645c2393c71
+  PREVIOUS_PRODUCT_SHA: 520a06c9c79e6a2b0ef9ce7816abd70514cba922
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  linux-exact-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-mock-publishable-key
+      SUPABASE_SERVICE_ROLE_KEY: local-mock-service-role-key
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Initialize Linux evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/agent5-linux-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "EVIDENCE=${evidence}" >>"${GITHUB_ENV}"
+          mkdir -p "${evidence}"
+
+      - name: Execute Agent 5 Linux exact validation
+        id: linux-controller
+        continue-on-error: true
+        shell: bash
+        run: |
+          ./scripts/movie-buff-agent5-linux-exact-validation.sh \
+            "${GITHUB_SHA}" \
+            "${EXPECTED_BRANCH}" \
+            "${PRODUCT_SHA}" \
+            "${PRODUCT_TREE}" \
+            "${PREVIOUS_PRODUCT_SHA}" \
+            "${EVIDENCE}"
+
+      - name: Upload Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent5-linux-${{ github.sha }}
+          path: ${{ runner.temp }}/agent5-linux-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce Linux result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "${EVIDENCE}/controller.exit"
+          test "$(cat "${EVIDENCE}/controller.exit")" = "0"
+
+  windows-digital-twin:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-mock-publishable-key
+      SUPABASE_SERVICE_ROLE_KEY: local-mock-service-role-key
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Initialize Windows evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $evidence = Join-Path $env:RUNNER_TEMP "agent5-windows-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          "EVIDENCE=$evidence" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+
+      - name: Install committed dependency graph
+        id: windows-install
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund 2>&1 | Tee-Object -FilePath (Join-Path $env:EVIDENCE "npm-ci.log")
+          $code = $LASTEXITCODE
+          [IO.File]::WriteAllText((Join-Path $env:EVIDENCE "dependency_install.exit"), "$code`n", [Text.Encoding]::ASCII)
+          exit $code
+
+      - name: Execute Agent 5 Windows digital twin
+        id: windows-controller
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          ./scripts/movie-buff-agent5-windows-digital-twin.ps1 `
+            -ExpectedSha $env:GITHUB_SHA `
+            -ExpectedBranch $env:EXPECTED_BRANCH `
+            -ProductSha $env:PRODUCT_SHA `
+            -ProductTree $env:PRODUCT_TREE `
+            -EvidenceDirectory $env:EVIDENCE
+          $code = $LASTEXITCODE
+          if ($null -eq $code) { $code = 0 }
+          [IO.File]::WriteAllText((Join-Path $env:EVIDENCE "wrapper.exit"), "$code`n", [Text.Encoding]::ASCII)
+          exit $code
+
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent5-windows-${{ github.sha }}
+          path: ${{ runner.temp }}\agent5-windows-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce Windows result
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($name in @("dependency_install", "wrapper")) {
+            $path = Join-Path $env:EVIDENCE "$name.exit"
+            if (-not (Test-Path $path)) { throw "Missing $name exit record" }
+            if ((Get-Content -LiteralPath $path -Raw).Trim() -ne "0") { throw "$name failed" }
+          }
