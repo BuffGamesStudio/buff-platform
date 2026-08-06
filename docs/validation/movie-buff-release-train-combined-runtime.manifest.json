@@ -41,5 +41,10 @@
     "renderedBrowser": "UNKNOWN",
     "hosted": "NOT APPLICABLE",
     "production": "NOT APPLICABLE"
+  },
+  "dispatch": {
+    "pushAttemptsObserved": 3,
+    "runsCreatedBeforeReopen": 0,
+    "classification": "UNKNOWN"
   }
 }
