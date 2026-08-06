@@ -8,6 +8,9 @@ const {
   mapMovieBuffAuthoritativePhaseToVisualPhase,
   mayMovieBuffVisualRuntimeAdvanceGameplay,
 } = await import("../src/lib/movie-buff/visualRuntime.ts");
+const { adaptMovieBuffAuthoritativePhaseViewToVisualSource } = await import(
+  "../src/lib/movie-buff/authoritativeVisualAdapter.ts"
+);
 const { movieBuffVisualAssets } = await import(
   "../src/lib/movie-buff/visualAssetMap.ts"
 );
@@ -39,12 +42,124 @@ const canonicalSource = (overrides = {}) => ({
   ...overrides,
 });
 
+const authoritativeView = (overrides = {}) => ({
+  roomId: "00000000-0000-4000-8000-000000000001",
+  matchId: "00000000-0000-4000-8000-000000000002",
+  roundId: "00000000-0000-4000-8000-000000000003",
+  roundNumber: 1,
+  totalRounds: 5,
+  phase: "board_select",
+  phaseVersion: 7,
+  phaseStartedAt: "2026-08-04T12:00:00.000Z",
+  phaseEndsAt: "2026-08-04T12:00:20.000Z",
+  phaseRoute: "/games/movie-buff/board-preview",
+  selectorSeatIndex: 1,
+  selectorPlayerId: "player-a",
+  selectorControllerType: "human",
+  callerIsSelector: true,
+  selectorDeadlineAt: "2026-08-04T12:00:20.000Z",
+  selectedTileId: null,
+  selectedClipId: null,
+  selectionSource: null,
+  playbackStartsAt: null,
+  answerDeadlineAt: null,
+  resultsEndAt: null,
+  blockedReason: null,
+  serverNow: "2026-08-04T12:00:05.000Z",
+  ...overrides,
+});
+
 async function source(relativePath) {
   return readFile(new URL(relativePath, import.meta.url), "utf8");
 }
 
 test("visual runtime can never advance gameplay", () => {
   assert.equal(mayMovieBuffVisualRuntimeAdvanceGameplay(), false);
+});
+
+test("current MOV-17 phase view adapts to the passive visual source", () => {
+  const adapted = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+    view: authoritativeView(),
+    lastAcceptedPhaseVersion: 6,
+  });
+
+  assert.equal(adapted.valid, true);
+  assert.deepEqual(adapted.source, canonicalSource());
+});
+
+test("authoritative route and phase contradictions fail closed", () => {
+  const adapted = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+    view: authoritativeView({ phaseRoute: "/games/movie-buff/play" }),
+    lastAcceptedPhaseVersion: 6,
+  });
+
+  assert.equal(adapted.valid, false);
+  assert.equal(adapted.reason, "CONTRADICTORY_ROUTE_AND_PHASE");
+  assert.equal(adapted.source, null);
+});
+
+test("transition presentation remains explicit visual-only input", () => {
+  const transition = authoritativeView({
+    phase: "transition",
+    phaseVersion: 8,
+    phaseRoute: "/games/movie-buff/play",
+    selectedTileId: "tile-7",
+    selectedClipId: "clip-7",
+    selectionSource: "human",
+    callerIsSelector: false,
+  });
+
+  const missing = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+    view: transition,
+    lastAcceptedPhaseVersion: 7,
+  });
+  assert.equal(missing.valid, false);
+  assert.equal(missing.reason, "TRANSITION_PRESENTATION_MISSING");
+
+  const adapted = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+    view: transition,
+    lastAcceptedPhaseVersion: 7,
+    transitionPresentation: "curtain",
+  });
+  assert.equal(adapted.valid, true);
+  assert.equal(adapted.source.transitionPresentation, "curtain");
+});
+
+test("blocked state uses the passive match-status fallback", () => {
+  const blocked = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+    view: authoritativeView({
+      phase: "blocked",
+      phaseVersion: 9,
+      phaseRoute: "/games/movie-buff/match-status",
+      selectorSeatIndex: null,
+      selectorPlayerId: null,
+      selectorControllerType: null,
+      callerIsSelector: false,
+      selectorDeadlineAt: null,
+      blockedReason: "ROUND_STATE_CONFLICT",
+    }),
+    lastAcceptedPhaseVersion: 8,
+  });
+
+  assert.equal(blocked.valid, true);
+  assert.equal(blocked.source.terminalFallback, "match_status");
+
+  const malformed = adaptMovieBuffAuthoritativePhaseViewToVisualSource({
+    view: authoritativeView({
+      phase: "blocked",
+      phaseVersion: 9,
+      phaseRoute: "/games/movie-buff/match-status",
+      selectorSeatIndex: null,
+      selectorPlayerId: null,
+      selectorControllerType: null,
+      callerIsSelector: false,
+      selectorDeadlineAt: null,
+      blockedReason: null,
+    }),
+    lastAcceptedPhaseVersion: 8,
+  });
+  assert.equal(malformed.valid, false);
+  assert.equal(malformed.reason, "BLOCKED_REASON_MISSING");
 });
 
 test("MOV-17 canonical phases map to passive MOV-18 visual phases", () => {
@@ -350,6 +465,27 @@ test("Buster and transitions remain passive Rive consumers", async () => {
 
   assert.match(buster, /data-buster-visual-state=\{state\}/);
   assert.match(transition, /authoritative playback timestamp/);
+});
+
+test("authoritative visual adapter remains a read-only consumer", async () => {
+  const [adapter, component] = await Promise.all([
+    source("../src/lib/movie-buff/authoritativeVisualAdapter.ts"),
+    source(
+      "../src/components/movie-buff/visual/MovieBuffAuthoritativePhaseVisualAdapter.tsx",
+    ),
+  ]);
+
+  for (const visual of [adapter, component]) {
+    assert.doesNotMatch(visual, /router\.(push|replace)/);
+    assert.doesNotMatch(visual, /window\.location/);
+    assert.doesNotMatch(visual, /supabase/i);
+    assert.doesNotMatch(visual, /\/api\/movie-buff/);
+    assert.doesNotMatch(visual, /fetch\s*\(/);
+  }
+
+  assert.match(adapter, /CONTRADICTORY_ROUTE_AND_PHASE/);
+  assert.match(adapter, /TRANSITION_PRESENTATION_MISSING/);
+  assert.match(component, /data-movie-buff-authoritative-view="read-only"/);
 });
 
 test("isolated preview route cannot call gameplay or hosted APIs", async () => {
