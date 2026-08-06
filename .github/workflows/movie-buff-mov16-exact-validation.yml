@@ -9,6 +9,7 @@ on:
       - "scripts/movie-buff-mov16-evidence-guard.mjs"
       - "scripts/movie-buff-mov16-deadline-release-race.mjs"
       - "scripts/movie-buff-mov16-linux-exact-validation.sh"
+      - "scripts/movie-buff-mov16-linux-exact-validation-v2.sh"
       - "scripts/movie-buff-mov16-windows-digital-twin.ps1"
       - "scripts/movie-buff-mov16-catalog-manifest.sql"
       - "supabase/migrations/20260804073000_movie_buff_vip_authority.sql"
@@ -77,7 +78,7 @@ jobs:
         shell: bash
         env:
           MOVIE_BUFF_EXPECTED_GIT_SHA: ${{ github.sha }}
-        run: bash scripts/movie-buff-mov16-linux-exact-validation.sh
+        run: bash scripts/movie-buff-mov16-linux-exact-validation-v2.sh
 
       - name: Upload Linux exact evidence
         if: always()
@@ -132,6 +133,8 @@ jobs:
           git fetch --no-tags origin $env:MOV17_SHA
           if ($LASTEXITCODE -ne 0) { throw "Unable to fetch exact MOV-17 SHA." }
 
+          New-Item -ItemType Directory -Force -Path $env:RUNNER_TEMP\movie-buff-mov16-windows | Out-Null
+
           $paths = @(
             git ls-tree -r --name-only $env:MOV17_SHA -- supabase/migrations |
               Where-Object { $_ -match "^supabase/migrations/20260804083\d{3}_movie_buff_.*\.sql$" } |
@@ -151,7 +154,9 @@ jobs:
             "finalize_movie_buff_vip_round_window",
             "release_movie_buff_vip_required_player",
             "set_movie_buff_vip_activation_phase",
-            "p_required_player_ids"
+            "public.open_movie_buff_vip_round_window(uuid,uuid,uuid,timestamptz,uuid[])",
+            "v_required_ids",
+            "array_agg(seat.original_player_id order by seat.seat_index)"
           )) {
             if (-not $source.Contains($token)) {
               throw "MOV-17 exact source is missing $token."
@@ -170,7 +175,6 @@ jobs:
               "set_movie_buff_vip_activation_phase(uuid,uuid,text)"
             )
           }
-          New-Item -ItemType Directory -Force -Path $env:RUNNER_TEMP\movie-buff-mov16-windows | Out-Null
           $record | ConvertTo-Json -Depth 5 |
             Out-File -FilePath $env:RUNNER_TEMP\movie-buff-mov16-windows\mov17-compatibility.json -Encoding utf8
 
