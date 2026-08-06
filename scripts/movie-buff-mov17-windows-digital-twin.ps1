@@ -64,19 +64,20 @@ try {
     'supabase/rollbacks/20260804083500_movie_buff_reconnect_buster_boundary_repair.rollback.sql',
     'supabase/migrations/20260804083600_movie_buff_match_start_handoff.sql',
     'supabase/rollbacks/20260804083600_movie_buff_match_start_handoff.rollback.sql',
-    'supabase/migrations/20260805194400_movie_buff_buster_leave_authority_preflight.sql',
-    'supabase/rollbacks/20260805194400_movie_buff_buster_leave_authority_preflight.rollback.sql',
-    'supabase/migrations/20260805194500_movie_buff_buster_leave_authority_repair.sql',
-    'supabase/rollbacks/20260805194500_movie_buff_buster_leave_authority_repair.rollback.sql',
-    'supabase/tests/movie_buff_buster_leave_authority_repair_test.sql',
-    'supabase/tests/movie_buff_buster_leave_authority_rollback_test.sql',
-    'tests/movie-buff-buster-leave-authority-repair.test.mjs',
+    'supabase/migrations/20260804083700_movie_buff_active_leave_and_buster_boundary.sql',
+    'supabase/rollbacks/20260804083700_movie_buff_active_leave_and_buster_boundary.rollback.sql',
+    'supabase/tests/movie_buff_active_leave_and_buster_boundary_test.sql',
+    'supabase/tests/movie_buff_active_leave_and_buster_boundary_rollback_test.sql',
+    'tests/movie-buff-active-leave-boundary.test.mjs',
     'src/app/api/movie-buff/match/leave/quote/route.ts',
     'src/app/api/movie-buff/match/leave/confirm/route.ts',
-    'scripts/movie-buff-reconnect-race-proof.mjs'
+    'src/lib/server/movieBuffPhaseRouteAuthorization.ts',
+    'scripts/movie-buff-reconnect-race-proof.mjs',
+    'scripts/movie-buff-three-client-phase-proof.mjs',
+    'scripts/movie-buff-three-client-phase-evidence-runner.mjs'
   )) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
-      throw "Required MOV-17 file is missing from the expected working directory: $requiredPath"
+      throw "Required canonical MOV-17 file is missing: $requiredPath"
     }
   }
 
@@ -89,24 +90,27 @@ try {
   }
 
   @(
-    "lane=MOV-17-successor"
+    'lane=MOV-17-canonical'
     "source_sha=$actualSha"
     "source_tree=$((git rev-parse HEAD^{tree}).Trim())"
     "powershell_version=$($PSVersionTable.PSVersion)"
     "node_version=$((node --version).Trim())"
     "npm_version=$((npm --version).Trim())"
     "repository_root=$PWD"
-    "target_kind=repository-static-and-localhost-placeholder-build"
-    "database_behavior=UNKNOWN"
-    "browser_behavior=UNKNOWN"
-    "physical_windows_equivalence=UNKNOWN"
-    "hosted_state=UNTOUCHED"
+    'target_kind=windows-command-shell-and-localhost-placeholder-build'
+    'database_behavior=UNKNOWN'
+    'browser_behavior=UNKNOWN'
+    'physical_windows_equivalence=UNKNOWN'
+    'hosted_state=UNTOUCHED'
     "generated_at=$([DateTime]::UtcNow.ToString('o'))"
   ) | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'metadata.txt') -Encoding utf8
 
   Invoke-Captured 'npm-ci' { npm ci --ignore-scripts --no-audit --no-fund }
   Invoke-Captured 'node-syntax-reconnect-proof' {
     node --check scripts/movie-buff-reconnect-race-proof.mjs
+  }
+  Invoke-Captured 'node-syntax-phase-proof' {
+    node --check scripts/movie-buff-three-client-phase-proof.mjs
   }
   Invoke-Captured 'node-syntax-evidence-runner' {
     node --check scripts/movie-buff-three-client-phase-evidence-runner.mjs
@@ -116,7 +120,7 @@ try {
       tests/movie-buff-server-phase-machine.test.mjs `
       tests/movie-buff-authoritative-phase-runtime.test.mjs `
       tests/movie-buff-buster-safe-boundary.test.mjs `
-      tests/movie-buff-buster-leave-authority-repair.test.mjs `
+      tests/movie-buff-active-leave-boundary.test.mjs `
       tests/movie-buff-phase-tile-mutation-guard.test.mjs `
       tests/movie-buff-match-start-handoff.test.mjs
   }
