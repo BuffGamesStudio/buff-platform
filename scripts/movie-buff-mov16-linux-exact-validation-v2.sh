@@ -52,6 +52,29 @@ substitutions = [
 '''    node scripts/movie-buff-mov16-adversarial-v3-wrapper.mjs "${HARNESS}" >"${RAW}/adversarial-${suffix}.log" 2>&1
 '''
     ),
+    (
+'''if require_ready; then
+  run_pgtap "pgtap-after-reapply"
+fi
+''',
+'''if require_ready; then
+  psql "${database_url}" -X -v ON_ERROR_STOP=1 \\
+    -v room_id="${room_id}" -v definition_id="${definition_id}" <<'SQL' \\
+    >"${RAW}/sentinel-data-pre-pgtap-cleanup.log" 2>&1
+begin;
+delete from public.game_rooms where id=:'room_id'::uuid;
+delete from public.movie_buff_vip_inventory where vip_id=:'definition_id'::uuid;
+delete from public.movie_buff_vip_definitions where id=:'definition_id'::uuid;
+commit;
+SQL
+  record_exit "sentinel-data-pre-pgtap-cleanup" $?
+fi
+
+if require_ready; then
+  run_pgtap "pgtap-after-reapply"
+fi
+'''
+    ),
 ]
 for old, new in substitutions:
     if source.count(old) != 1:
