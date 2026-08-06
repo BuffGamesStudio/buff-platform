@@ -109,10 +109,14 @@ jobs:
             echo "hosted_state=UNKNOWN"
             echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } > "${EVIDENCE_DIR}/metadata.txt"
-          find "${EVIDENCE_DIR}" -maxdepth 1 -type f ! -name sha256.txt -print0 \
-            | sort -z \
-            | xargs -0 sha256sum \
-            > "${EVIDENCE_DIR}/sha256.txt"
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > sha256.txt
+            sha256sum -c sha256.txt
+          )
 
       - name: Upload Linux encoding evidence
         if: always()
@@ -207,11 +211,34 @@ jobs:
             'hosted_state=UNKNOWN'
             "generated_at=$([DateTime]::UtcNow.ToString('o'))"
           ) | Set-Content -LiteralPath (Join-Path $evidenceRoot 'metadata.txt') -Encoding utf8
-          Get-ChildItem -LiteralPath $evidenceRoot -File |
-            Where-Object Name -ne 'sha256.csv' |
-            Get-FileHash -Algorithm SHA256 |
-            Select-Object Path, Hash |
-            Export-Csv -LiteralPath (Join-Path $evidenceRoot 'sha256.csv') -NoTypeInformation
+          $manifestPath = Join-Path $evidenceRoot 'sha256.txt'
+          $manifestLines = Get-ChildItem -LiteralPath $evidenceRoot -File |
+            Where-Object Name -ne 'sha256.txt' |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $($_.Name)"
+            }
+          [System.IO.File]::WriteAllLines(
+            $manifestPath,
+            $manifestLines,
+            [System.Text.Encoding]::ASCII
+          )
+          Get-Content -LiteralPath $manifestPath | ForEach-Object {
+            if ($_ -notmatch '^([0-9a-f]{64})  (.+)$') {
+              throw "Invalid portable hash line: $_"
+            }
+            $expectedHash = $Matches[1]
+            $relativeName = $Matches[2]
+            if ([System.IO.Path]::IsPathRooted($relativeName) -or
+                $relativeName -ne [System.IO.Path]::GetFileName($relativeName)) {
+              throw "Nonportable evidence path: $relativeName"
+            }
+            $actualHash = (Get-FileHash -LiteralPath (Join-Path $evidenceRoot $relativeName) -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualHash -ne $expectedHash) {
+              throw "Evidence hash mismatch: $relativeName"
+            }
+          }
 
       - name: Upload Windows encoding evidence
         if: always()

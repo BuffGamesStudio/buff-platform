@@ -17,6 +17,7 @@ on:
       - "supabase/migrations/20260804073200_movie_buff_vip_snapshot_release_hardening.sql"
       - "supabase/migrations/20260804073300_movie_buff_vip_deadline_finalize.sql"
       - "supabase/rollbacks/20260804073000_movie_buff_vip_authority.rollback.sql"
+      - "supabase/rollbacks/20260804073100_movie_buff_vip_null_category_fail_closed.rollback.sql"
       - "supabase/rollbacks/20260804073200_movie_buff_vip_snapshot_release_hardening.rollback.sql"
       - "supabase/rollbacks/20260804073300_movie_buff_vip_deadline_finalize.rollback.sql"
       - "supabase/rollbacks/20260804073310_movie_buff_vip_callable_containment.rollback.sql"
@@ -26,6 +27,7 @@ on:
       - "supabase/tests/movie_buff_vip_catalog_contract_test.sql"
       - "scripts/movie-buff-vip-authority-adversarial.mjs"
       - "scripts/movie-buff-vip-authority-personas.mjs"
+      - "scripts/movie-buff-vip-authority-personas-impl.mjs"
       - "scripts/movie-buff-vip-finalize-adversarial.mjs"
       - "src/app/api/movie-buff/vip/**"
       - "src/lib/game/movieBuffVip*.ts"
@@ -91,6 +93,7 @@ jobs:
             supabase/migrations/20260804073200_movie_buff_vip_snapshot_release_hardening.sql
             supabase/migrations/20260804073300_movie_buff_vip_deadline_finalize.sql
             supabase/rollbacks/20260804073000_movie_buff_vip_authority.rollback.sql
+            supabase/rollbacks/20260804073100_movie_buff_vip_null_category_fail_closed.rollback.sql
             supabase/rollbacks/20260804073200_movie_buff_vip_snapshot_release_hardening.rollback.sql
             supabase/rollbacks/20260804073300_movie_buff_vip_deadline_finalize.rollback.sql
             supabase/rollbacks/20260804073310_movie_buff_vip_callable_containment.rollback.sql

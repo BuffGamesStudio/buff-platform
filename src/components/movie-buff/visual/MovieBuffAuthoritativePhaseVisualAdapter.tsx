@@ -51,6 +51,7 @@ export function MovieBuffAuthoritativePhaseVisualAdapter({
       <div
         data-movie-buff-authoritative-view="read-only"
         data-movie-buff-phase-route={view.phaseRoute}
+        data-movie-buff-authoritative-server-now={view.serverNow}
       >
         {children}
       </div>
