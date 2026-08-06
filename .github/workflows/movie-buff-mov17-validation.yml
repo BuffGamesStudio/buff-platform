@@ -39,7 +39,7 @@ on:
       - "supabase/rollbacks/20260804083*_movie_buff_*.sql"
       - "supabase/tests/movie_buff_server_phase_machine_test.sql"
       - "supabase/tests/movie_buff_match_start_handoff_test.sql"
-      - "supabase/tests/movie_buff_match_start_handoff_rollback_test.sql"
+      - "supabase/tests/movie_buff_match-start-handoff_rollback_test.sql"
       - "tests/movie-buff-server-phase-machine.test.mjs"
       - "tests/movie-buff-authoritative-phase-runtime.test.mjs"
       - "tests/movie-buff-buster-safe-boundary.test.mjs"
@@ -80,7 +80,7 @@ jobs:
           set -euo pipefail
           resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           test "${resolved_ref}" = "${VALIDATION_REF}"
-          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
             test "${resolved_ref}" = "${OWNER_BRANCH}"
           fi
           test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
