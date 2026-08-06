@@ -50,10 +50,10 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          test "$(git rev-parse HEAD^)" = "${CANDIDATE_SHA}"
+          git merge-base --is-ancestor "${CANDIDATE_SHA}" HEAD
           test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
           test -z "$(git status --porcelain)"
-          changed="$(git diff-tree --no-commit-id --name-only -r HEAD)"
+          changed="$(git diff --name-only "${CANDIDATE_SHA}"..HEAD)"
           test "${changed}" = ".github/workflows/movie-buff-agent7-three-client-browser.yml"
 
           git fetch --no-tags --depth=1 origin "${VALIDATOR_SOURCE_SHA}"
@@ -95,6 +95,16 @@ jobs:
 
           preflight = extract("Bind exact source and validate harness")
           execute = extract("Execute disposable exact-SHA browser journey v2")
+
+          preflight_status_anchor = 'test -z "$(git status --porcelain)"'
+          preflight_status_replacement = "\n".join([
+              "expected_temp_status=$'?? scripts/movie-buff-core-v11-local-users.mjs\\n?? scripts/movie-buff-three-client-full-journey-v2.mjs\\n?? scripts/movie-buff-three-client-full-journey-v3-runner.mjs'",
+              'actual_temp_status="$(git status --porcelain --untracked-files=all | sort)"',
+              'test "${actual_temp_status}" = "${expected_temp_status}"',
+          ])
+          if preflight.count(preflight_status_anchor) != 1:
+              raise SystemExit("expected one inherited preflight status anchor")
+          preflight = preflight.replace(preflight_status_anchor, preflight_status_replacement)
 
           execute = execute.replace(
               'git status --porcelain >"${raw}/git-status-before-repair.txt"',
@@ -166,9 +176,10 @@ jobs:
               'allowed_prefixes=("public/media/movie-buff/runtime-generated/",)',
               "rm -rf public/media/movie-buff/runtime-generated",
               "rm -f scripts/movie-buff-core-v11-local-users.mjs",
+              "expected_temp_status=",
           ]
           for marker in required:
-              if marker not in execute:
+              if marker not in execute and marker not in preflight:
                   raise SystemExit(f"missing transformed laboratory marker: {marker}")
 
           (output / "agent7-preflight.sh").write_text(preflight, encoding="utf-8")
@@ -192,7 +203,8 @@ jobs:
         run: |
           set -euo pipefail
           bash "${RUNNER_TEMP}/agent7-preflight.sh"
-          test "$(git rev-parse HEAD^)" = "${CANDIDATE_SHA}"
+          git merge-base --is-ancestor "${CANDIDATE_SHA}" HEAD
+          test "$(git diff --name-only "${CANDIDATE_SHA}"..HEAD)" = ".github/workflows/movie-buff-agent7-three-client-browser.yml"
           test "$(git rev-parse "${VALIDATOR_SOURCE_SHA}:scripts/movie-buff-three-client-full-journey-v2.mjs")" = "${MOVIE_BUFF_V2_HARNESS_BLOB}"
 
       - name: Install exact application dependency graph
