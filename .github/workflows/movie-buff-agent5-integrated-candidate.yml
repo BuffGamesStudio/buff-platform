@@ -23,7 +23,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      EVIDENCE: ${{ runner.temp }}/agent5-linux-${{ github.run_id }}-${{ github.run_attempt }}
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-mock-publishable-key
       SUPABASE_SERVICE_ROLE_KEY: local-mock-service-role-key
@@ -39,105 +38,109 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Verify exact controller, product, components, and protected blobs
+      - name: Initialize Linux evidence
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "${EVIDENCE}"
-          observed_sha="$(git rev-parse HEAD)"
-          observed_tree="$(git rev-parse 'HEAD^{tree}')"
-          observed_branch="${GITHUB_REF_NAME}"
-          test "${observed_branch}" = "${EXPECTED_BRANCH}"
-          test "${observed_sha}" = "${GITHUB_SHA}"
-          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
-          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          evidence="${RUNNER_TEMP}/agent5-linux-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "EVIDENCE=${evidence}" >>"${GITHUB_ENV}"
+          mkdir -p "${evidence}"
 
-          pr_head=""
-          for attempt in $(seq 1 12); do
-            pr_head="$(curl -fsSL "https://api.github.com/repos/BuffGamesStudio/buff-platform/pulls/${PR_NUMBER}" | jq -r '.head.sha')"
-            if [ "${pr_head}" = "${observed_sha}" ]; then break; fi
-            sleep 5
-          done
-          test "${pr_head}" = "${observed_sha}"
+      - name: Verify exact controller, product, components, and protected blobs
+        id: assembly
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 - <<'PY' 2>&1 | tee "${EVIDENCE}/source-assembly.log"
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import urllib.request
 
-          cat >"${EVIDENCE}/components.tsv" <<'EOF'
-          integration	movie-buff	bf316a15a2120e32d8a32e479df2ae439081f9a1	12f425f4c56fb3f3c66df6f3a6543d7fd8b6ef34
-          pr3_visuals	movie-buff-origin-main-integration-20260803-155410	f692e82a5d524c950011e0300908c9cbec2389cb	621bd5d39059f76773d84b5a0d1dce851e2ff0de
-          pr5_hardening	movie-buff-security-hardening-packet-20260804	91eac0d55abb1a9568017df687e8395771d24780	1ae3ed427b2c1b38c3731cc9532b5d0fb0c6336f
-          mov15	MOV-15-public-matchmaking	48d44bb156b71060d1b9adcc7a2a3f014cf92060	e010c949920f84e5f7aaca9d50ebf39d6ea13309
-          mov16	MOV-16-vip-authority	f169d652a9199a65afd5369c52c0584f635d7031	3a66c05277eb0907aba7f3f4f0506fb2eb162259
-          mov17	MOV-17-shared-phase-machine	f17234debfb8942e1998306a12dc33301c1c5440	56c63df56f085c256289a8e4510ba05cbea3d9d1
-          mov18	MOV-18-visual-motion-runtime	64ffcc4b2fcb4cb833f18912358861847b385fc7	51d5a9387a10a8d3a227bda619f8605efdf39138
-          pr12_encoding	MOV-14-migration-encoding	d1f7ca58b534cbccd3071743d542f5788c0e9173	ea817ad706f4107fc16482cbe6cc40ec6a012ee0
-          agent6_security	movie-buff-rls-acl-staging	9d1d1392bf5ff0e6961182050dbf902d0001d2c2	5c634f5234063f0dc0a72721acfd4b566ae907f3
-          mov19_validator	MOV-19-security-validation	46c549675d44f19c22a7786421cf2581dc22af3c	d37a8ec456ff079da9f83da5c9fa058867ddf401
-          EOF
-          sed -i 's/^          //' "${EVIDENCE}/components.tsv"
+          repo = "BuffGamesStudio/buff-platform"
+          product_sha = os.environ["PRODUCT_SHA"]
+          product_tree = os.environ["PRODUCT_TREE"]
+          observed_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          observed_tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+          observed_branch = os.environ["GITHUB_REF_NAME"]
+          assert observed_branch == os.environ["EXPECTED_BRANCH"]
+          assert observed_sha == os.environ["GITHUB_SHA"]
+          assert subprocess.check_output(["git", "rev-parse", f"{product_sha}^{{tree}}"], text=True).strip() == product_tree
+          subprocess.run(["git", "merge-base", "--is-ancestor", product_sha, "HEAD"], check=True)
 
-          while IFS=$'\t' read -r id ref sha tree; do
-            test "$(git rev-parse "${sha}^{tree}")" = "${tree}"
-            if [ "${id}" != "integration" ]; then
-              git merge-base --is-ancestor "${sha}" "${PRODUCT_SHA}"
-            fi
-            case "${id}" in
-              integration) remote_ref="refs/heads/integration/${ref}" ;;
-              pr3_visuals) remote_ref="refs/heads/cursor/${ref}" ;;
-              pr5_hardening) remote_ref="refs/heads/automation/${ref}" ;;
-              agent6_security) remote_ref="refs/heads/security/${ref}" ;;
-              *) remote_ref="refs/heads/copilot/${ref}" ;;
-            esac
-            remote_sha="$(git ls-remote origin "${remote_ref}" | cut -f1)"
-            test "${remote_sha}" = "${sha}"
-          done <"${EVIDENCE}/components.tsv"
+          headers = {"User-Agent": "movie-buff-agent5"}
+          def read_json(url):
+              request = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
 
-          test "$(git rev-parse HEAD:src/app/games/movie-buff/board-preview/page.tsx)" = "ee4ef8bae382aebc1e2242a8342d3858ecbc922c"
-          test "$(git rev-parse HEAD:src/app/games/movie-buff/play/page.tsx)" = "2115b1f81a1dd64fa0998ebffcd2ca4ef605f0d5"
-          test "$(git rev-parse HEAD:src/components/movie-buff/MovieBuffBoardRoomClient.tsx)" = "da8ea21aba760e51ffb37fa32e8906e5825cf86f"
+          pr = read_json(f"https://api.github.com/repos/{repo}/pulls/{os.environ['PR_NUMBER']}")
+          expected_sha = pr["head"]["sha"]
+          assert expected_sha == observed_sha
+          commit = read_json(f"https://api.github.com/repos/{repo}/git/commits/{expected_sha}")
+          expected_tree = commit["tree"]["sha"]
+          assert expected_tree == observed_tree
 
-          cat >"${EVIDENCE}/expected-delta.txt" <<'EOF'
-          .github/workflows/movie-buff-migration-encoding.yml
-          .github/workflows/movie-buff-mov16-exact-validation.yml
-          .github/workflows/movie-buff-mov18-authoritative-adapter-evidence.yml
-          docs/security/movie-buff-agent6-rls-acl-staging-status-2026-08-06.md
-          scripts/movie-buff-mov16-linux-exact-validation-v2.sh
-          scripts/movie-buff-mov16-windows-digital-twin.ps1
-          scripts/movie-buff-vip-authority-personas-impl.mjs
-          scripts/movie-buff-vip-authority-personas.mjs
-          src/components/movie-buff/visual/MovieBuffAuthoritativePhaseVisualAdapter.tsx
-          src/lib/movie-buff/authoritativeVisualAdapter.ts
-          supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql
-          supabase/migrations/20260805160000_movie_buff_six_table_rls_reconciliation.sql
-          supabase/migrations/20260805160500_public_rls_auto_enable_event_trigger_contract.sql
-          supabase/migrations/20260805161000_public_rls_auto_enable_acl_lockdown.sql
-          supabase/rollbacks/20260804073100_movie_buff_vip_null_category_fail_closed.rollback.sql
-          supabase/rollbacks/20260805155000_movie_buff_function_security_finalizer.rollback.sql
-          supabase/rollbacks/20260805160000_movie_buff_six_table_rls_reconciliation.rollback.sql
-          supabase/rollbacks/20260805160500_public_rls_auto_enable_event_trigger_contract.rollback.sql
-          supabase/rollbacks/20260805161000_public_rls_auto_enable_acl_lockdown.rollback.sql
-          supabase/tests/movie_buff_current_security_finalizer_rollback_test.sql
-          supabase/tests/movie_buff_current_security_finalizer_test.sql
-          tests/movie-buff-authoritative-visual-adapter.test.mjs
-          tests/movie-buff-public-matchmaking-contract.test.mjs
-          tests/movie-buff-vip-null-category-rollback-contract.test.mjs
-          EOF
-          sed -i 's/^          //' "${EVIDENCE}/expected-delta.txt"
-          git diff --name-only "${PREVIOUS_PRODUCT_SHA}" "${PRODUCT_SHA}" | sort >"${EVIDENCE}/observed-delta.txt"
-          diff -u "${EVIDENCE}/expected-delta.txt" "${EVIDENCE}/observed-delta.txt"
+          manifest_path = pathlib.Path("docs/validation/movie-buff-integrated-candidate-v1.manifest.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          product = manifest["composition"]["product"]
+          assert product == {"sha": product_sha, "tree": product_tree}
 
-          {
-            echo "repository=BuffGamesStudio/buff-platform"
-            echo "branch=${observed_branch}"
-            echo "expected_sha=${GITHUB_SHA}"
-            echo "pr_head_sha=${pr_head}"
-            echo "github_sha=${GITHUB_SHA}"
-            echo "observed_sha=${observed_sha}"
-            echo "expected_tree=${observed_tree}"
-            echo "observed_tree=${observed_tree}"
-            echo "product_sha=${PRODUCT_SHA}"
-            echo "product_tree=${PRODUCT_TREE}"
-            echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          } >"${EVIDENCE}/identity.txt"
-          echo 0 >"${EVIDENCE}/source_assembly.exit"
+          component_rows = []
+          for component in manifest["composition"]["components"]:
+              sha = component["sha"]
+              tree = component["tree"]
+              branch = component["branch"]
+              actual_tree = subprocess.check_output(["git", "rev-parse", f"{sha}^{{tree}}"], text=True).strip()
+              assert actual_tree == tree, component["id"]
+              if component["id"] != "integration":
+                  subprocess.run(["git", "merge-base", "--is-ancestor", sha, product_sha], check=True)
+              remote = subprocess.check_output(
+                  ["git", "ls-remote", "origin", f"refs/heads/{branch}"], text=True
+              ).strip().split("\t")[0]
+              assert remote == sha, f"moved component: {component['id']} {remote} != {sha}"
+              component_rows.append("\t".join([component["id"], branch, sha, tree]))
+          pathlib.Path(os.environ["EVIDENCE"], "components.tsv").write_text(
+              "\n".join(component_rows) + "\n", encoding="utf-8"
+          )
+
+          for path, blob in manifest["protectedReconciliation"]["blobs"].items():
+              actual = subprocess.check_output(["git", "rev-parse", f"HEAD:{path}"], text=True).strip()
+              assert actual == blob, path
+
+          expected_delta = sorted(item["path"] for item in manifest["composition"]["deltaFiles"])
+          observed_delta = subprocess.check_output(
+              ["git", "diff", "--name-only", os.environ["PREVIOUS_PRODUCT_SHA"], product_sha], text=True
+          ).splitlines()
+          assert sorted(observed_delta) == expected_delta
+          pathlib.Path(os.environ["EVIDENCE"], "expected-delta.txt").write_text(
+              "\n".join(expected_delta) + "\n", encoding="utf-8"
+          )
+          pathlib.Path(os.environ["EVIDENCE"], "observed-delta.txt").write_text(
+              "\n".join(sorted(observed_delta)) + "\n", encoding="utf-8"
+          )
+
+          identity = {
+              "repository": repo,
+              "branch": observed_branch,
+              "expectedSha": expected_sha,
+              "prHeadSha": pr["head"]["sha"],
+              "githubSha": os.environ["GITHUB_SHA"],
+              "observedSha": observed_sha,
+              "expectedTree": expected_tree,
+              "observedTree": observed_tree,
+              "productSha": product_sha,
+              "productTree": product_tree,
+          }
+          pathlib.Path(os.environ["EVIDENCE"], "identity.json").write_text(
+              json.dumps(identity, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+          code=${PIPESTATUS[0]}
+          echo "${code}" >"${EVIDENCE}/source_assembly.exit"
+          exit "${code}"
 
       - name: Install committed dependency graph
         id: install
@@ -146,7 +149,9 @@ jobs:
         run: |
           set -o pipefail
           npm ci --ignore-scripts --no-audit --no-fund 2>&1 | tee "${EVIDENCE}/npm-ci.log"
-          code=${PIPESTATUS[0]}; echo "${code}" >"${EVIDENCE}/dependency_install.exit"; exit "${code}"
+          code=${PIPESTATUS[0]}
+          echo "${code}" >"${EVIDENCE}/dependency_install.exit"
+          exit "${code}"
 
       - name: Run all focused Movie Buff source contracts
         id: focused
@@ -155,7 +160,9 @@ jobs:
         run: |
           set -o pipefail
           node --test tests/movie-buff-*.test.mjs 2>&1 | tee "${EVIDENCE}/focused-tests.tap"
-          code=${PIPESTATUS[0]}; echo "${code}" >"${EVIDENCE}/focused_static_tests.exit"; exit "${code}"
+          code=${PIPESTATUS[0]}
+          echo "${code}" >"${EVIDENCE}/focused_static_tests.exit"
+          exit "${code}"
 
       - name: TypeScript
         id: typescript
@@ -164,7 +171,9 @@ jobs:
         run: |
           set -o pipefail
           npx tsc --noEmit 2>&1 | tee "${EVIDENCE}/typescript.log"
-          code=${PIPESTATUS[0]}; echo "${code}" >"${EVIDENCE}/typescript.exit"; exit "${code}"
+          code=${PIPESTATUS[0]}
+          echo "${code}" >"${EVIDENCE}/typescript.exit"
+          exit "${code}"
 
       - name: Production build with localhost placeholders
         id: build
@@ -173,7 +182,9 @@ jobs:
         run: |
           set -o pipefail
           npm run build 2>&1 | tee "${EVIDENCE}/build.log"
-          code=${PIPESTATUS[0]}; echo "${code}" >"${EVIDENCE}/production_build.exit"; exit "${code}"
+          code=${PIPESTATUS[0]}
+          echo "${code}" >"${EVIDENCE}/production_build.exit"
+          exit "${code}"
 
       - name: Migration encoding and Agent 6 source package
         id: sql
@@ -196,8 +207,11 @@ jobs:
             supabase/rollbacks/20260805161000_public_rls_auto_enable_acl_lockdown.rollback.sql \
             supabase/tests/movie_buff_current_security_finalizer_test.sql \
             supabase/tests/movie_buff_current_security_finalizer_rollback_test.sql
-          do test -s "${file}" || code=1; done
-          echo "${code}" >"${EVIDENCE}/sql_encoding.exit"; exit "${code}"
+          do
+            test -s "${file}" || code=1
+          done
+          echo "${code}" >"${EVIDENCE}/sql_encoding.exit"
+          exit "${code}"
 
       - name: Secret scan and clean postflight
         id: hygiene
@@ -212,7 +226,9 @@ jobs:
           fi
           echo "${code}" >"${EVIDENCE}/secret_scan.exit"
           git diff --check || code=1
-          if [ -n "$(git status --porcelain -- next-env.d.ts)" ]; then git checkout -- next-env.d.ts; fi
+          if [ -n "$(git status --porcelain -- next-env.d.ts)" ]; then
+            git checkout -- next-env.d.ts
+          fi
           test -z "$(git status --porcelain)" || code=1
           echo "${code}" >"${EVIDENCE}/clean_worktree.exit"
           exit "${code}"
@@ -228,23 +244,26 @@ jobs:
           const path = require("path");
           const root = process.argv[2];
           const names = [
-            "source_assembly","dependency_install","focused_static_tests","typescript",
-            "production_build","sql_encoding","secret_scan","clean_worktree"
+            "source_assembly", "dependency_install", "focused_static_tests", "typescript",
+            "production_build", "sql_encoding", "secret_scan", "clean_worktree"
           ];
           const result = {};
           for (const name of names) {
-            const p = path.join(root, `${name}.exit`);
-            const code = fs.existsSync(p) ? Number(fs.readFileSync(p, "utf8").trim()) : 99;
+            const file = path.join(root, `${name}.exit`);
+            const code = fs.existsSync(file) ? Number(fs.readFileSync(file, "utf8").trim()) : 99;
             result[name] = code === 0 ? "PASS" : "FAIL";
           }
           Object.assign(result, {
-            local_database:"UNKNOWN", pgTAP:"UNKNOWN", personas:"UNKNOWN", races:"UNKNOWN",
-            browser:"UNKNOWN", accessibility:"UNKNOWN", vercel_provenance:"UNKNOWN",
-            hosted_supabase:"UNKNOWN", staging:"UNKNOWN", rollback:"UNKNOWN",
-            containment:"UNKNOWN", forward_reapply:"UNKNOWN", backup_pitr:"UNKNOWN",
-            production_target:"UNKNOWN", release:"NO-GO"
+            local_database: "UNKNOWN", pgTAP: "UNKNOWN", personas: "UNKNOWN", races: "UNKNOWN",
+            browser: "UNKNOWN", accessibility: "UNKNOWN", vercel_provenance: "UNKNOWN",
+            hosted_supabase: "UNKNOWN", staging: "UNKNOWN", rollback: "UNKNOWN",
+            containment: "UNKNOWN", forward_reapply: "UNKNOWN", backup_pitr: "UNKNOWN",
+            production_target: "UNKNOWN", release: "NO-GO"
           });
-          fs.writeFileSync(path.join(root, "status.json"), JSON.stringify(result, null, 2) + "\n");
+          fs.writeFileSync(
+            path.join(root, "status.json"),
+            JSON.stringify(result, null, 2) + String.fromCharCode(10)
+          );
           NODE
           (
             cd "${EVIDENCE}"
@@ -257,7 +276,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: agent5-linux-${{ github.sha }}
-          path: ${{ env.EVIDENCE }}
+          path: ${{ runner.temp }}/agent5-linux-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 7
 
@@ -266,15 +285,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in source_assembly dependency_install focused_static_tests typescript production_build sql_encoding secret_scan clean_worktree; do
-            test "$(cat "${EVIDENCE}/${f}.exit")" = "0"
+          for name in source_assembly dependency_install focused_static_tests typescript production_build sql_encoding secret_scan clean_worktree; do
+            test "$(cat "${EVIDENCE}/${name}.exit")" = "0"
           done
 
   windows-digital-twin:
     runs-on: windows-2025
     timeout-minutes: 45
     env:
-      EVIDENCE: ${{ runner.temp }}\agent5-windows-${{ github.run_id }}-${{ github.run_attempt }}
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-mock-publishable-key
       SUPABASE_SERVICE_ROLE_KEY: local-mock-service-role-key
@@ -290,11 +308,27 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install committed dependency graph
+      - name: Initialize Windows evidence
         shell: pwsh
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: |
+          $ErrorActionPreference = "Stop"
+          $evidence = Join-Path $env:RUNNER_TEMP "agent5-windows-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          "EVIDENCE=$evidence" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+
+      - name: Install committed dependency graph
+        id: windows-install
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund 2>&1 | Tee-Object -FilePath (Join-Path $env:EVIDENCE "npm-ci.log")
+          $code = $LASTEXITCODE
+          [IO.File]::WriteAllText((Join-Path $env:EVIDENCE "dependency_install.exit"), "$code`n", [Text.Encoding]::ASCII)
+          exit $code
 
       - name: Execute Agent 5 Windows digital twin
+        id: windows-twin
+        continue-on-error: true
         shell: pwsh
         run: |
           ./scripts/movie-buff-agent5-windows-digital-twin.ps1 `
@@ -303,12 +337,27 @@ jobs:
             -ProductSha $env:PRODUCT_SHA `
             -ProductTree $env:PRODUCT_TREE `
             -EvidenceDirectory $env:EVIDENCE
+          $code = $LASTEXITCODE
+          if ($null -eq $code) { $code = 0 }
+          [IO.File]::WriteAllText((Join-Path $env:EVIDENCE "wrapper.exit"), "$code`n", [Text.Encoding]::ASCII)
+          exit $code
 
       - name: Upload Windows evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: agent5-windows-${{ github.sha }}
-          path: ${{ env.EVIDENCE }}
+          path: ${{ runner.temp }}\agent5-windows-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 7
+
+      - name: Enforce Windows result
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($name in @("dependency_install", "wrapper")) {
+            $path = Join-Path $env:EVIDENCE "$name.exit"
+            if (-not (Test-Path $path)) { throw "Missing $name exit record" }
+            if ((Get-Content -LiteralPath $path -Raw).Trim() -ne "0") { throw "$name failed" }
+          }
