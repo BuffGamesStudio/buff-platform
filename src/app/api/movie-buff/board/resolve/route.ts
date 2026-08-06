@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { resolveMovieBuffBoardAfterRound } from "@/lib/server/movieBuffBoard";
+import {
+  MovieBuffAuthorizationError,
+  requireActiveMovieBuffRoomMember,
+} from "@/lib/server/movieBuffRouteAuthorization";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,35 +23,37 @@ export async function POST(request: Request) {
       );
     }
 
+    await requireActiveMovieBuffRoomMember(request, roomId);
+
     const result = await resolveMovieBuffBoardAfterRound({
       roomId,
     });
 
     return NextResponse.json(result, { status: 200 });
   } catch (error) {
+    if (error instanceof MovieBuffAuthorizationError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    }
+
     const message =
       error instanceof Error
         ? error.message
         : "Board resolution failed.";
 
-    const normalizedMessage =
-      message.toLowerCase();
+    const normalizedMessage = message.toLowerCase();
 
     const canFallbackToLinearFlow =
+      normalizedMessage.includes("movie_buff_boards") ||
+      normalizedMessage.includes("movie_buff_board_") ||
+      normalizedMessage.includes("schema cache") ||
       normalizedMessage.includes(
-        "movie_buff_boards"
+        "relation \"public.content_items\" does not exist",
       ) ||
       normalizedMessage.includes(
-        "movie_buff_board_"
-      ) ||
-      normalizedMessage.includes(
-        "schema cache"
-      ) ||
-      normalizedMessage.includes(
-        "relation \"public.content_items\" does not exist"
-      ) ||
-      normalizedMessage.includes(
-        "relation \"public.content_media\" does not exist"
+        "relation \"public.content_media\" does not exist",
       );
 
     if (canFallbackToLinearFlow) {
