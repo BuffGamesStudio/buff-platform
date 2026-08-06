@@ -1,0 +1,110 @@
+name: Movie Buff Agent 7 v3 corrections v2
+
+on:
+  push:
+    branches:
+      - validation/MOV-17-encoding-twin-v2
+    paths:
+      - .github/workflows/movie-buff-agent7-v3-corrections-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
+  PRODUCT_SHA: d6a173aa585941db447ba53a6c387f49a5784bfd
+  PRODUCT_TREE: 197387d7bed0e36dff576f98c13f0fde14e22924
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  windows:
+    name: Windows command lab corrected
+    runs-on: windows-2025
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Execute checked-in Windows controller
+        shell: pwsh
+        run: |
+          ./scripts/movie-buff-agent7-v3-windows-fixed.ps1 `
+            -ExpectedBranch '${{ env.EXPECTED_BRANCH }}' `
+            -ProductSha '${{ env.PRODUCT_SHA }}' `
+            -ProductTree '${{ env.PRODUCT_TREE }}' `
+            -EvidenceRoot '${{ runner.temp }}/agent7-v3-windows-fixed'
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-v3-windows-fixed-${{ github.sha }}
+          path: ${{ runner.temp }}/agent7-v3-windows-fixed
+          if-no-files-found: error
+          retention-days: 14
+
+  mov16:
+    name: MOV-16 exact composition lab adapted
+    runs-on: ubuntu-24.04
+    timeout-minutes: 105
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/MOV-17-encoding-twin-v2
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute checked-in MOV-16 identity adapter
+        shell: bash
+        run: bash scripts/movie-buff-agent7-v3-mov16-adapter.sh
+      - name: Upload MOV-16 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-v3-mov16-adapted-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-mov16-exact-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  phase-races:
+    name: Strict-three phase and reconnect races
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Execute checked-in phase race splitter
+        shell: bash
+        run: bash scripts/movie-buff-agent7-v3-phase-races.sh
+      - name: Upload phase-race evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent7-v3-phase-races-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-agent7-v3-phase-races
+          if-no-files-found: error
+          retention-days: 14
