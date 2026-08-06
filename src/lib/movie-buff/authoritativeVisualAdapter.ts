@@ -153,14 +153,15 @@ export function adaptMovieBuffAuthoritativePhaseViewToVisualSource({
     return invalidAdapterResult(view, "CONTRADICTORY_ROUTE_AND_PHASE");
   }
 
+  if (view.phase === "transition" && transitionPresentation === null) {
+    return invalidAdapterResult(view, "TRANSITION_PRESENTATION_MISSING");
+  }
+
   if (
     view.phase === "transition" &&
     !isTransitionPresentation(transitionPresentation)
   ) {
-    return invalidAdapterResult(
-      view,
-      "TRANSITION_PRESENTATION_MISSING_OR_INVALID",
-    );
+    return invalidAdapterResult(view, "TRANSITION_PRESENTATION_INVALID");
   }
 
   if (view.phase !== "transition" && transitionPresentation !== null) {
