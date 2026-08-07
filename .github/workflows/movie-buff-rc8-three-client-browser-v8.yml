@@ -1,0 +1,326 @@
+name: Movie Buff RC-8 exact three-client browser journey v8
+
+on:
+  pull_request:
+    branches: [validation/movie-buff-rc8-runner-base-v8-20260806]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_BRANCH: release/movie-buff-rc-2026-08-06-01-rc8
+  PRODUCT_SHA: 0899d19d60b222bf995a0f8116ed032d93794620
+  PRODUCT_TREE: 94d6411e9613b8692a0e5ada3dadc398aebcc193
+  PARENT_SHA: 0899d19d60b222bf995a0f8116ed032d93794620
+  EXPECTED_BRANCH: validation/movie-buff-rc8-runner-base-v8-20260806
+  CONTROLLER_BRANCH: validation/movie-buff-rc8-runner-base-v8-20260806
+  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-rc8-browser-run-v8-20260806
+  CONTROLLER_SHA: ${{ github.event.pull_request.base.sha }}
+  TRIGGER_SHA: ${{ github.event.pull_request.head.sha }}
+  UPSTREAM_WRAPPER_SHA: 443c95bb2a04de2d0de996366e2decaf67bbbe06
+  UPSTREAM_WRAPPER_BLOB: 44515223c617fbe0b14c89d8b68ba90e884fd563
+  SOURCE_WRAPPER_SHA: b85c986ed8e05e4b04b7a455b6a2a465ae94c1c8
+  SOURCE_WRAPPER_BLOB: 5507308e038b3187b8c87a2b7fb55c3ae1e4c8c2
+  SOURCE_CONTROLLER_SHA: efb8354020c661ea1dc0c24835cdc4dfc603f50a
+  SOURCE_CONTROLLER_BLOB: 854182c8e50d64c68e68dc4beaabfb9fb1fabd78
+  ARCHIVE_SOURCE_SHA: d90a7eb73ef724b4ef5205343e655c7597dcf978
+  ARCHIVE_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
+  ARTIFACT_NAME: movie-buff-rc8-three-client-v8-${{ github.run_id }}-${{ github.run_attempt }}
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-three-client-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Materialize reviewed RC-8 controller scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_EVENT_NAME}" = "pull_request"
+          test "${{ github.event.pull_request.base.ref }}" = "${CONTROLLER_BRANCH}"
+          test "${{ github.event.pull_request.head.ref }}" = "${EXPECTED_TRIGGER_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${CONTROLLER_SHA}"
+          test "$(git rev-parse HEAD^)" = "${PRODUCT_SHA}"
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          python3 - <<'PY'
+          import subprocess
+          expected={".github/workflows/movie-buff-rc8-three-client-browser-v8.yml"}
+          actual=set(subprocess.check_output(["git","diff","--name-only","0899d19d60b222bf995a0f8116ed032d93794620..HEAD"],text=True).splitlines())
+          if actual != expected:
+              raise SystemExit(f"unexpected product-to-controller delta: {sorted(actual)}")
+          PY
+          git fetch --no-tags --depth=1 origin "${UPSTREAM_WRAPPER_SHA}"
+          test "$(git rev-parse "${UPSTREAM_WRAPPER_SHA}:.github/workflows/movie-buff-rc8-three-client-browser-v7.yml")" = "${UPSTREAM_WRAPPER_BLOB}"
+          git show "${UPSTREAM_WRAPPER_SHA}:.github/workflows/movie-buff-rc8-three-client-browser-v7.yml" > "${RUNNER_TEMP}/upstream-wrapper.yml"
+          python3 - "${RUNNER_TEMP}/upstream-wrapper.yml" "${RUNNER_TEMP}/materialize.sh" <<'PY'
+          from pathlib import Path
+          import sys
+          lines=Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+          marker="- name: Materialize reviewed RC-8 controller scripts"
+          start=next(i for i,line in enumerate(lines) if line.strip()==marker)
+          run_line=next(i for i in range(start+1,len(lines)) if lines[i].strip()=="run: |")
+          indent=len(lines[run_line])-len(lines[run_line].lstrip())
+          body=[]
+          for line in lines[run_line+1:]:
+              if line.strip() and len(line)-len(line.lstrip()) <= indent:
+                  break
+              body.append(line[indent+2:] if line.strip() else "")
+          value="\n".join(body)+"\n"
+          expression_open="$"+"{{"
+          replacements={
+            "validation/movie-buff-rc8-runner-base-v7-20260806":"validation/movie-buff-rc8-runner-base-v8-20260806",
+            "validation/movie-buff-rc8-browser-run-v7-20260806":"validation/movie-buff-rc8-browser-run-v8-20260806",
+            ".github/workflows/movie-buff-rc8-three-client-browser-v7.yml":".github/workflows/movie-buff-rc8-three-client-browser-v8.yml",
+            expression_open+" github.event.pull_request.base.ref }}":"${CONTROLLER_BRANCH}",
+            expression_open+" github.event.pull_request.head.ref }}":"${EXPECTED_TRIGGER_BRANCH}",
+          }
+          for old,new in replacements.items():
+              value=value.replace(old,new)
+          Path(sys.argv[2]).write_text(value,encoding="utf-8")
+          PY
+          bash -n "${RUNNER_TEMP}/materialize.sh"
+          bash "${RUNNER_TEMP}/materialize.sh"
+          python3 - "${RUNNER_TEMP}/05-database.sh" <<'PY'
+          from pathlib import Path
+          import sys
+          path=Path(sys.argv[1])
+          value=path.read_text(encoding="utf-8")
+          old='psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -X -v ON_ERROR_STOP=1 -At'
+          new='db_url="$(supabase status -o env | sed -n \'s/^DB_URL=//p\' | tail -1)"\n          db_url="${db_url%\\\"}"\n          db_url="${db_url#\\\"}"\n          test -n "${db_url}"\n          psql "${db_url}" -X -v ON_ERROR_STOP=1 -At'
+          if old not in value:
+              raise SystemExit("database URL anchor missing")
+          path.write_text(value.replace(old,new),encoding="utf-8")
+          PY
+          for script in "${RUNNER_TEMP}"/0*.sh; do bash -n "${script}"; done
+
+      - name: Provision runner prerequisites
+        run: bash "${RUNNER_TEMP}/01-provision.sh"
+
+      - name: Bind immutable product and reviewed harness
+        run: bash "${RUNNER_TEMP}/02-bind.sh"
+
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - id: static
+        name: Execute repair static contract
+        continue-on-error: true
+        run: bash "${RUNNER_TEMP}/03-static.sh"
+
+      - id: preflight
+        name: Execute reviewed preflight
+        continue-on-error: true
+        run: bash "${RUNNER_TEMP}/04-preflight.sh"
+
+      - id: database
+        name: Prove repaired local database ACL matrix
+        if: ${{ steps.static.outcome == 'success' && steps.preflight.outcome == 'success' }}
+        continue-on-error: true
+        run: bash "${RUNNER_TEMP}/05-database.sh"
+
+      - id: browser
+        name: Execute disposable three-client journey
+        if: ${{ steps.database.outcome == 'success' }}
+        continue-on-error: true
+        run: bash "${RUNNER_TEMP}/06-browser.sh"
+
+      - name: Preserve failure evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          for source in \
+            "${RUNNER_TEMP}/rc8-static-contract.log" \
+            "${RUNNER_TEMP}/rc8-db-start.log" \
+            "${RUNNER_TEMP}/rc8-db-reset.log" \
+            "${RUNNER_TEMP}/rc8-db-contract.raw.json"; do
+            if [ -f "${source}" ]; then
+              cp "${source}" "${evidence}/$(basename "${source}")"
+            fi
+          done
+          if [ ! -s "${RUNNER_TEMP}/rc8-static-contract.json" ]; then
+            printf '%s\n' '{"classification":"FAIL","reason":"static contract did not produce PASS evidence"}' > "${RUNNER_TEMP}/rc8-static-contract.json"
+          fi
+          if [ ! -s "${RUNNER_TEMP}/rc8-db-contract.json" ]; then
+            printf '%s\n' '{"classification":"FAIL","reason":"database contract did not produce PASS evidence"}' > "${RUNNER_TEMP}/rc8-db-contract.json"
+          fi
+          if [ ! -s "${evidence}/three-client-full-journey-v2.json" ]; then
+            printf '%s\n' '{"classification":"FAIL","failure":"browser journey did not produce a PASS result artifact"}' > "${evidence}/three-client-full-journey-v2.json"
+          fi
+
+      - name: Record binding and initial evidence hashes
+        if: always()
+        run: bash "${RUNNER_TEMP}/07-record.sh"
+
+      - name: Harden redaction and finalize hashes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          python3 - "${evidence}" <<'PY'
+          import json,pathlib,re,sys
+          root=pathlib.Path(sys.argv[1])
+          text_suffixes={".txt",".log",".json",".html",".md",".csv"}
+          ansi=re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+          patterns=[
+            (re.compile(r"sb_(?:publishable|secret)_[A-Za-z0-9_-]+"),"[REDACTED_SUPABASE_KEY]"),
+            (re.compile(r"eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}"),"[REDACTED_JWT]"),
+            (re.compile(r"postgres(?:ql)?://[^\s\"']+:[^\s\"']+@[^\s\"']+"),"postgresql://[REDACTED_DATABASE_CREDENTIALS]"),
+            (re.compile(r"(?im)((?:Access Key|Secret Key)\s*[│|:]\s*)[0-9a-f]{20,}"),r"\1[REDACTED_LOCAL_STORAGE_KEY]"),
+            (re.compile(r"(?im)((?:Publishable|Secret)\s*[│|:]\s*)[^│\r\n]+"),r"\1[REDACTED_LOCAL_CREDENTIAL] "),
+          ]
+          replacements={}
+          ansi_removed=0
+          scanned=0
+          for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.name == "SHA256SUMS.txt" or path.suffix.lower() not in text_suffixes:
+              continue
+            try:
+              value=path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+              continue
+            scanned+=1
+            value,n=ansi.subn("",value)
+            ansi_removed+=n
+            for index,(pattern,replacement) in enumerate(patterns,1):
+              value,n=pattern.subn(replacement,value)
+              if n:
+                replacements[str(index)]=replacements.get(str(index),0)+n
+            path.write_text(value,encoding="utf-8")
+          (root/"redaction-report.json").write_text(json.dumps({
+            "classification":"PASS",
+            "filesScanned":scanned,
+            "ansiSequencesRemoved":ansi_removed,
+            "replacementCounts":replacements,
+          },indent=2)+"\n",encoding="utf-8")
+          PY
+          (
+            cd "${evidence}"
+            find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          )
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/movie-buff-three-client-full-v2
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify clean postflight
+        if: always()
+        run: bash "${RUNNER_TEMP}/08-clean.sh"
+
+      - name: Enforce exact gate outcome
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.static.outcome }}" = "success"
+          test "${{ steps.preflight.outcome }}" = "success"
+          test "${{ steps.database.outcome }}" = "success"
+          test "${{ steps.browser.outcome }}" = "success"
+          python3 - "${RUNNER_TEMP}/movie-buff-three-client-full-v2" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          assert json.loads((root/"static-contract.json").read_text())["classification"] == "PASS"
+          assert json.loads((root/"database-contract.json").read_text())["classification"] == "PASS"
+          assert json.loads((root/"redaction-report.json").read_text())["classification"] == "PASS"
+          assert json.loads((root/"three-client-full-journey-v2.json").read_text())["classification"] == "PASS"
+          PY
+
+  independent-artifact-inspection:
+    if: ${{ always() }}
+    needs: exact-three-client-browser
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download exact artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: evidence
+
+      - name: Materialize independent inspector
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "${UPSTREAM_WRAPPER_SHA}"
+          test "$(git rev-parse "${UPSTREAM_WRAPPER_SHA}:.github/workflows/movie-buff-rc8-three-client-browser-v7.yml")" = "${UPSTREAM_WRAPPER_BLOB}"
+          git show "${UPSTREAM_WRAPPER_SHA}:.github/workflows/movie-buff-rc8-three-client-browser-v7.yml" > "${RUNNER_TEMP}/upstream-wrapper.yml"
+          python3 - "${RUNNER_TEMP}/upstream-wrapper.yml" "${RUNNER_TEMP}/materialize-inspector.sh" <<'PY'
+          from pathlib import Path
+          import sys
+          lines=Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+          marker="- name: Materialize independent inspector"
+          start=next(i for i,line in enumerate(lines) if line.strip()==marker)
+          run_line=next(i for i in range(start+1,len(lines)) if lines[i].strip()=="run: |")
+          indent=len(lines[run_line])-len(lines[run_line].lstrip())
+          body=[]
+          for line in lines[run_line+1:]:
+              if line.strip() and len(line)-len(line.lstrip()) <= indent:
+                  break
+              body.append(line[indent+2:] if line.strip() else "")
+          Path(sys.argv[2]).write_text("\n".join(body)+"\n",encoding="utf-8")
+          PY
+          bash -n "${RUNNER_TEMP}/materialize-inspector.sh"
+          bash "${RUNNER_TEMP}/materialize-inspector.sh"
+
+      - name: Verify exact artifact independently
+        run: bash "${RUNNER_TEMP}/inspect.sh"
+
+      - name: Verify hardened redaction independently
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd evidence
+          sha256sum -c SHA256SUMS.txt
+          python3 - <<'PY'
+          import pathlib,re
+          patterns=[
+            re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]"),
+            re.compile(r"sb_(?:publishable|secret)_[A-Za-z0-9_-]+"),
+            re.compile(r"eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}"),
+            re.compile(r"postgres(?:ql)?://[^\s\"']+:[^\s\"']+@[^\s\"']+"),
+            re.compile(r"(?im)(?:Access Key|Secret Key)\s*[│|:]\s*[0-9a-f]{20,}"),
+          ]
+          for path in pathlib.Path(".").rglob("*"):
+            if not path.is_file() or path.name == "SHA256SUMS.txt":
+              continue
+            try:
+              value=path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+              continue
+            for pattern in patterns:
+              assert not pattern.search(value), f"unredacted credential-shaped material in {path}"
+          PY
