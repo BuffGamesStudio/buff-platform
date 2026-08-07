@@ -6,6 +6,8 @@ on:
       - copilot/MOV-17-shared-phase-machine
     paths:
       - ".github/workflows/movie-buff-mov17-board-boundary-repair.yml"
+      - "scripts/movie-buff-redact-evidence.py"
+      - "scripts/movie-buff-redact-evidence-test.py"
       - "supabase/migrations/20260804083710_movie_buff_buster_board_boundary_only.sql"
       - "supabase/rollbacks/20260804083710_movie_buff_buster_board_boundary_only.rollback.sql"
       - "supabase/tests/movie_buff_buster_board_boundary_only_test.sql"
@@ -69,12 +71,14 @@ jobs:
             "$(node --version)" "$(npm --version)" >"$evidence/identity.txt"
           git status --porcelain --untracked-files=all >"$evidence/git-status.txt"
           sha256sum \
+            scripts/movie-buff-redact-evidence.py \
+            scripts/movie-buff-redact-evidence-test.py \
             supabase/migrations/20260804083710_movie_buff_buster_board_boundary_only.sql \
             supabase/rollbacks/20260804083710_movie_buff_buster_board_boundary_only.rollback.sql \
             supabase/tests/movie_buff_buster_board_boundary_only_test.sql \
             tests/movie-buff-buster-board-boundary-only.test.mjs \
             >"$evidence/source-sha256.txt"
-          (cd "$evidence" && sha256sum identity.txt git-status.txt source-sha256.txt >sha256.txt)
+          (cd "$evidence" && sha256sum identity.txt git-status.txt source-sha256.txt >sha256.txt && sha256sum -c sha256.txt)
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -145,12 +149,39 @@ jobs:
           if n != 1 or m != 1: raise SystemExit('ephemeral config rewrite failed')
           p.write_text(text,encoding='utf-8')
           PY
-          cleanup() {
+          finalize() {
+            status=$?
+            trap - EXIT
             set +e
             (cd "$stack" && supabase stop --no-backup) >"$evidence/cleanup.txt" 2>&1
+            cleanup_status=$?
             rm -rf "$stack"
+            unset DB_URL ANON_KEY SERVICE_ROLE_KEY PGPASSWORD
+            rm -f "$evidence/sha256.txt"
+            for evidence_file in "$evidence"/*; do
+              [[ -f "$evidence_file" ]] || continue
+              python3 scripts/movie-buff-redact-evidence.py \
+                "$evidence_file" "${evidence_file}.redacted"
+              redact_status=$?
+              if [[ "$redact_status" -ne 0 ]]; then status=1; fi
+              if [[ "$redact_status" -eq 0 ]]; then mv "${evidence_file}.redacted" "$evidence_file"; fi
+            done
+            if grep -R -E \
+              'eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|sb_(publishable|secret|anon|service[_-]?role)_[A-Za-z0-9._-]+|postgres(ql)?://[^[:space:]]+' \
+              "$evidence"; then
+              status=1
+            fi
+            (
+              cd "$evidence" || exit 1
+              find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+                | sort -z | xargs -0 sha256sum >sha256.txt
+              sha256sum -c sha256.txt
+            )
+            hash_status=$?
+            if [[ "$cleanup_status" -ne 0 || "$hash_status" -ne 0 ]]; then status=1; fi
+            exit "$status"
           }
-          trap cleanup EXIT
+          trap finalize EXIT
           (cd "$stack" && supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor) >"$evidence/start.txt" 2>&1
           (cd "$stack" && supabase db reset --local) >"$evidence/reset.txt" 2>&1
           status_env="$(cd "$stack" && supabase status -o env)"
@@ -171,7 +202,6 @@ jobs:
           (cd "$stack" && supabase test db supabase/tests/movie_buff_buster_board_boundary_only_test.sql --local) >"$evidence/pgtap-after.txt" 2>&1
           (cd "$stack" && supabase test db supabase/tests/movie_buff_active_leave_and_buster_boundary_test.sql --local) >"$evidence/active-leave-after.txt" 2>&1
           printf 'sha=%s\ntree=%s\nsupabase=%s\n' "$(git rev-parse HEAD)" "$(git rev-parse HEAD^{tree})" "$(supabase --version)" >"$evidence/identity.txt"
-          (cd "$evidence" && find . -maxdepth 1 -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt)
       - if: always()
         uses: actions/upload-artifact@v4
         with:
