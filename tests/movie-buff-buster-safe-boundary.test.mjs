@@ -10,8 +10,16 @@ const repair = fs.readFileSync(
   "supabase/migrations/20260804083500_movie_buff_reconnect_buster_boundary_repair.sql",
   "utf8",
 );
+const raceRepair = fs.readFileSync(
+  "supabase/migrations/20260804083710_movie_buff_phase_race_contract_repair.sql",
+  "utf8",
+);
 const rollback = fs.readFileSync(
   "supabase/rollbacks/20260804083500_movie_buff_reconnect_buster_boundary_repair.rollback.sql",
+  "utf8",
+);
+const raceRepairRollback = fs.readFileSync(
+  "supabase/rollbacks/20260804083710_movie_buff_phase_race_contract_repair.rollback.sql",
   "utf8",
 );
 const alignment = fs.readFileSync(
@@ -74,6 +82,45 @@ test("Buster activates only at the authoritative board-select boundary", () => {
   assert.match(activation, /buster_activated_at_board_select/);
 });
 
+test("final race repair excludes intro and VIP from delayed Buster activation", () => {
+  const worker = raceRepair.split(
+    /create or replace function public\.movie_buff_activate_ready_busters/,
+  )[1].split(
+    /create or replace function public\.movie_buff_activate_busters_on_phase_boundary/,
+  )[0];
+  const boundary = raceRepair.split(
+    /create or replace function public\.movie_buff_activate_busters_on_phase_boundary/,
+  )[1];
+
+  assert.match(worker, /phase not in \('board_select', 'results'\)/);
+  assert.doesNotMatch(worker, /'round_intro'|'vip_lock'/);
+  assert.match(boundary, /old\.phase in \('round_intro', 'vip_lock'\)/);
+  assert.match(boundary, /new\.phase = 'board_select'/);
+  assert.match(boundary, /new\.phase not in \('board_select', 'results'\)/);
+  assert.doesNotMatch(
+    boundary.match(/new\.phase not in \([^\n]+\)/)?.[0] ?? "",
+    /round_intro|vip_lock/,
+  );
+});
+
+test("answer RPC rejects non-answer phases before legacy round resolution", () => {
+  assert.match(
+    raceRepair,
+    /alter function public\.submit_movie_buff_answer\(uuid,text\)[\s\S]*rename to submit_movie_buff_answer_legacy_unchecked/,
+  );
+  assert.match(raceRepair, /v_state\.phase <> 'answer'/);
+  assert.match(raceRepair, /Movie Buff answer window is not open/);
+  assert.match(
+    raceRepair,
+    /submit_movie_buff_answer_legacy_unchecked\([\s\S]*p_room_id,[\s\S]*p_submitted_answer/,
+  );
+  assert.match(raceRepair, /set search_path = pg_catalog/);
+  assert.match(
+    raceRepair,
+    /revoke all on function public\.submit_movie_buff_answer_legacy_unchecked\(uuid,text\)[\s\S]*authenticated/,
+  );
+});
+
 test("repair rollback restores only the immediately preceding function contracts", () => {
   assert.match(rollback, /create or replace function public\.touch_movie_buff_match_participant/);
   assert.match(rollback, /create or replace function public\.movie_buff_activate_ready_busters/);
@@ -82,6 +129,23 @@ test("repair rollback restores only the immediately preceding function contracts
     /'round_intro', 'vip_lock', 'board_select', 'results'/,
   );
   assert.doesNotMatch(rollback, /drop table|truncate|delete from/i);
+
+  assert.match(
+    raceRepairRollback,
+    /allow_phase_race_contract_rollback=on/,
+  );
+  assert.match(
+    raceRepairRollback,
+    /rename to submit_movie_buff_answer/,
+  );
+  assert.match(
+    raceRepairRollback,
+    /'board_select', 'results', 'round_intro'/,
+  );
+  assert.doesNotMatch(
+    raceRepairRollback,
+    /drop table|truncate|delete from/i,
+  );
 });
 
 test("canonical view applies ready replacements after authoritative advancement", () => {
@@ -120,4 +184,8 @@ test("only the evidence wrapper can make an exact-SHA proof claim", () => {
   assert.match(evidenceRunner, /stderrSha256/);
   assert.match(evidenceRunner, /profilesRestored/);
   assert.match(evidenceRunner, /classification:/);
+  assert.match(
+    evidenceRunner,
+    /20260804083710_movie_buff_phase_race_contract_repair\.sql/,
+  );
 });
