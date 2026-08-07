@@ -1,0 +1,5 @@
+VALIDATION ONLY — DO NOT MERGE, DEPLOY, OR PROMOTE.
+
+This trigger exists only to execute the repaired-product V13 full three-client browser journey against controller branch validation/movie-buff-full-three-client-browser-controller-20260807.
+Product SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
+Product tree: 511c3501bd6a73f7556f636bc9e12ef30935d58d
