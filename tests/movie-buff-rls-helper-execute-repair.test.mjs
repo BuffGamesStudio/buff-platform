@@ -19,12 +19,13 @@ test("RLS helper repair preserves the least-privilege browser contract", async (
   assert.match(sql, /\bbegin\s*;/i);
   assert.match(sql, /\bcommit\s*;/i);
   assert.match(sql, /notify\s+pgrst,\s*'reload schema'/i);
+  assert.match(sql, /to_regprocedure\(v_identity\)/i);
 
   for (const identity of identities) {
     const escapedIdentity = identity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const functionName = identity.replace("public.", "").replace("(uuid)", "");
 
-    assert.match(sql, new RegExp(`to_regprocedure\\('${escapedIdentity}'\\)`, "i"));
+    assert.match(sql, new RegExp(`'${escapedIdentity}'`, "i"));
     assert.match(
       sql,
       new RegExp(
