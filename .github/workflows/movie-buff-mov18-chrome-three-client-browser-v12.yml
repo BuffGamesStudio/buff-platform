@@ -13,7 +13,8 @@ env:
   PRODUCT_SHA: 51e22cdf383b037607a874da410f088bbfeab890
   PRODUCT_TREE: 6ab306f913f42f5448a9c842849fe30295fb769d
   CONTROLLER_BRANCH: validation/movie-buff-mov18-reduced-runner-base-v12-20260807
-  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-mov18-reduced-browser-run-v12b-20260807
+  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-mov18-reduced-browser-run-v12c-20260807
+  EXPECTED_BRANCH: validation/movie-buff-mov18-reduced-runner-base-v12-20260807
   CONTROLLER_SHA: ${{ github.event.pull_request.base.sha }}
   TRIGGER_SHA: ${{ github.event.pull_request.head.sha }}
   V11_WORKFLOW: .github/workflows/movie-buff-mov18-chrome-three-client-browser-v11.yml
