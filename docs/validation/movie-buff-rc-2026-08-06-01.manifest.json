@@ -1,0 +1,457 @@
+{
+  "agent6CanonicalSourceHashes": [
+    {
+      "bytes": 5671,
+      "path": "supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql",
+      "sha256": "01a4c92cf1c860965a820dbb7d65c6a04ad2a4eea088f8604c4899215806c5ae"
+    },
+    {
+      "bytes": 7689,
+      "path": "supabase/migrations/20260805160000_movie_buff_six_table_rls_reconciliation.sql",
+      "sha256": "54abc27751fb3b7ec775cad2d836d3084de48411d52889935a0e7400cd7e957b"
+    },
+    {
+      "bytes": 3753,
+      "path": "supabase/migrations/20260805160500_public_rls_auto_enable_event_trigger_contract.sql",
+      "sha256": "d51d7fa85c69a938bd488dd23f3d8992443d39b36f8a8b435b3a521611757598"
+    },
+    {
+      "bytes": 2507,
+      "path": "supabase/migrations/20260805161000_public_rls_auto_enable_acl_lockdown.sql",
+      "sha256": "bbb27ff3f7646fbae8c39c3d78d22ae647d39ea7846843f825aeab4bf2f5d69c"
+    },
+    {
+      "bytes": 934,
+      "path": "supabase/rollbacks/20260805155000_movie_buff_function_security_finalizer.rollback.sql",
+      "sha256": "14d3b92612cd6340fb26a789a1de250606a3014a81f01bb0e4b1b3206f3a42ba"
+    },
+    {
+      "bytes": 3181,
+      "path": "supabase/rollbacks/20260805160000_movie_buff_six_table_rls_reconciliation.rollback.sql",
+      "sha256": "84f300614afbe8666d95561dcd63b6173eaa9b5a3e850375d5ee503fbaa960c1"
+    },
+    {
+      "bytes": 1663,
+      "path": "supabase/rollbacks/20260805160500_public_rls_auto_enable_event_trigger_contract.rollback.sql",
+      "sha256": "0a89276d00049f1fd2c562b6372cd80af081aa1f007384ef4f5cc23af26f552c"
+    },
+    {
+      "bytes": 1584,
+      "path": "supabase/rollbacks/20260805161000_public_rls_auto_enable_acl_lockdown.rollback.sql",
+      "sha256": "c3f7fb5342eb0bb23a192d85f055ce33f015f2457c2548c2e4d9d949405f79b4"
+    },
+    {
+      "bytes": 11710,
+      "path": "supabase/tests/movie_buff_current_security_finalizer_test.sql",
+      "sha256": "602841a87ac4a00dab597c543c907eaf9fcbcb5201b252e46f1cd5e665ff040b"
+    },
+    {
+      "bytes": 5238,
+      "path": "supabase/tests/movie_buff_current_security_finalizer_rollback_test.sql",
+      "sha256": "818c3e9d48c7cb86bba74bfa8444c8492d30175a55a270cb3d2c06ba988dcd31"
+    },
+    {
+      "bytes": 13256,
+      "path": "supabase/tests/movie_buff_agent6_persona_behavior_test.sql",
+      "sha256": "9b96979007ca78499b16fd1211c9d49036d8a85473dccf2793f2a5952806a558"
+    },
+    {
+      "bytes": 3611,
+      "path": "supabase/tests/movie_buff_agent6_policy_helper_security_test.sql",
+      "sha256": "5cfba0b8516796030e85fb09fb66f829bfbca663d840213e6f6bbeff432a534b"
+    },
+    {
+      "bytes": 897,
+      "path": "supabase/tests/movie_buff_agent6_policy_helper_rollback_test.sql",
+      "sha256": "f7bc27303f66240da2b00c43960e6036a1c84ebb099ea2ddb9c211091c27a2d3"
+    },
+    {
+      "bytes": 17557,
+      "path": "scripts/movie-buff-agent6-security-package.sh",
+      "sha256": "364a6a5af0659bbbc1f24c9f0ebc60fe456a513a1aae42e2b4cd5c6b1ce204c5"
+    },
+    {
+      "bytes": 7014,
+      "path": "docs/security/movie-buff-agent6-expected-state.json",
+      "sha256": "962a98ebff1f8ab113acee1a26723cfb34a6765fe6272a31619508a78edf2555"
+    },
+    {
+      "bytes": 4557,
+      "path": ".github/workflows/movie-buff-agent6-security-package.yml",
+      "sha256": "928b05d293d947e8bd85b80eb06edb0f5f3c618d96ac3f6924a7d4bf43a6e803"
+    }
+  ],
+  "candidate": {
+    "controllerBranch": "release/movie-buff-rc-2026-08-06-01",
+    "controllerIdentityBinding": "BOUND_EXTERNALLY_BY_FINAL_DRAFT_PR_HEAD_AFTER_MANIFEST_COMMIT",
+    "parentProductSha": "c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6",
+    "parentProductTree": "a995a9aeb2fca76d2c1b216ece3a2645c2393c71",
+    "productBranch": "release/movie-buff-rc-2026-08-06-01-product",
+    "productSha": "78c35aa15ec7f1bb3cb3de316f260fec438f00dc",
+    "productTree": "f8d3b3901ad0c0b1db1cfa4a6374f2a979dd5613",
+    "releaseClassification": "NO-GO"
+  },
+  "components": [
+    {
+      "branch": "integration/movie-buff",
+      "cutoffDisposition": "ACCEPTED",
+      "id": "integration",
+      "role": "integration baseline",
+      "sha": "bf316a15a2120e32d8a32e479df2ae439081f9a1",
+      "tree": "12f425f4c56fb3f3c66df6f3a6543d7fd8b6ef34"
+    },
+    {
+      "branch": "cursor/movie-buff-origin-main-integration-20260803-155410",
+      "cutoffDisposition": "ACCEPTED",
+      "id": "pr3_visuals",
+      "role": "rich visuals",
+      "sha": "f692e82a5d524c950011e0300908c9cbec2389cb",
+      "tree": "621bd5d39059f76773d84b5a0d1dce851e2ff0de"
+    },
+    {
+      "branch": "automation/movie-buff-security-hardening-packet-20260804",
+      "cutoffDisposition": "ACCEPTED",
+      "id": "pr5_hardening",
+      "role": "security hardening",
+      "sha": "91eac0d55abb1a9568017df687e8395771d24780",
+      "tree": "1ae3ed427b2c1b38c3731cc9532b5d0fb0c6336f"
+    },
+    {
+      "branch": "copilot/MOV-15-public-matchmaking",
+      "cutoffDisposition": "ACCEPTED",
+      "id": "mov15",
+      "role": "strict-three public matchmaking",
+      "sha": "48d44bb156b71060d1b9adcc7a2a3f014cf92060",
+      "tree": "e010c949920f84e5f7aaca9d50ebf39d6ea13309"
+    },
+    {
+      "branch": "copilot/MOV-16-vip-authority",
+      "cutoffDisposition": "ACCEPTED",
+      "id": "mov16",
+      "role": "VIP authority",
+      "sha": "1d3b947ca153214028b5ac97a7eea83c382b5c7d",
+      "tree": "94fd19ab499b02663b21880aa5efeec37c93ca9d"
+    },
+    {
+      "branch": "copilot/MOV-17-shared-phase-machine",
+      "cutoffDisposition": "ACCEPTED_AT_CUTOFF",
+      "id": "mov17",
+      "postCutoffHeadExcluded": {
+        "sha": "ffff733d856c8c6dca5a04fdbe84e3a0c5839111",
+        "tree": "99cbd5b0554e3d5499d9789c500bbff8e8fd82a5"
+      },
+      "role": "shared phase machine",
+      "sha": "9239fcdc731ec05594c75d3ef9961e6cd4d36bbf",
+      "tree": "57a00c385e210717bd705b14d2146908736482fe"
+    },
+    {
+      "branch": "copilot/MOV-18-visual-motion-runtime",
+      "cutoffDisposition": "ACCEPTED",
+      "id": "mov18",
+      "role": "visual runtime",
+      "sha": "a416dd1bf6b372d11abcc0541abd9584443b0672",
+      "tree": "a866c5610d09c45eb1ff3c3422306a46050e9ec7"
+    },
+    {
+      "branch": "copilot/MOV-14-migration-encoding",
+      "cutoffDisposition": "ACCEPTED",
+      "id": "pr12_encoding",
+      "role": "migration encoding repair",
+      "sha": "d1f7ca58b534cbccd3071743d542f5788c0e9173",
+      "tree": "ea817ad706f4107fc16482cbe6cc40ec6a012ee0"
+    },
+    {
+      "branch": "security/movie-buff-rls-acl-staging",
+      "cutoffDisposition": "ACCEPTED_SOURCE_OVERLAY",
+      "id": "agent6_security",
+      "role": "RLS/ACL/security evidence package",
+      "sha": "915877115479db3c14665ac3fcbe17a0d2ae8921",
+      "tree": "47175b18af9e3dd1dc6aa30e41bb3b5bd06aa272"
+    },
+    {
+      "branch": "copilot/MOV-19-security-validation",
+      "cutoffDisposition": "ACCEPTED_VALIDATOR_OVERLAY_NO_GO_IMPLIED",
+      "id": "mov19_validator",
+      "role": "independent validation tooling only",
+      "sha": "e2d14447d7036cf9dc645514c4713bd4d8e42db1",
+      "tree": "264e4374eca6d3881bc587f1e1ff4a9f0a59023d"
+    },
+    {
+      "branch": "fix/movie-buff-lobby-persisted-session",
+      "cutoffDisposition": "ACCEPTED_OWNER_REPAIR",
+      "id": "lobby_session_owner_repair",
+      "role": "persisted-session lobby bootstrap owner repair",
+      "sha": "3d2743da175229de42847c82c71931657c2090da",
+      "tree": "52bd3a7a284ef2c7a4ae2d6ac14ec8b7120589c8"
+    }
+  ],
+  "composition": {
+    "allOtherTrackedPaths": "BYTE_IDENTICAL_TO_PARENT_PRODUCT_BY_GIT_TREE_DIFF",
+    "changedPathCount": 6,
+    "gitCompareStats": {
+      "additions": 376,
+      "deletions": 32,
+      "files": 6
+    },
+    "strategy": "exact-six-blob-overlay-on-candidate-v6-product",
+    "unchangedCriticalCategories": [
+      "package.json",
+      "package-lock.json",
+      "TypeScript configuration",
+      "Next.js/build configuration",
+      "MOV15 matchmaking runtime",
+      "MOV16 VIP runtime",
+      "cutoff MOV17 phase runtime",
+      "MOV18 visual runtime",
+      "PR3 protected visual reconciliation",
+      "PR5 hardening",
+      "all forward migrations",
+      "all rollback SQL"
+    ]
+  },
+  "deltaFiles": [
+    {
+      "classification": "CHANGED",
+      "impact": [
+        "controller",
+        "agent6-evidence-binding"
+      ],
+      "new": {
+        "bytes": 4557,
+        "gitBlob": "c8811c7f7945c493a300e3643cfe05dee3a4e3b6",
+        "sha256": "928b05d293d947e8bd85b80eb06edb0f5f3c618d96ac3f6924a7d4bf43a6e803"
+      },
+      "old": {
+        "bytes": 4557,
+        "gitBlob": "a8d987e4bd8b0d11d50609cbf745ab2e0e384e07",
+        "sha256": "ab883bde9ab7532b27b056bc4075fbdc5334114a1961925a43e4dc58c26c58b5"
+      },
+      "owner": "agent6_security",
+      "path": ".github/workflows/movie-buff-agent6-security-package.yml",
+      "sourceSha": "915877115479db3c14665ac3fcbe17a0d2ae8921",
+      "sourceTree": "47175b18af9e3dd1dc6aa30e41bb3b5bd06aa272"
+    },
+    {
+      "classification": "CHANGED",
+      "impact": [
+        "agent6-evidence-expectation"
+      ],
+      "new": {
+        "bytes": 7014,
+        "gitBlob": "606f00dc55bfff493264d827337e0638ceef9694",
+        "sha256": "962a98ebff1f8ab113acee1a26723cfb34a6765fe6272a31619508a78edf2555"
+      },
+      "old": {
+        "bytes": 6870,
+        "gitBlob": "146b3e31fb8a2cca05edf81ec03afa2ac92ec8fe",
+        "sha256": "24708868525a2b468993f76ed7963a46073e980114edbff7d7fb96b57a9f3611"
+      },
+      "owner": "agent6_security",
+      "path": "docs/security/movie-buff-agent6-expected-state.json",
+      "sourceSha": "915877115479db3c14665ac3fcbe17a0d2ae8921",
+      "sourceTree": "47175b18af9e3dd1dc6aa30e41bb3b5bd06aa272"
+    },
+    {
+      "classification": "CHANGED",
+      "impact": [
+        "validator-controller",
+        "independent-review"
+      ],
+      "new": {
+        "bytes": 6825,
+        "gitBlob": "831043deb604064c111c5186b392af2d7815f08f",
+        "sha256": "425f56c9f0de73a537d7ee113d0b61f9ae34caa0a13ce24321a830de66abf8f0"
+      },
+      "old": {
+        "bytes": 6407,
+        "gitBlob": "2266a38262ec276059c961ad940f8a163b50d7e5",
+        "sha256": "b37202a2a4ac631a620ffdee1cf365c721638677c6be9c7b18a729654f1528b5"
+      },
+      "owner": "mov19_validator",
+      "path": ".github/workflows/movie-buff-mov19-validation.yml",
+      "sourceSha": "e2d14447d7036cf9dc645514c4713bd4d8e42db1",
+      "sourceTree": "264e4374eca6d3881bc587f1e1ff4a9f0a59023d"
+    },
+    {
+      "classification": "CHANGED",
+      "impact": [
+        "validator-self-test"
+      ],
+      "new": {
+        "bytes": 9718,
+        "gitBlob": "aadef375490d9c9eeacb2ba3810efc3c0d72d823",
+        "sha256": "3c8eda4dfd34340a279de31c2ac123c2a9f8ca1794661a9d91c5cff7f279406b"
+      },
+      "old": {
+        "bytes": 9446,
+        "gitBlob": "b59beab616e1998a8bc79985d3a2dafbae92d2e0",
+        "sha256": "59150a4737b9b309c301b5c6781c1010b077e9e636edad48b60efd5cbb51b6f7"
+      },
+      "owner": "mov19_validator",
+      "path": "tests/movie-buff-independent-security-validation.test.mjs",
+      "sourceSha": "e2d14447d7036cf9dc645514c4713bd4d8e42db1",
+      "sourceTree": "264e4374eca6d3881bc587f1e1ff4a9f0a59023d"
+    },
+    {
+      "classification": "CHANGED",
+      "impact": [
+        "runtime",
+        "auth",
+        "lobby",
+        "browser",
+        "build"
+      ],
+      "new": {
+        "bytes": 3303,
+        "gitBlob": "0b8f21a92c6a739e3bd8f853b9e4426f5c5aa957",
+        "sha256": "38bf77c627156d8caf3093ed1cc2a491f790487f538db80a64070847302eb78e"
+      },
+      "old": {
+        "bytes": 2133,
+        "gitBlob": "aeefc9835c07c95e6897a6f9ae37e6cb489c9333",
+        "sha256": "8bc6256b80092ef84b470c691622b02c29a4f00b3eb5de4c631a21ed345212cd"
+      },
+      "owner": "lobby_session_owner_repair",
+      "path": "src/app/games/movie-buff/lobby/LobbyAuthBootstrap.tsx",
+      "sourceSha": "3d2743da175229de42847c82c71931657c2090da",
+      "sourceTree": "52bd3a7a284ef2c7a4ae2d6ac14ec8b7120589c8"
+    },
+    {
+      "classification": "CHANGED",
+      "impact": [
+        "focused-test"
+      ],
+      "new": {
+        "bytes": 1985,
+        "gitBlob": "6cd6ecd46bcf7b368c72d981db735a2d86f2fa5d",
+        "sha256": "a24bcd847b7a2610acee85edebffc3ac594e7467511934b3a9b2370d27c4e961"
+      },
+      "old": {
+        "bytes": 1346,
+        "gitBlob": "2bd6140f1aaab0609e2e5a56fc2a79a593c4f72d",
+        "sha256": "30dd17d8ef124ea7a98938698357b7ae94bd00e7e9cc59f056716db623d5a556"
+      },
+      "owner": "lobby_session_owner_repair",
+      "path": "tests/movie-buff-lobby-auth-bootstrap.test.mjs",
+      "sourceSha": "3d2743da175229de42847c82c71931657c2090da",
+      "sourceTree": "52bd3a7a284ef2c7a4ae2d6ac14ec8b7120589c8"
+    }
+  ],
+  "evidenceDisposition": {
+    "notRetainable": [
+      "candidate-v6 candidate-wide PASS claims",
+      "earlier MOV-19 workflow/test execution as proof of current validator bytes",
+      "any evidence tied only to post-cutoff MOV17 ffff733d856c8c6dca5a04fdbe84e3a0c5839111",
+      "PR114 post-cutoff staging-security repair or clearance evidence",
+      "any hosted or production claim",
+      "any cross-SHA evidence without the explicit byte-identity scope recorded here"
+    ],
+    "rerunRequired": [
+      "successor exact identity and clean-checkout controller execution",
+      "successor manifest/hash-audit workflow",
+      "MOV-19 current workflow and validator self-tests",
+      "lobby persisted-session focused tests",
+      "TypeScript and production build on the successor product",
+      "Linux exact-SHA source/build evidence",
+      "Windows digital twin",
+      "secret redaction, deterministic exits, cleanup and portable artifact hashing for successor artifacts",
+      "combined MOV15/MOV16/MOV17 database apply, pgTAP, race, reconnect, idempotency and cross-lane behavior",
+      "combined rollback, containment and forward reapply outside the retained Agent 6-only scope",
+      "exact Vercel staging deployment and source/build-marker provenance",
+      "exact isolated Supabase staging project, migration ledger and catalog/ACL/RLS/function proof",
+      "three-authenticated-client browser journey",
+      "refresh/reconnect, back/forward, stale-client rejection and runtime-console checks",
+      "responsive, accessibility, fallback and reduced-motion evidence",
+      "independent artifact download, digest verification and MOV-19 GO/NO-GO for this exact product"
+    ],
+    "retainable": [
+      {
+        "classification": "RETAINABLE_IDENTITY_ONLY",
+        "conditions": [
+          "Use only accepted cutoff component SHAs/trees listed in this manifest.",
+          "Do not convert historical UNKNOWN or NO-GO classifications into PASS."
+        ],
+        "scope": "candidate-v6 component identities and protected reconciliation"
+      },
+      {
+        "classification": "RETAINABLE_WHEN_SCOPED_TO_BYTE_IDENTICAL_PATHS",
+        "conditions": [
+          "Prior artifact identity and digest must verify.",
+          "Evidence dependency closure must exclude all six changed paths.",
+          "No candidate-wide or cross-lane behavior claim may be inferred."
+        ],
+        "scope": "PR3, PR5, MOV15, MOV16, cutoff MOV17, MOV18 and PR12 lane evidence"
+      },
+      {
+        "artifactDigest": "sha256:0ca8ec0a964b4d93c034dbd7de43081d5f4a83f65c1f81c610279ed28c0e1531",
+        "artifactId": 8973114068,
+        "classification": "RETAINABLE_WITH_BYTE_IDENTITY_BRIDGE",
+        "conditions": [
+          "Agent 6 source workflow, expected state, SQL, rollback, tests and harness hashes match this manifest.",
+          "Successor database/runtime dependency closure is byte-identical to the tested product; successor-only changes are workflow/validator metadata and lobby client/test paths.",
+          "This does not prove integrated MOV15-MOV17 races, browser behavior, hosted state, staging, production or backup/PITR.",
+          "MOV-19 must independently accept the bridge."
+        ],
+        "retainedClaims": [
+          "disposable local database reset and ledger",
+          "Agent 6 forward pgTAP",
+          "policy-helper and persona assertions",
+          "ordered containment rollback",
+          "forward reapply",
+          "catalog equality",
+          "cleanup and secret scan"
+        ],
+        "scope": "Agent 6 disposable local database-security proof",
+        "sourceRun": 31114359501,
+        "sourceSha": "915877115479db3c14665ac3fcbe17a0d2ae8921",
+        "sourceTree": "47175b18af9e3dd1dc6aa30e41bb3b5bd06aa272",
+        "testedProductSha": "520a06c9c79e6a2b0ef9ce7816abd70514cba922",
+        "testedProductTree": "6f9ec763ed2256266af63d0e023eeef7e277e452"
+      }
+    ]
+  },
+  "exclusions": [
+    {
+      "id": "mov17-post-cutoff",
+      "reason": "post-cutoff movement",
+      "sha": "ffff733d856c8c6dca5a04fdbe84e3a0c5839111",
+      "tree": "99cbd5b0554e3d5499d9789c500bbff8e8fd82a5"
+    },
+    {
+      "id": "pr114-staging-security-clearance",
+      "reason": "post-cutoff and not authorized into this candidate",
+      "sha": "55b317f9aece77a26968ddeebe1ce167cbc0664a"
+    }
+  ],
+  "generatedAtUtc": "2026-08-06T23:11:16Z",
+  "hashDerivation": {
+    "agent6OldAndNew": "exact-head workflow artifacts with canonical source manifests",
+    "lobbyOldAndNew": "exact repository bytes; SHA-256 with Git blob verification",
+    "mov19New": "exact source-head bytes and Git blob identity",
+    "mov19Old": "exact repository bytes; computed SHA-256 and verified computed Git blob SHA equals repository blob",
+    "unchangedPaths": "Git tree comparison parent product to successor product"
+  },
+  "manifestKind": "movie-buff-successor-candidate-component-blob-hash-manifest",
+  "releaseTrain": {
+    "cutoffUtc": "2026-08-06T21:54:00Z",
+    "id": "movie-buff-rc-2026-08-06-01",
+    "intakeHeadSha": "d03385aa2ea430f5a5fa8959a17a634ec2f975d8",
+    "intakePr": 115
+  },
+  "repository": "BuffGamesStudio/buff-platform",
+  "reproducibleAudit": {
+    "controllerBaseCommit": "d1798058f360c96059c529ecdf141561a02a3f4f",
+    "controllerBaseTree": "0a6f575dcecb2c0b323f40dd6d3c6f25f577a16e",
+    "executionStatus": "NOT_EXECUTED_GITHUB_APP_CONTENT_WRITES_DID_NOT_TRIGGER_PUSH_WORKFLOW",
+    "workflowPath": ".github/workflows/movie-buff-rc-2026-08-06-01-hash-audit.yml"
+  },
+  "safety": {
+    "deployAuthorized": false,
+    "draftOnly": true,
+    "hostedMutationAuthorized": false,
+    "mergeAuthorized": false,
+    "mov19GoIssued": false,
+    "productionMutationAuthorized": false
+  },
+  "schemaVersion": 1
+}
