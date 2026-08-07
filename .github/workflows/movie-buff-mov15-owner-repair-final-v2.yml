@@ -1,0 +1,108 @@
+name: MOV-15 final one-shot owner repair v2
+
+on:
+  push:
+    branches:
+      - copilot/MOV-15-public-matchmaking
+    paths:
+      - ".github/workflows/movie-buff-mov15-owner-repair-final-v2.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    name: Commit verified MOV-15 owner repair
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out exact staging commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Verify immutable parent and clean checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "copilot/MOV-15-public-matchmaking"
+          test "$(git rev-parse HEAD^)" = "3f96eadc6a0953fc0b49798bd66a3452388e6459"
+          test -z "$(git status --porcelain)"
+
+      - name: Apply exact approved repair and normalize EOF
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path(
+              ".github/workflows/movie-buff-mov15-owner-repair-v2.yml"
+          ).read_text(encoding="utf-8")
+          marker = "          python - <<'PY'\n"
+          start = workflow.index(marker) + len(marker)
+          end = workflow.index("\n          PY", start)
+          script = textwrap.dedent(workflow[start:end])
+          exec(compile(script, "mov15-owner-repair-v2", "exec"))
+
+          contract_path = Path(
+              "tests/movie-buff-public-matchmaking-contract.test.mjs"
+          )
+          contract_path.write_text(
+              contract_path.read_text(encoding="utf-8").rstrip() + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Verify focused contracts and exact source boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            tests/movie-buff-public-matchmaking-contract.test.mjs \
+            tests/movie-buff-public-matchmaking-handoff.test.mjs
+          python - <<'PY'
+          from pathlib import Path
+
+          lobby = Path(
+              "src/app/games/movie-buff/lobby/LobbyClient.tsx"
+          ).read_text(encoding="utf-8")
+          workflow = Path(
+              ".github/workflows/movie-buff-mov15-validation.yml"
+          ).read_text(encoding="utf-8")
+          assert "handleQuickStart" not in lobby
+          assert '"Start Match"' not in lobby
+          assert "handleFindMatch" in lobby
+          assert '"Find Match"' in lobby
+          assert "handleCreateRoom" in lobby
+          assert '"Create Room"' in lobby
+          assert workflow.count(
+              "src/app/games/movie-buff/lobby/LobbyClient.tsx"
+          ) == 2
+          PY
+          git diff --check
+
+      - name: Commit owner repair and remove temporary workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "movie-buff-agent-2"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm \
+            .github/workflows/movie-buff-mov15-owner-repair.yml \
+            .github/workflows/movie-buff-mov15-owner-repair-v2.yml \
+            .github/workflows/movie-buff-mov15-owner-repair-diagnostics.yml \
+            .github/workflows/movie-buff-mov15-owner-repair-diagnostics-v2.yml \
+            .github/workflows/movie-buff-mov15-owner-repair-final.yml \
+            .github/workflows/movie-buff-mov15-owner-repair-final-v2.yml
+          git add \
+            src/app/games/movie-buff/lobby/LobbyClient.tsx \
+            tests/movie-buff-public-matchmaking-contract.test.mjs \
+            .github/workflows/movie-buff-mov15-validation.yml
+          git diff --cached --check
+          git commit -m "MOV-15 remove duplicate manual start path"
+          git push origin HEAD:copilot/MOV-15-public-matchmaking
