@@ -19,6 +19,8 @@ permissions:
 env:
   PRODUCT_SHA: 3eec09a5dde9420883794697390606bd5aa06c7e
   PRODUCT_TREE: 7f259edd3085a03a3c513f8d043a59bbd421bd39
+  MOV16_SHA: ac6181943ea48d172273d6df54bbd3eb7839789b
+  MOV16_TREE: fa9be53b362dcbe6a176488d456b6920aac8c36f
   CONTROLLER_BRANCH: validation/movie-buff-mov17-races-20260807
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
@@ -53,7 +55,9 @@ jobs:
           set -euo pipefail
           resolved_branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           test "${resolved_branch}" = "${CONTROLLER_BRANCH}"
+          git fetch --no-tags origin "${MOV16_SHA}"
           test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test "$(git rev-parse "${MOV16_SHA}^{tree}")" = "${MOV16_TREE}"
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           test -z "$(git status --porcelain --untracked-files=all)"
           bash -n scripts/movie-buff-mov17-local-race-evidence.sh
@@ -61,7 +65,7 @@ jobs:
           node --check scripts/movie-buff-three-client-phase-proof.mjs
           node --check scripts/movie-buff-reconnect-race-proof.mjs
 
-      - name: Prepare local-only fixture controller
+      - name: Prepare local-only MOV-16 database-interface composition
         shell: bash
         run: |
           set -euo pipefail
@@ -70,8 +74,8 @@ jobs:
           import pathlib,sys
           path=pathlib.Path(sys.argv[1])
           text=path.read_text(encoding='utf-8')
-          anchor='  [[ -n "$publishable_key" && -n "$service_key" ]] || { fail credential-shape; return 1; }\n'
-          lines=[
+          credential_anchor='  [[ -n "$publishable_key" && -n "$service_key" ]] || { fail credential-shape; return 1; }\n'
+          credential_lines=[
             '  [[ -n "$publishable_key" && -n "$service_key" ]] || { fail credential-shape; return 1; }',
             '  local database_url="${DB_URL:-}"',
             '  [[ -n "$database_url" ]] || { fail database-url; return 1; }',
@@ -96,12 +100,49 @@ jobs:
             '    -f "$EVIDENCE_ROOT/local-fixture-grants.sql" \\',
             '    || { fail fixture-grants; return 1; }',
           ]
-          if anchor not in text:
+          if credential_anchor not in text:
               raise SystemExit('credential anchor missing')
-          path.write_text(text.replace(anchor,'\n'.join(lines)+'\n',1),encoding='utf-8')
+          text=text.replace(credential_anchor,'\n'.join(credential_lines)+'\n',1)
+
+          copy_anchor='  cp -a "$PRODUCT_ROOT/supabase" "$STACK_ROOT/supabase"\n'
+          copy_lines=[
+            '  cp -a "$PRODUCT_ROOT/supabase" "$STACK_ROOT/supabase"',
+            '  declare -A mov16_hashes=(',
+            '    ["supabase/migrations/20260804073000_movie_buff_vip_authority.sql"]="a5587c7dfbb0b86105c51d6fed1a2096dfd4be303feeaab5fcb8f77f4dab95e5"',
+            '    ["supabase/migrations/20260804073100_movie_buff_vip_null_category_fail_closed.sql"]="bd945c07caf4be946523fdf36a262fe53f0f97f30e75bfac9466181a1fa09f7e"',
+            '    ["supabase/migrations/20260804073200_movie_buff_vip_snapshot_release_hardening.sql"]="0e93bb7aeb97ddc193079f0647fba62502bb993ce6a05439ea3c4eb18a88e8cf"',
+            '    ["supabase/migrations/20260804073300_movie_buff_vip_deadline_finalize.sql"]="9458baa2a019dc6f90a84d9e90f683e4d123337edfd41e042af20777842e6619"',
+            '  )',
+            '  : >"$EVIDENCE_ROOT/mov16-migration-sha256.txt"',
+            '  for relative_path in "${!mov16_hashes[@]}"; do',
+            '    git -C "$CONTROLLER_ROOT" show "${MOV16_SHA}:${relative_path}" >"$STACK_ROOT/${relative_path}" \\',
+            '      || { fail "mov16-copy-${relative_path##*/}"; return 1; }',
+            '    observed_hash="$(sha256sum "$STACK_ROOT/${relative_path}" | cut -d\" \" -f1)"',
+            '    [[ "$observed_hash" = "${mov16_hashes[$relative_path]}" ]] \\',
+            '      || { fail "mov16-hash-${relative_path##*/}"; return 1; }',
+            '    printf "%s  %s\\n" "$observed_hash" "$relative_path" >>"$EVIDENCE_ROOT/mov16-migration-sha256.txt"',
+            '  done',
+          ]
+          if copy_anchor not in text:
+              raise SystemExit('supabase copy anchor missing')
+          text=text.replace(copy_anchor,'\n'.join(copy_lines)+'\n',1)
+
+          metadata_anchor='    echo "product_tree=${PRODUCT_TREE}"\n'
+          metadata_lines=[
+            '    echo "product_tree=${PRODUCT_TREE}"',
+            '    echo "mov16_sha=${MOV16_SHA}"',
+            '    echo "mov16_tree=${MOV16_TREE}"',
+            '    echo "composition_scope=mov17-product-plus-exact-mov16-database-migrations"',
+            '    echo "full_source_composition=UNKNOWN"',
+          ]
+          if metadata_anchor not in text:
+              raise SystemExit('metadata anchor missing')
+          text=text.replace(metadata_anchor,'\n'.join(metadata_lines)+'\n',1)
+          path.write_text(text,encoding='utf-8')
           PY
           bash -n "${RUNNER_TEMP}/mov17-race-lab.sh"
           grep -q 'Disposable localhost fixture scaffolding only' "${RUNNER_TEMP}/mov17-race-lab.sh"
+          grep -q 'composition_scope=mov17-product-plus-exact-mov16-database-migrations' "${RUNNER_TEMP}/mov17-race-lab.sh"
 
       - name: Execute disposable exact-product race laboratory
         shell: bash
