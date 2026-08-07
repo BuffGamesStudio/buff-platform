@@ -11,7 +11,7 @@ const supabasePublishableKey =
 export class MovieBuffPhaseRouteError extends Error {
   constructor(
     message: string,
-    readonly status: 400 | 401 | 403 | 404 | 409 | 500,
+    readonly status: 400 | 401 | 403 | 404 | 409 | 500 | 503,
   ) {
     super(message);
     this.name = "MovieBuffPhaseRouteError";
