@@ -27,8 +27,6 @@ jobs:
     name: Rehearse MOV-17 83100 rollback and forward chain
     runs-on: ubuntu-24.04
     timeout-minutes: 65
-    env:
-      EVIDENCE_DIR: ${{ runner.temp }}/mov17-83100-rollback-evidence
 
     steps:
       - name: Check out exact validation controller
@@ -71,10 +69,11 @@ jobs:
       - name: Execute exact local rollback and forward reapply
         shell: bash
         run: |
+          evidence_dir="${RUNNER_TEMP}/mov17-83100-rollback-evidence"
           bash scripts/movie-buff-mov17-83100-rollback-evidence.sh \
             "${PRODUCT_SHA}" \
             "${PRODUCT_TREE}" \
-            "${EVIDENCE_DIR}"
+            "${evidence_dir}"
 
       - name: Upload portable evidence
         if: always()
