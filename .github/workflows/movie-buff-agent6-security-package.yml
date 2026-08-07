@@ -1,0 +1,122 @@
+name: Movie Buff Agent 6 security package
+
+on:
+  push:
+    branches:
+      - security/movie-buff-rls-acl-staging
+    paths:
+      - ".github/workflows/movie-buff-agent6-security-package.yml"
+      - "scripts/movie-buff-agent6-security-package.sh"
+      - "docs/security/movie-buff-agent6-*.md"
+      - "docs/security/movie-buff-agent6-*.json"
+      - "supabase/migrations/2026080515*.sql"
+      - "supabase/migrations/2026080516*.sql"
+      - "supabase/rollbacks/2026080515*.sql"
+      - "supabase/rollbacks/2026080516*.sql"
+      - "supabase/tests/movie_buff_current_security_finalizer*.sql"
+      - "supabase/tests/movie_buff_agent6_*.sql"
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - ".github/workflows/movie-buff-agent6-security-package.yml"
+      - "scripts/movie-buff-agent6-security-package.sh"
+      - "docs/security/movie-buff-agent6-*.md"
+      - "docs/security/movie-buff-agent6-*.json"
+      - "supabase/migrations/2026080515*.sql"
+      - "supabase/migrations/2026080516*.sql"
+      - "supabase/rollbacks/2026080515*.sql"
+      - "supabase/rollbacks/2026080516*.sql"
+      - "supabase/tests/movie_buff_current_security_finalizer*.sql"
+      - "supabase/tests/movie_buff_agent6_*.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: security/movie-buff-rls-acl-staging
+  PRODUCT_SHA: 520a06c9c79e6a2b0ef9ce7816abd70514cba922
+  PRODUCT_TREE: 6f9ec763ed2256266af63d0e023eeef7e277e452
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-product-security:
+    name: Exact product RLS, ACL, persona, rollback and reapply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Check out exact Agent 6 source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind exact identities and validate harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          source_tree="$(git rev-parse HEAD^{tree})"
+          echo "SOURCE_TREE=${source_tree}" >> "${GITHUB_ENV}"
+          git fetch --no-tags --depth=1 origin "${PRODUCT_SHA}"
+          test "$(git rev-parse ${PRODUCT_SHA}^{tree})" = "${PRODUCT_TREE}"
+          bash -n scripts/movie-buff-agent6-security-package.sh
+          python3 - <<'PY'
+          import json, pathlib, re
+          script = pathlib.Path('scripts/movie-buff-agent6-security-package.sh').read_text(encoding='utf-8')
+          blocks = re.findall(r"<<'PY'\n(.*?)\nPY", script, flags=re.S)
+          if len(blocks) != 5:
+              raise SystemExit(f'expected 5 embedded Python programs, found {len(blocks)}')
+          for index, block in enumerate(blocks):
+              compile(block, f'<agent6-heredoc-{index}>', 'exec')
+          json.loads(pathlib.Path('docs/security/movie-buff-agent6-expected-state.json').read_text(encoding='utf-8'))
+          PY
+          test "$(supabase --version)" = "2.111.0"
+          docker --version
+          psql --version
+          python3 --version
+          git --version
+
+      - name: Execute disposable exact-product security proof
+        shell: bash
+        run: |
+          set -o pipefail
+          evidence_root="${RUNNER_TEMP}/movie-buff-agent6-security-evidence"
+          bash scripts/movie-buff-agent6-security-package.sh \
+            "${EXPECTED_SHA}" \
+            "${SOURCE_TREE}" \
+            "${PRODUCT_SHA}" \
+            "${PRODUCT_TREE}" \
+            "${evidence_root}"
+
+      - name: Upload Agent 6 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-agent6-security-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/movie-buff-agent6-security-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
