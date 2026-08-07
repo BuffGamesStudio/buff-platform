@@ -10,6 +10,14 @@ const waitingRoom = fs.readFileSync(
   "src/app/games/movie-buff/waiting-room/page.tsx",
   "utf8",
 );
+const lobby = fs.readFileSync(
+  "src/app/games/movie-buff/lobby/LobbyClient.tsx",
+  "utf8",
+);
+const workflow = fs.readFileSync(
+  ".github/workflows/movie-buff-mov15-validation.yml",
+  "utf8",
+);
 const race = fs.readFileSync(
   "scripts/movie-buff-public-matchmaking-race.mjs",
   "utf8",
@@ -30,6 +38,58 @@ const pgtap = fs.readFileSync(
   "supabase/tests/movie_buff_public_matchmaking_test.sql",
   "utf8",
 );
+
+
+function assertContainmentContract(sql) {
+  assert.match(
+    sql,
+    /current_setting\('movie_buff\.allow_matchmaking_containment',\s*true\)/i,
+  );
+  assert.match(sql, /<>\s*'on'/i);
+  assert.doesNotMatch(sql, /allow_public_matchmaking_rollback/i);
+  assert.match(
+    sql,
+    /revoke\s+execute\s+on\s+function\s+public\.find_or_create_movie_buff_public_room\(uuid,\s*text,\s*integer,\s*integer\)\s+from\s+authenticated\s*;/i,
+  );
+  assert.match(
+    sql,
+    /revoke\s+execute\s+on\s+function\s+public\.set_movie_buff_player_ready\(uuid,\s*boolean\)\s+from\s+authenticated\s*;/i,
+  );
+  assert.match(
+    sql,
+    /revoke\s+execute\s+on\s+function\s+public\.start_movie_buff_match\(uuid\)\s+from\s+authenticated\s*;/i,
+  );
+  assert.match(
+    sql,
+    /grant\s+execute\s+on\s+function\s+public\.find_or_create_movie_buff_public_room\(uuid,\s*text,\s*integer,\s*integer\)\s+to\s+service_role\s*;/i,
+  );
+  assert.match(
+    sql,
+    /grant\s+execute\s+on\s+function\s+public\.set_movie_buff_player_ready\(uuid,\s*boolean\)\s+to\s+service_role\s*;/i,
+  );
+  assert.match(
+    sql,
+    /grant\s+execute\s+on\s+function\s+public\.start_movie_buff_match\(uuid\)\s+to\s+service_role\s*;/i,
+  );
+  assert.doesNotMatch(
+    sql,
+    /grant\s+execute\s+on\s+function\s+public\.(?:find_or_create_movie_buff_public_room|set_movie_buff_player_ready|start_movie_buff_match)[\s\S]*?to\s+authenticated/i,
+  );
+  assert.doesNotMatch(sql, /drop\s+table|truncate|delete\s+from/i);
+}
+
+function assertPgtapSecurityContract(sql) {
+  assert.match(sql, /from pg_catalog\.pg_proc as p/i);
+  assert.match(
+    sql,
+    /join pg_catalog\.pg_roles as r on r\.oid = p\.proowner/i,
+  );
+  assert.match(sql, /r\.rolname = 'postgres'/i);
+  assert.match(sql, /p\.prosecdef/i);
+  assert.match(sql, /search_path=pg_catalog/i);
+  assert.match(sql, /has_function_privilege/i);
+  assert.match(sql, /skip\[\[:space:\]\]\+locked/i);
+}
 
 test("public capacity is server-owned and fixed at three", () => {
   assert.match(migration, /movie_buff_public_match_size\(\)/);
@@ -118,8 +178,10 @@ test("race harness covers required convergence families", () => {
   assert.match(race, /fresh simultaneous race/);
 });
 
-test("external row-lock contention is real and bounded", () => {
-  assert.match(helper, /for update/i);
+test("external compatibility-lock contention is real and bounded", () => {
+  assert.match(helper, /movie-buff-public-compatibility\|/i);
+  assert.match(helper, /pg_advisory_xact_lock/i);
+  assert.match(helper, /hashtextextended/i);
   assert.match(helper, /pg_sleep/i);
   assert.match(helper, /LOCAL_MATCHMAKING_LOCK_TEST/);
   assert.match(helper, /to service_role/i);
@@ -128,17 +190,98 @@ test("external row-lock contention is real and bounded", () => {
   assert.match(race, /contentionElapsedMs/);
 });
 
-test("rollback packet is non-destructive containment", () => {
-  assert.match(rollback, /movie_buff\.allow_matchmaking_containment/);
+test("rollback packet is guarded, fail-closed, and non-destructive", () => {
+  assertContainmentContract(rollback);
+  assert.match(
+    rollback,
+    /current_setting\('movie_buff\.allow_matchmaking_containment',\s*true\)/i,
+  );
+  assert.match(rollback, /allow_matchmaking_containment\s*=\s*'on'/i);
+  assert.match(rollback, /<>\s*'on'/i);
   assert.match(rollback, /containment blocked/i);
   assert.match(rollback, /preserving schema/i);
-  assert.doesNotMatch(rollback, /drop table|delete from|truncate/i);
+  assert.match(
+    rollback,
+    /revoke execute on function public\.find_or_create_movie_buff_public_room[\s\S]*from authenticated/i,
+  );
+  assert.match(
+    rollback,
+    /revoke execute on function public\.set_movie_buff_player_ready[\s\S]*from authenticated/i,
+  );
+  assert.match(
+    rollback,
+    /revoke execute on function public\.start_movie_buff_match[\s\S]*from authenticated/i,
+  );
+  assert.match(
+    rollback,
+    /grant execute on function public\.find_or_create_movie_buff_public_room[\s\S]*to service_role/i,
+  );
+  assert.match(
+    rollback,
+    /grant execute on function public\.set_movie_buff_player_ready[\s\S]*to service_role/i,
+  );
+  assert.match(
+    rollback,
+    /grant execute on function public\.start_movie_buff_match[\s\S]*to service_role/i,
+  );
+  assert.doesNotMatch(rollback, /drop\s+table|truncate|delete\s+from/i);
 });
 
 test("pgTAP covers ACL, ownership, fixed paths, and no SKIP LOCKED", () => {
+  assertPgtapSecurityContract(pgtap);
   assert.match(pgtap, /has_function_privilege/);
   assert.match(pgtap, /join pg_catalog\.pg_roles as r on r\.oid = p\.proowner/);
   assert.match(pgtap, /r\.rolname = 'postgres'/);
   assert.match(pgtap, /search_path=pg_catalog/);
-  assert.match(pgtap, /skip locked/i);
+  assert.match(pgtap, /skip\[\[:space:\]\]\+locked/i);
+});
+
+test("public lobby has no manual gameplay-start path", () => {
+  assert.doesNotMatch(lobby, /handleQuickStart/);
+  assert.doesNotMatch(lobby, /["']Start Match["']/);
+  assert.match(lobby, /onClick=\{handleFindMatch\}/);
+  assert.match(lobby, /["']Find Match["']/);
+  assert.match(lobby, /onClick=\{handleCreateRoom\}/);
+  assert.match(lobby, /["']Create Room["']/);
+  const watchedLobbyPaths =
+    workflow.match(
+      /src\/app\/games\/movie-buff\/lobby\/LobbyClient\.tsx/g,
+    ) ?? [];
+  assert.equal(watchedLobbyPaths.length, 2);
+});
+
+test("containment rejects the superseded rollback variable", () => {
+  const mutant = rollback.replaceAll(
+    "movie_buff.allow_matchmaking_containment",
+    "allow_public_matchmaking_rollback",
+  );
+  assert.notEqual(mutant, rollback);
+  assert.throws(() => assertContainmentContract(mutant));
+});
+
+test("containment without an explicit session guard fails", () => {
+  const mutant = rollback.replace(
+    /current_setting\('movie_buff\.allow_matchmaking_containment',\s*true\)/i,
+    "'on'",
+  );
+  assert.notEqual(mutant, rollback);
+  assert.throws(() => assertContainmentContract(mutant));
+});
+
+test("containment granting browser start authority fails", () => {
+  const mutant = rollback.replace(
+    /revoke execute on function public\.start_movie_buff_match\(uuid\)\s+from authenticated;/i,
+    "grant execute on function public.start_movie_buff_match(uuid) to authenticated;",
+  );
+  assert.notEqual(mutant, rollback);
+  assert.throws(() => assertContainmentContract(mutant));
+});
+
+test("pgTAP without postgres ownership verification fails", () => {
+  const mutant = pgtap.replaceAll(
+    "r.rolname = 'postgres'",
+    "r.rolname = 'not_postgres'",
+  );
+  assert.notEqual(mutant, pgtap);
+  assert.throws(() => assertPgtapSecurityContract(mutant));
 });

@@ -9,7 +9,6 @@ import {
   Bot,
   Check,
   Copy,
-  Gamepad2,
   Globe2,
   KeyRound,
   Lock,
@@ -366,9 +365,6 @@ export default function MovieBuffLobbyClient({
     }
   }
 
-  async function handleQuickStart() {
-    await handleCreateRoom();
-  }
 
   async function handleLeaveCurrentOpenRoom() {
     if (!currentOpenRoom) {
@@ -769,15 +765,6 @@ export default function MovieBuffLobbyClient({
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={handleQuickStart}
-              disabled={roomActionsBlocked || !emailVerified}
-              className="flex w-full items-center justify-center gap-3 rounded-xl bg-red-600 px-10 py-5 text-xl font-black transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70 lg:w-auto"
-            >
-              <Gamepad2 size={24} />
-              {isLoading ? "Working..." : "Start Match"}
-            </button>
           </div>
         </div>
       </section>

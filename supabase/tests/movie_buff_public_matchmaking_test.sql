@@ -109,7 +109,7 @@ select ok(
 select ok(
   pg_catalog.pg_get_functiondef(
     'public.find_or_create_movie_buff_public_room(uuid,text,integer,integer)'::regprocedure
-  ) !~* 'skip[[:space:]]+locked'
+  ) !~* 'for[[:space:]]+update[[:space:]]+skip[[:space:]]+locked'
   and
   pg_catalog.pg_get_functiondef(
     'public.find_or_create_movie_buff_public_room(uuid,text,integer,integer)'::regprocedure
