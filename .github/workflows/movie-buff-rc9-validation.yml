@@ -1,0 +1,291 @@
+name: Movie Buff RC-9 immutable validation controller
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-rc-9-controller
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RC9_BRANCH: validation/movie-buff-rc-9-controller
+  RC9_SHA: ${{ github.sha }}
+
+jobs:
+  repository:
+    name: RC-9 repository and artifact integrity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RC9_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify exact RC-9 controller identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${RC9_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${RC9_SHA}"
+          test -z "$(git status --porcelain)"
+          echo "RC9_EXPECTED_TREE_SHA=$(git rev-parse 'HEAD^{tree}')" >> "${GITHUB_ENV}"
+      - name: Install committed lock
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run RC-9 assertion wrapper
+        env:
+          RC9_EXPECTED_SHA: ${{ env.RC9_SHA }}
+          RC9_EXPECTED_BRANCH: ${{ env.RC9_BRANCH }}
+          RC9_EVIDENCE_OUTPUT: ${{ runner.temp }}/rc9-repository/controller.json
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          MOVIE_BUFF_BASE_URL: http://127.0.0.1:3017
+        run: node scripts/movie-buff-rc9-controller.mjs
+      - name: Run repository gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/rc9-repository"
+          node --check scripts/movie-buff-rc9-controller.mjs
+          node --test tests/movie-buff-mov17-*.test.mjs 2>&1 | tee "${RUNNER_TEMP}/rc9-repository/mov17-tests.tap"
+          node --test tests/movie-buff-visual-*.test.mjs 2>&1 | tee "${RUNNER_TEMP}/rc9-repository/mov18-tests.tap"
+          node --test tests/movie-buff-mov19-*.test.mjs 2>&1 | tee "${RUNNER_TEMP}/rc9-repository/mov19-tests.tap"
+          npx tsc --noEmit 2>&1 | tee "${RUNNER_TEMP}/rc9-repository/typescript.log"
+      - name: Localhost-placeholder build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: rc9-local-placeholder-not-a-secret
+        run: npm run build 2>&1 | tee "${RUNNER_TEMP}/rc9-repository/build.log"
+      - name: Finalize portable evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/rc9-repository"
+          mkdir -p "${root}"
+          {
+            echo "release_candidate=RC-9"
+            echo "repository=BuffGamesStudio/buff-platform"
+            echo "branch=${RC9_BRANCH}"
+            echo "sha=$(git rev-parse HEAD)"
+            echo "tree_sha=$(git rev-parse 'HEAD^{tree}')"
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "worktree_clean=$([ -z "$(git status --porcelain)" ] && echo true || echo false)"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${root}/metadata.txt"
+          (cd "${root}" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt && sha256sum -c sha256.txt)
+          test -z "$(git status --porcelain)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc9-repository-${{ env.RC9_SHA }}
+          path: ${{ runner.temp }}/rc9-repository
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    name: RC-9 Windows command digital twin
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RC9_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Run exact wrapper and negative paths
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'rc9-windows'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          if ($env:GITHUB_REF_NAME -ne $env:RC9_BRANCH) { throw 'RC-9 branch mismatch' }
+          if ((git rev-parse HEAD).Trim() -ne $env:RC9_SHA) { throw 'RC-9 SHA mismatch' }
+          if (git status --porcelain) { throw 'Dirty checkout' }
+          $env:RC9_EXPECTED_SHA = $env:RC9_SHA
+          $env:RC9_EXPECTED_BRANCH = $env:RC9_BRANCH
+          $env:RC9_EXPECTED_TREE_SHA = (git rev-parse 'HEAD^{tree}').Trim()
+          $env:RC9_EVIDENCE_OUTPUT = Join-Path $root 'controller.json'
+          $env:NEXT_PUBLIC_SUPABASE_URL = 'http://127.0.0.1:54321'
+          $env:MOVIE_BUFF_BASE_URL = 'http://127.0.0.1:3017'
+          node scripts/movie-buff-rc9-controller.mjs 1> (Join-Path $root 'wrapper.stdout.txt') 2> (Join-Path $root 'wrapper.stderr.txt')
+          if ($LASTEXITCODE -ne 0) { throw "RC-9 wrapper failed: $LASTEXITCODE" }
+          Push-Location $env:RUNNER_TEMP
+          try {
+            node (Join-Path $env:GITHUB_WORKSPACE 'scripts/movie-buff-rc9-controller.mjs') 1> (Join-Path $root 'wrong-folder.stdout.txt') 2> (Join-Path $root 'wrong-folder.stderr.txt')
+            if ($LASTEXITCODE -eq 0) { throw 'Wrong-folder negative path unexpectedly passed' }
+          } finally {
+            Pop-Location
+          }
+          $saved = $env:RC9_EXPECTED_SHA
+          $env:RC9_EXPECTED_SHA = '0000000000000000000000000000000000000000'
+          node scripts/movie-buff-rc9-controller.mjs 1> (Join-Path $root 'wrong-sha.stdout.txt') 2> (Join-Path $root 'wrong-sha.stderr.txt')
+          if ($LASTEXITCODE -eq 0) { throw 'Wrong-SHA negative path unexpectedly passed' }
+          $env:RC9_EXPECTED_SHA = $saved
+          if (git status --porcelain) { throw 'Evidence dirtied checkout' }
+          @(
+            "release_candidate=RC-9"
+            "sha=$((git rev-parse HEAD).Trim())"
+            "tree_sha=$((git rev-parse 'HEAD^{tree}').Trim())"
+            "powershell=$($PSVersionTable.PSVersion)"
+            "node=$((node --version).Trim())"
+            "npm=$((npm --version).Trim())"
+            'classification=PASS'
+          ) | Set-Content -LiteralPath (Join-Path $root 'metadata.txt') -Encoding utf8
+          Get-ChildItem $root -File | Where-Object Name -ne 'sha256.csv' | Get-FileHash -Algorithm SHA256 | Select-Object @{n='Path';e={$_.Path.Substring($root.Length + 1)}},Hash | Export-Csv (Join-Path $root 'sha256.csv') -NoTypeInformation
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc9-windows-${{ env.RC9_SHA }}
+          path: ${{ runner.temp }}\rc9-windows
+          if-no-files-found: error
+          retention-days: 14
+
+  database:
+    name: RC-9 disposable database and rollback laboratory
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RC9_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify identity and run disposable database proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/rc9-database"
+          mkdir -p "${root}"
+          test "$(git rev-parse HEAD)" = "${RC9_SHA}"
+          test -z "$(git status --porcelain)"
+          docker --version | tee "${root}/docker-version.txt"
+          npx --yes supabase@2.111.0 --version | tee "${root}/supabase-version.txt"
+          if [ -x scripts/movie-buff-mov17-local-supabase-evidence.sh ]; then
+            MOVIE_BUFF_EXPECTED_GIT_SHA="${RC9_SHA}" \
+            MOVIE_BUFF_EVIDENCE_DIR="${root}/mov17" \
+            bash scripts/movie-buff-mov17-local-supabase-evidence.sh 2>&1 | tee "${root}/database.log"
+          elif [ -f scripts/movie-buff-mov17-local-supabase-evidence.mjs ]; then
+            MOVIE_BUFF_EXPECTED_GIT_SHA="${RC9_SHA}" \
+            MOVIE_BUFF_EVIDENCE_DIR="${root}/mov17" \
+            node scripts/movie-buff-mov17-local-supabase-evidence.mjs 2>&1 | tee "${root}/database.log"
+          else
+            echo 'RC9_DATABASE_CLASSIFICATION=UNKNOWN' | tee "${root}/database.log"
+            exit 1
+          fi
+          test -z "$(git status --porcelain)"
+      - name: Finalize hashes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/rc9-database"
+          mkdir -p "${root}"
+          (cd "${root}" && find . -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc9-database-${{ env.RC9_SHA }}
+          path: ${{ runner.temp }}/rc9-database
+          if-no-files-found: error
+          retention-days: 14
+
+  browser:
+    name: RC-9 ephemeral three-client browser laboratory
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RC9_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute checked-in browser gate or remain fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/rc9-browser"
+          mkdir -p "${root}"
+          if [ -f scripts/movie-buff-three-client-browser-evidence.mjs ]; then
+            npx playwright install --with-deps chromium
+            MOVIE_BUFF_EXPECTED_GIT_SHA="${RC9_SHA}" \
+            MOVIE_BUFF_BASE_URL="http://127.0.0.1:3017" \
+            MOVIE_BUFF_EVIDENCE_DIR="${root}" \
+            node scripts/movie-buff-three-client-browser-evidence.mjs 2>&1 | tee "${root}/browser.log"
+          else
+            echo 'RC9_BROWSER_CLASSIFICATION=UNKNOWN' | tee "${root}/browser.log"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc9-browser-${{ env.RC9_SHA }}
+          path: ${{ runner.temp }}/rc9-browser
+          if-no-files-found: error
+          retention-days: 14
+
+  mov19:
+    name: RC-9 independent MOV-19 review
+    runs-on: ubuntu-24.04
+    needs: [repository, windows, database, browser]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RC9_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Classify independent review
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/rc9-mov19"
+          mkdir -p "${root}"
+          repository='${{ needs.repository.result }}'
+          windows='${{ needs.windows.result }}'
+          database='${{ needs.database.result }}'
+          browser='${{ needs.browser.result }}'
+          verdict=NO-GO
+          classification=FAIL
+          if [ "${repository}" = success ] && [ "${windows}" = success ] && [ "${database}" = success ] && [ "${browser}" = success ]; then
+            classification=UNKNOWN
+          fi
+          {
+            echo "release_candidate=RC-9"
+            echo "sha=${RC9_SHA}"
+            echo "tree_sha=$(git rev-parse 'HEAD^{tree}')"
+            echo "repository_gate=${repository}"
+            echo "windows_gate=${windows}"
+            echo "database_gate=${database}"
+            echo "browser_gate=${browser}"
+            echo "hosted_security_gate=FAIL"
+            echo "staging_gate=UNKNOWN"
+            echo "production_target_gate=UNKNOWN"
+            echo "mov19_recommendation=${verdict}"
+            echo "classification=${classification}"
+          } > "${root}/mov19-review.txt"
+          cat "${root}/mov19-review.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc9-mov19-${{ env.RC9_SHA }}
+          path: ${{ runner.temp }}/rc9-mov19
+          if-no-files-found: error
+          retention-days: 14
