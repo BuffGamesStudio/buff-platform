@@ -1,0 +1,268 @@
+name: Movie Buff MOV-18 exact Chrome validation v11
+
+on:
+  pull_request:
+    branches: [validation/movie-buff-mov18-strict-runner-base-v11-20260807]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_BRANCH: fix/movie-buff-history-authoritative-reconciliation-20260807
+  PRODUCT_SHA: 51e22cdf383b037607a874da410f088bbfeab890
+  PRODUCT_TREE: 6ab306f913f42f5448a9c842849fe30295fb769d
+  CONTROLLER_BRANCH: validation/movie-buff-mov18-strict-runner-base-v11-20260807
+  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-mov18-strict-browser-run-v11-20260807
+  EXPECTED_BRANCH: validation/movie-buff-mov18-strict-runner-base-v11-20260807
+  PARENT_SHA: 51e22cdf383b037607a874da410f088bbfeab890
+  CONTROLLER_SHA: ${{ github.event.pull_request.base.sha }}
+  TRIGGER_SHA: ${{ github.event.pull_request.head.sha }}
+  V9_WORKFLOW: .github/workflows/movie-buff-mov18-chrome-three-client-browser-v9.yml
+  ARTIFACT_NAME: movie-buff-mov18-chrome-three-client-v11-${{ github.run_id }}-${{ github.run_attempt }}
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Reuse V9 materialization and apply V11 strict-locator correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_EVENT_NAME}" = "pull_request"
+          test "${GITHUB_BASE_REF}" = "${CONTROLLER_BRANCH}"
+          test "${GITHUB_HEAD_REF}" = "${EXPECTED_TRIGGER_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${CONTROLLER_SHA}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+          python3 - "${RUNNER_TEMP}" "${V9_WORKFLOW}" <<'PY'
+          from pathlib import Path
+          import sys
+
+          output=Path(sys.argv[1])
+          workflow=Path(sys.argv[2])
+          lines=workflow.read_text(encoding="utf-8").splitlines()
+
+          marker="- name: Bind exact product and materialize preserved journey"
+          start=next(i for i,line in enumerate(lines) if line.strip()==marker)
+          run_line=next(i for i in range(start+1,len(lines)) if lines[i].strip()=="run: |")
+          run_indent=len(lines[run_line])-len(lines[run_line].lstrip())
+          body=[]
+          for line in lines[run_line+1:]:
+              if line.strip() and len(line)-len(line.lstrip()) <= run_indent:
+                  break
+              body.append(line[run_indent+2:] if line.strip() else "")
+          script="\n".join(body)+"\n"
+
+          # Construct GitHub-expression literals at runtime so Actions cannot
+          # pre-expand the source strings before Python sees them.
+          base_expr="$" + "{{ github.event.pull_request.base.ref }}"
+          head_expr="$" + "{{ github.event.pull_request.head.ref }}"
+          if script.count(base_expr) != 1 or script.count(head_expr) != 1:
+              raise SystemExit(
+                  f"unexpected inherited PR-ref anchors: base={script.count(base_expr)} head={script.count(head_expr)}"
+              )
+          script=script.replace(base_expr,"${GITHUB_BASE_REF}",1)
+          script=script.replace(head_expr,"${GITHUB_HEAD_REF}",1)
+
+          old='expected={".github/workflows/movie-buff-mov18-chrome-three-client-browser-v9.yml"}'
+          new='expected={".github/workflows/movie-buff-mov18-chrome-three-client-browser-v9.yml",".github/workflows/movie-buff-mov18-chrome-three-client-browser-v11.yml"}'
+          if script.count(old) != 1:
+              raise SystemExit(f"unexpected inherited controller-delta anchor count: {script.count(old)}")
+          script=script.replace(old,new,1)
+
+          materialize=output/"materialize-v9-for-v11.sh"
+          materialize.write_text(script,encoding="utf-8")
+          PY
+          bash -n "${RUNNER_TEMP}/materialize-v9-for-v11.sh"
+          bash "${RUNNER_TEMP}/materialize-v9-for-v11.sh"
+
+          python3 - "${RUNNER_TEMP}" <<'PY'
+          from pathlib import Path
+          import json,sys
+
+          root=Path(sys.argv[1])
+          harness=root/"movie-buff-three-client-full-journey-v9-chrome.mjs"
+          source=harness.read_text(encoding="utf-8")
+          anchor='  await pages[0].getByText("The motion asset, parser, or renderer could not initialize", { exact: false }).waitFor({ timeout: 60_000 });'
+          replacement='  await pages[0].getByText("The motion asset, parser, or renderer could not initialize", { exact: false }).first().waitFor({ timeout: 60_000 });'
+          count=source.count(anchor)
+          if count != 1:
+              raise SystemExit(f"unexpected MOV-18 strict-locator anchor count: {count}")
+          harness.write_text(source.replace(anchor,replacement,1),encoding="utf-8")
+
+          correction_path=root/"harness-correction.json"
+          correction=json.loads(correction_path.read_text())
+          correction["v11Mov18StrictLocatorCorrection"]="select the first of multiple simultaneously visible static fallback descriptions; fallback requirement, copy, timeout, and behavior are unchanged"
+          correction["mov18StrictLocatorReplacementCount"]=count
+          correction["journeyContract"]="V3 substantive requirements preserved"
+          correction_path.write_text(json.dumps(correction,indent=2)+"\n",encoding="utf-8")
+          PY
+          node --check "${RUNNER_TEMP}/movie-buff-three-client-full-journey-v9-chrome.mjs"
+          bash -n "${RUNNER_TEMP}/browser-preflight.sh"
+          bash -n "${RUNNER_TEMP}/browser-execute.sh"
+
+      - name: Provision runner prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg postgresql-client
+          command -v google-chrome || command -v google-chrome-stable
+          command -v ffmpeg
+          command -v ffprobe
+          command -v psql
+          command -v supabase
+
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - id: preflight
+        name: Execute reviewed preflight
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          bash -x "${RUNNER_TEMP}/browser-preflight.sh" >"${evidence}/reviewed-preflight.log" 2>&1
+          exit_code=$?
+          echo "${exit_code}" >"${evidence}/reviewed-preflight.exit"
+          cat "${evidence}/reviewed-preflight.log"
+          exit "${exit_code}"
+
+      - id: browser
+        name: Execute preserved V3 journey in codec-capable Chrome
+        if: ${{ steps.preflight.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: bash "${RUNNER_TEMP}/browser-execute.sh"
+
+      - name: Bind and hash V11 evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          cp "${RUNNER_TEMP}/harness-correction.json" "${evidence}/harness-correction.json"
+          controller_tree="$(git rev-parse HEAD^{tree})"
+          python3 - "${evidence}/v11-binding.json" "${controller_tree}" <<'PY'
+          import json,os,pathlib,sys
+          pathlib.Path(sys.argv[1]).write_text(json.dumps({
+            "repository":"BuffGamesStudio/buff-platform",
+            "productBranch":os.environ["PRODUCT_BRANCH"],
+            "productSha":os.environ["PRODUCT_SHA"],
+            "productTree":os.environ["PRODUCT_TREE"],
+            "controllerBranch":os.environ["CONTROLLER_BRANCH"],
+            "controllerSha":os.environ["CONTROLLER_SHA"],
+            "controllerTree":sys.argv[2],
+            "triggerSha":os.environ["TRIGGER_SHA"],
+            "runId":os.environ["GITHUB_RUN_ID"],
+            "runAttempt":os.environ["GITHUB_RUN_ATTEMPT"],
+            "target":"disposable-localhost-system-chrome",
+            "validationVersion":"V11",
+            "journeyContract":"V3 substantive requirements preserved",
+          },indent=2)+"\n",encoding="utf-8")
+          PY
+          (
+            cd "${evidence}"
+            find . -type f ! -name V11-SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > V11-SHA256SUMS.txt
+            sha256sum -c V11-SHA256SUMS.txt
+          )
+
+      - name: Upload exact browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/movie-buff-three-client-full-v2
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Enforce V11 browser gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.preflight.outcome }}" = "success"
+          test "${{ steps.browser.outcome }}" = "success"
+          python3 - "${RUNNER_TEMP}/movie-buff-three-client-full-v2" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          correction=json.loads((root/"harness-correction.json").read_text())
+          assert correction["classification"] == "PASS"
+          assert correction["mov18StrictLocatorReplacementCount"] == 1
+          assert correction["productBytesChanged"] is False
+          journey=json.loads((root/"three-client-full-journey-v2.json").read_text())
+          assert journey["classification"] == "PASS", journey.get("failure")
+          assert journey["target"]["kind"] == "disposable-localhost"
+          PY
+
+  independent-artifact-inspection:
+    needs: exact-browser
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: evidence
+
+      - name: Verify exact V11 binding, hashes, redaction, and browser PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd evidence
+          sha256sum -c V11-SHA256SUMS.txt
+          python3 - <<'PY'
+          import json,pathlib,re
+          root=pathlib.Path('.')
+          binding=json.loads((root/'v11-binding.json').read_text())
+          assert binding['repository']=='BuffGamesStudio/buff-platform'
+          assert binding['productSha']=='51e22cdf383b037607a874da410f088bbfeab890'
+          assert binding['productTree']=='6ab306f913f42f5448a9c842849fe30295fb769d'
+          assert binding['target']=='disposable-localhost-system-chrome'
+          assert binding['validationVersion']=='V11'
+          correction=json.loads((root/'harness-correction.json').read_text())
+          assert correction['classification']=='PASS'
+          assert correction['mov18StrictLocatorReplacementCount']==1
+          assert correction['productBytesChanged'] is False
+          journey=json.loads((root/'three-client-full-journey-v2.json').read_text())
+          assert journey['classification']=='PASS', journey.get('failure')
+          text='\n'.join(p.read_text(encoding='utf-8',errors='ignore') for p in root.rglob('*') if p.is_file() and p.suffix.lower() in {'.txt','.log','.json','.env','.csv','.md'})
+          forbidden=[
+            r'sb_(?:publishable|secret)_[A-Za-z0-9_-]{12,}',
+            r'eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}',
+            r'postgres(?:ql)?://[^\s\"\']+:[^\s\"\']+@[^\s\"\']+',
+          ]
+          for pattern in forbidden:
+              assert re.search(pattern,text) is None, pattern
+          PY
