@@ -36,6 +36,12 @@ const AUTHORITATIVE_PHASE_PATHS = new Set([
   "/games/movie-buff/round-results",
 ]);
 
+const HISTORY_RECOVERY_PATHS = new Set([
+  "/games/movie-buff/lobby",
+]);
+
+const ACTIVE_ROOM_STORAGE_KEY = "movie-buff-active-room-id";
+
 function normalizeLabel(value: string | null | undefined) {
   return (value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -57,9 +63,13 @@ export function MovieBuffAuthoritativeNavigation({
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const roomId = searchParams.get("roomId")?.trim() ?? "";
+  const urlRoomId = searchParams.get("roomId")?.trim() ?? "";
+  const [rememberedRoomId, setRememberedRoomId] = useState("");
+  const roomId = urlRoomId || rememberedRoomId;
   const shouldSynchronize = Boolean(
-    roomId && AUTHORITATIVE_PHASE_PATHS.has(pathname),
+    roomId &&
+      (AUTHORITATIVE_PHASE_PATHS.has(pathname) ||
+        HISTORY_RECOVERY_PATHS.has(pathname)),
   );
   const [view, setView] = useState<MovieBuffAuthoritativePhaseView | null>(null);
   const [syncError, setSyncError] = useState("");
@@ -71,6 +81,18 @@ export function MovieBuffAuthoritativeNavigation({
   const syncing = useRef(false);
   const leaving = useRef(false);
   const leaveIdempotencyKey = useRef("");
+
+  useEffect(() => {
+    if (urlRoomId) {
+      window.sessionStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, urlRoomId);
+      setRememberedRoomId(urlRoomId);
+      return;
+    }
+
+    setRememberedRoomId(
+      window.sessionStorage.getItem(ACTIVE_ROOM_STORAGE_KEY)?.trim() ?? "",
+    );
+  }, [urlRoomId]);
 
   const synchronize = useCallback(async () => {
     if (!shouldSynchronize || syncing.current || leaving.current) return;
@@ -183,6 +205,8 @@ export function MovieBuffAuthoritativeNavigation({
         leaveIdempotencyKey.current,
       );
       leaving.current = true;
+      window.sessionStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+      setRememberedRoomId("");
       setLeaveQuote(null);
       router.replace("/games/movie-buff");
     } catch (error) {
