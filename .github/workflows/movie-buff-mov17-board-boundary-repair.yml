@@ -167,8 +167,12 @@ jobs:
               if [[ "$redact_status" -eq 0 ]]; then mv "${evidence_file}.redacted" "$evidence_file"; fi
             done
             if grep -R -E \
-              'eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|sb_(publishable|secret|anon|service[_-]?role)_[A-Za-z0-9._-]+|postgres(ql)?://[^[:space:]]+' \
+              'eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|sb_(publishable|secret|anon|service[_-]?role)_[A-Za-z0-9._-]+' \
               "$evidence"; then
+              status=1
+            fi
+            if grep -R -E 'postgres(ql)?://[^[:space:]]+' "$evidence" \
+              | grep -v -F 'postgresql://[REDACTED_LOCAL_DB_URL]'; then
               status=1
             fi
             (
