@@ -1,0 +1,83 @@
+name: MOV-15 owner repair diagnostics v2
+
+on:
+  push:
+    branches:
+      - copilot/MOV-15-public-matchmaking
+    paths:
+      - ".github/workflows/movie-buff-mov15-owner-repair-diagnostics-v2.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Preserve transformed source and focused TAP
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out exact diagnostic commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Verify immutable parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "0abb2c6f658ce4bd1427b0b42168f8f8d399c58b"
+          test -z "$(git status --porcelain)"
+
+      - name: Reuse the exact v2 transformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path(
+              ".github/workflows/movie-buff-mov15-owner-repair-v2.yml"
+          ).read_text(encoding="utf-8")
+          marker = "          python - <<'PY'\n"
+          start = workflow.index(marker) + len(marker)
+          end = workflow.index("\n          PY", start)
+          script = textwrap.dedent(workflow[start:end])
+          exec(compile(script, "mov15-owner-repair-v2", "exec"))
+          PY
+
+      - name: Capture diagnostics without suppressing evidence
+        shell: bash
+        run: |
+          set +e
+          evidence="${RUNNER_TEMP}/mov15-owner-repair-diagnostics"
+          mkdir -p "${evidence}/files"
+          node --test \
+            tests/movie-buff-public-matchmaking-contract.test.mjs \
+            tests/movie-buff-public-matchmaking-handoff.test.mjs \
+            > "${evidence}/contracts.tap" 2>&1
+          printf '%s\n' "$?" > "${evidence}/contracts.exit"
+          cp src/app/games/movie-buff/lobby/LobbyClient.tsx "${evidence}/files/LobbyClient.tsx"
+          cp tests/movie-buff-public-matchmaking-contract.test.mjs "${evidence}/files/movie-buff-public-matchmaking-contract.test.mjs"
+          cp .github/workflows/movie-buff-mov15-validation.yml "${evidence}/files/movie-buff-mov15-validation.yml"
+          git diff --check > "${evidence}/git-diff-check.txt" 2>&1
+          printf '%s\n' "$?" > "${evidence}/git-diff-check.exit"
+          git diff -- \
+            src/app/games/movie-buff/lobby/LobbyClient.tsx \
+            tests/movie-buff-public-matchmaking-contract.test.mjs \
+            .github/workflows/movie-buff-mov15-validation.yml \
+            > "${evidence}/repair.diff"
+          sha256sum "${evidence}"/contracts.tap "${evidence}"/repair.diff \
+            > "${evidence}/sha256.txt"
+          exit 0
+
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov15-owner-repair-diagnostics-${{ github.sha }}
+          path: ${{ runner.temp }}/mov15-owner-repair-diagnostics
+          if-no-files-found: error
+          retention-days: 7
