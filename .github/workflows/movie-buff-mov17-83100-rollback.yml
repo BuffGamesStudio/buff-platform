@@ -1,0 +1,92 @@
+name: MOV-17 exact 83100 rollback and reapply
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-mov17-83100-rollback-20260807
+    paths:
+      - ".github/workflows/movie-buff-mov17-83100-rollback.yml"
+      - "scripts/movie-buff-mov17-83100-rollback-evidence.sh"
+      - "supabase/tests/movie_buff_phase_hardening_rollback_runtime_probe.sql"
+  pull_request:
+    branches:
+      - integration/movie-buff
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_SHA: f6b23c648a3a2cbabb4237934c125b0bccb215e9
+  PRODUCT_TREE: da2781ba523d8283f26ced50de3245b5d3800b8b
+  CONTROLLER_BRANCH: validation/movie-buff-mov17-83100-rollback-20260807
+  EVIDENCE_DIR: ${{ runner.temp }}/mov17-83100-rollback-evidence
+
+jobs:
+  rollback-reapply:
+    name: Rehearse MOV-17 83100 rollback and forward chain
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+
+    steps:
+      - name: Check out exact validation controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind exact immutable product and controller isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved_branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_branch}" = "${CONTROLLER_BRANCH}"
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          test "$(git rev-parse "${PRODUCT_SHA}:src/lib/server/movieBuffPhaseRouteAuthorization.ts")" = "aa90d1504261cc48719f6bac82ac237925bec440"
+          test "$(git rev-parse "${PRODUCT_SHA}:supabase/rollbacks/20260804083100_movie_buff_server_phase_machine_hardening.rollback.sql")" = "1fcffae32a70b181952340e2a304516c4a070fa5"
+          test "$(git rev-parse "${PRODUCT_SHA}:tests/movie-buff-phase-hardening-rollback.test.mjs")" = "2a2975fb525bbafd73952bb42a3a32440957bcd9"
+          actual="$(git diff --name-only "${PRODUCT_SHA}"..HEAD | sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/movie-buff-mov17-83100-rollback.yml \
+            scripts/movie-buff-mov17-83100-rollback-evidence.sh \
+            supabase/tests/movie_buff_phase_hardening_rollback_runtime_probe.sql | sort)"
+          test "${actual}" = "${expected}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          bash -n scripts/movie-buff-mov17-83100-rollback-evidence.sh
+
+      - name: Execute exact local rollback and forward reapply
+        shell: bash
+        run: |
+          bash scripts/movie-buff-mov17-83100-rollback-evidence.sh \
+            "${PRODUCT_SHA}" \
+            "${PRODUCT_TREE}" \
+            "${EVIDENCE_DIR}"
+
+      - name: Upload portable evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov17-83100-rollback-${{ env.PRODUCT_SHA }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/mov17-83100-rollback-evidence
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify clean controller checkout
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
