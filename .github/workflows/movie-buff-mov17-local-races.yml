@@ -17,8 +17,8 @@ permissions:
   contents: read
 
 env:
-  PRODUCT_SHA: f6b23c648a3a2cbabb4237934c125b0bccb215e9
-  PRODUCT_TREE: da2781ba523d8283f26ced50de3245b5d3800b8b
+  PRODUCT_SHA: b6f10c1b15506548e7dc63d0584295945726ac6d
+  PRODUCT_TREE: d601027fd4845c97a952e0edcd6540a74c9847d2
   CONTROLLER_BRANCH: validation/movie-buff-mov17-races-20260807
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
@@ -66,7 +66,7 @@ jobs:
           node --check scripts/movie-buff-three-client-phase-proof.mjs
           node --check scripts/movie-buff-reconnect-race-proof.mjs
 
-      - name: Prepare local-only fixture-grant controller
+      - name: Prepare local-only fixture controller
         shell: bash
         run: |
           set -euo pipefail
@@ -75,8 +75,9 @@ jobs:
           import pathlib,sys
           path=pathlib.Path(sys.argv[1])
           text=path.read_text(encoding='utf-8')
-          anchor='  [[ -n "$publishable_key" && -n "$service_key" ]] || { fail credential-shape; return 1; }\n'
-          lines=[
+
+          credential_anchor='  [[ -n "$publishable_key" && -n "$service_key" ]] || { fail credential-shape; return 1; }\n'
+          grant_lines=[
             '  [[ -n "$publishable_key" && -n "$service_key" ]] || { fail credential-shape; return 1; }',
             '  local database_url="${DB_URL:-}"',
             '  [[ -n "$database_url" ]] || { fail database-url; return 1; }',
@@ -101,13 +102,44 @@ jobs:
             '    -f "$EVIDENCE_ROOT/local-fixture-grants.sql" \\',
             '    || { fail fixture-grants; return 1; }',
           ]
-          insertion='\n'.join(lines)+'\n'
-          if anchor not in text:
+          if credential_anchor not in text:
               raise SystemExit('credential anchor missing')
-          path.write_text(text.replace(anchor,insertion,1),encoding='utf-8')
+          text=text.replace(credential_anchor,'\n'.join(grant_lines)+'\n',1)
+
+          worktree_anchor='''  [[ "$(git -C "$PRODUCT_ROOT" rev-parse HEAD^{tree})" = "$PRODUCT_TREE" ]] \\
+    || { fail product-worktree-tree; return 1; }\n'''
+          fixture_lines=[
+            worktree_anchor.rstrip('\n'),
+            '',
+            '  python3 - "$PRODUCT_ROOT/scripts/movie-buff-three-client-phase-proof.mjs" <<\'PY\'',
+            'import pathlib,sys',
+            'p=pathlib.Path(sys.argv[1]); text=p.read_text(encoding="utf-8")',
+            'old_return="return { roomId, matchId, roundId, boardId, tileIds, titles };"',
+            'new_return="return { roomId, matchId, roundId, boardId, tileIds, clipIds, titles };"',
+            'if old_return not in text: raise SystemExit("phase fixture return anchor missing")',
+            'text=text.replace(old_return,new_return,1)',
+            'anchor=\'  record("three clients share one Round Intro phase/version");\\n\\n  const { error: earlyAnswerError }\'',
+            'replacement=\'  record("three clients share one Round Intro phase/version");\\n\\n  const { error: earlyRoundFixtureError } = await admin\\n    .from("match_rounds")\\n    .update({ clip_id: context.clipIds[0] })\\n    .eq("id", context.roundId);\\n  if (earlyRoundFixtureError) throw earlyRoundFixtureError;\\n\\n  const { error: earlyAnswerError }\'',
+            'if anchor not in text: raise SystemExit("early-answer fixture anchor missing")',
+            'p.write_text(text.replace(anchor,replacement,1),encoding="utf-8")',
+            'PY',
+            '  printf \'fixture_patch=round_clip_for_early_answer_guard_only\\n\' >"$EVIDENCE_ROOT/phase-fixture-patch.txt"',
+          ]
+          if worktree_anchor not in text:
+              raise SystemExit('worktree anchor missing')
+          text=text.replace(worktree_anchor,'\n'.join(fixture_lines)+'\n',1)
+
+          cleanup_anchor='  git -C "$PRODUCT_ROOT" checkout -- next-env.d.ts >/dev/null 2>&1 || true\n'
+          cleanup_replacement='  git -C "$PRODUCT_ROOT" checkout -- next-env.d.ts scripts/movie-buff-three-client-phase-proof.mjs >/dev/null 2>&1 || true\n'
+          if cleanup_anchor not in text:
+              raise SystemExit('fixture cleanup anchor missing')
+          text=text.replace(cleanup_anchor,cleanup_replacement,1)
+
+          path.write_text(text,encoding='utf-8')
           PY
           bash -n "${RUNNER_TEMP}/mov17-race-lab.sh"
           grep -q 'Disposable localhost fixture scaffolding only' "${RUNNER_TEMP}/mov17-race-lab.sh"
+          grep -q 'phase fixture return anchor missing' "${RUNNER_TEMP}/mov17-race-lab.sh"
 
       - name: Execute disposable exact-product race laboratory
         shell: bash
