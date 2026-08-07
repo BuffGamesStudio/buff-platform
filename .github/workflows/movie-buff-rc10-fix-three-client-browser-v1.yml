@@ -1,0 +1,524 @@
+name: Movie Buff RC-9 board-bootstrap fix exact validation v1
+
+on:
+  pull_request:
+    branches: [validation/movie-buff-rc10-fix-runner-base-v1-20260807]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_BRANCH: fix/movie-buff-rc9-board-bootstrap-race-20260807
+  PRODUCT_SHA: 0a9c27bcf58dcbd7ba3d855feed78b9dd2068f53
+  PRODUCT_TREE: 674f79d52dd0014f8b13d13864ce9f985b15e673
+  PARENT_SHA: 0a9c27bcf58dcbd7ba3d855feed78b9dd2068f53
+  EXPECTED_BRANCH: validation/movie-buff-rc10-fix-runner-base-v1-20260807
+  CONTROLLER_BRANCH: validation/movie-buff-rc10-fix-runner-base-v1-20260807
+  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-rc10-fix-browser-run-v1-20260807
+  CONTROLLER_SHA: ${{ github.event.pull_request.base.sha }}
+  TRIGGER_SHA: ${{ github.event.pull_request.head.sha }}
+  ARCHIVE_SOURCE_SHA: d90a7eb73ef724b4ef5205343e655c7597dcf978
+  ARCHIVE_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
+  ARTIFACT_NAME: movie-buff-rc10-fix-three-client-v1-${{ github.run_id }}-${{ github.run_attempt }}
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-three-client-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind product and materialize reviewed laboratory
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_EVENT_NAME}" = "pull_request"
+          test "${{ github.event.pull_request.base.ref }}" = "${CONTROLLER_BRANCH}"
+          test "${{ github.event.pull_request.head.ref }}" = "${EXPECTED_TRIGGER_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${CONTROLLER_SHA}"
+          test "$(git rev-parse HEAD^)" = "${PRODUCT_SHA}"
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          python3 - <<'PY'
+          import subprocess
+          expected={".github/workflows/movie-buff-rc10-fix-three-client-browser-v1.yml"}
+          actual=set(subprocess.check_output(
+              ["git","diff","--name-only","0a9c27bcf58dcbd7ba3d855feed78b9dd2068f53..HEAD"],
+              text=True,
+          ).splitlines())
+          if actual != expected:
+              raise SystemExit(f"unexpected product-to-controller delta: {sorted(actual)}")
+          PY
+          git fetch --no-tags --depth=1 origin "${ARCHIVE_SOURCE_SHA}"
+          test "$(git rev-parse "${ARCHIVE_SOURCE_SHA}:.github/validation-archive/movie-buff-three-client-full-journey-v2.yml")" = "${ARCHIVE_WORKFLOW_BLOB}"
+          git show "${ARCHIVE_SOURCE_SHA}:.github/validation-archive/movie-buff-three-client-full-journey-v2.yml" > "${RUNNER_TEMP}/reviewed-lab.yml"
+          python3 - "${RUNNER_TEMP}" "${RUNNER_TEMP}/reviewed-lab.yml" <<'PY'
+          from pathlib import Path
+          import sys
+
+          output=Path(sys.argv[1])
+          lines=Path(sys.argv[2]).read_text(encoding="utf-8").splitlines()
+
+          def extract(step_name):
+              marker=f"- name: {step_name}"
+              start=next(i for i,line in enumerate(lines) if line.strip()==marker)
+              run_line=next(i for i in range(start+1,len(lines)) if lines[i].strip()=="run: |")
+              run_indent=len(lines[run_line])-len(lines[run_line].lstrip())
+              body=[]
+              for line in lines[run_line+1:]:
+                  if line.strip() and len(line)-len(line.lstrip()) <= run_indent:
+                      break
+                  body.append(line[run_indent+2:] if line.strip() else "")
+              if not body:
+                  raise SystemExit(f"empty run block for {step_name}")
+              return "\n".join(body)+"\n"
+
+          preflight=extract("Bind exact source and validate harness")
+          execute=extract("Execute disposable exact-SHA browser journey v2")
+          for old,new in (
+              ("${GITHUB_REF_NAME}","${CONTROLLER_BRANCH}"),
+              ("${GITHUB_SHA}","${CONTROLLER_SHA}"),
+          ):
+              preflight=preflight.replace(old,new)
+              execute=execute.replace(old,new)
+
+          execute=execute.replace(
+              'git status --porcelain >"${raw}/git-status-before-repair.txt"',
+              'git status --porcelain --untracked-files=all >"${raw}/git-status-before-repair.txt"',
+          )
+          old='\n'.join([
+              'allowed={"next-env.d.ts",fixture}',
+              "unexpected=[]",
+              "for line in status:",
+              '    path=line[3:].strip()',
+              '    if " -> " in path: path=path.split(" -> ",1)[1]',
+              "    if path not in allowed: unexpected.append(line)",
+              'if unexpected: raise SystemExit("unexpected worktree changes: "+repr(unexpected))',
+          ])
+          new='\n'.join([
+              'allowed={"next-env.d.ts",fixture}',
+              'allowed_prefixes=("public/media/movie-buff/runtime-generated/",)',
+              "unexpected=[]",
+              "for line in status:",
+              '    path=line[3:].strip()',
+              '    if " -> " in path: path=path.split(" -> ",1)[1]',
+              "    if path not in allowed and not path.startswith(allowed_prefixes): unexpected.append(line)",
+              'if unexpected: raise SystemExit("unexpected worktree changes: "+repr(unexpected))',
+          ])
+          if old not in execute:
+              raise SystemExit("postflight status-shape anchor missing")
+          execute=execute.replace(old,new)
+
+          cleanup='\n'.join([
+              'rm -f "${fixture}"',
+              "git checkout -- next-env.d.ts >/dev/null 2>&1 || true",
+              "rmdir public/media/movie-buff public/media 2>/dev/null || true",
+          ])
+          replacement='\n'.join([
+              'rm -f "${fixture}"',
+              "rm -rf public/media/movie-buff/runtime-generated",
+              "git checkout -- next-env.d.ts >/dev/null 2>&1 || true",
+              "rmdir public/media/movie-buff public/media 2>/dev/null || true",
+          ])
+          if cleanup not in execute:
+              raise SystemExit("runtime-generated cleanup anchor missing")
+          execute=execute.replace(cleanup,replacement)
+
+          (output/"browser-preflight.sh").write_text(preflight,encoding="utf-8")
+          (output/"browser-execute.sh").write_text(execute,encoding="utf-8")
+          PY
+          bash -n "${RUNNER_TEMP}/browser-preflight.sh"
+          bash -n "${RUNNER_TEMP}/browser-execute.sh"
+          node --check scripts/movie-buff-three-client-full-journey-v2.mjs
+          node --check scripts/movie-buff-core-v11-local-users.mjs
+
+      - name: Provision runner prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg postgresql-client
+          command -v bash
+          command -v git
+          command -v node
+          command -v npm
+          command -v python3
+          command -v supabase
+          command -v ffmpeg
+          command -v ffprobe
+          command -v psql
+
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - id: static
+        name: Execute candidate-fix focused source contracts
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            tests/movie-buff-board-bootstrap-race.test.mjs \
+            tests/movie-buff-rls-helper-execute-repair.test.mjs \
+            tests/movie-buff-vip-view-startup-reconciliation.test.mjs \
+            | tee "${RUNNER_TEMP}/rc10-fix-static-contract.log"
+          python3 - "${RUNNER_TEMP}/rc10-fix-static-contract.json" <<'PY'
+          import json,pathlib,sys
+          pathlib.Path(sys.argv[1]).write_text(json.dumps({
+            "classification":"PASS",
+            "tests":[
+              "tests/movie-buff-board-bootstrap-race.test.mjs",
+              "tests/movie-buff-rls-helper-execute-repair.test.mjs",
+              "tests/movie-buff-vip-view-startup-reconciliation.test.mjs",
+            ],
+          },indent=2)+"\n",encoding="utf-8")
+          PY
+
+      - id: preflight
+        name: Execute reviewed preflight
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          bash -x "${RUNNER_TEMP}/browser-preflight.sh" >"${evidence}/reviewed-preflight.log" 2>&1
+          exit_code=$?
+          echo "${exit_code}" >"${evidence}/reviewed-preflight.exit"
+          cat "${evidence}/reviewed-preflight.log"
+          exit "${exit_code}"
+
+      - id: database
+        name: Prove repaired local database ACL matrix
+        if: ${{ steps.static.outcome == 'success' && steps.preflight.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup() {
+            supabase stop --no-backup >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          supabase start >"${RUNNER_TEMP}/rc10-fix-db-start.log" 2>&1
+          supabase db reset >"${RUNNER_TEMP}/rc10-fix-db-reset.log" 2>&1
+          supabase status -o env >"${RUNNER_TEMP}/rc10-fix-status.env"
+          db_url="$(python3 - "${RUNNER_TEMP}/rc10-fix-status.env" <<'PY'
+          import pathlib,re,sys
+          value=pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+          value=re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]","",value)
+          for line in value.splitlines():
+              if line.startswith("DB_URL="):
+                  print(line.split("=",1)[1].strip().strip('"'))
+                  break
+          PY
+          )"
+          test -n "${db_url}"
+          psql "${db_url}" -X -v ON_ERROR_STOP=1 -At <<'SQL' >"${RUNNER_TEMP}/rc10-fix-db-contract.raw.json"
+          with required(identity) as (
+            values
+              ('public.is_movie_buff_room_member(uuid)'::text),
+              ('public.is_movie_buff_match_member(uuid)'::text),
+              ('public.is_movie_buff_round_member(uuid)'::text)
+          ), catalog as (
+            select r.identity, pg_catalog.to_regprocedure(r.identity) as oid
+            from required as r
+          )
+          select pg_catalog.jsonb_agg(
+            pg_catalog.jsonb_build_object(
+              'identity', c.identity,
+              'exists', c.oid is not null,
+              'owner', pg_catalog.pg_get_userbyid(p.proowner),
+              'securityDefiner', p.prosecdef,
+              'searchPath', p.proconfig,
+              'publicExecute', exists (
+                select 1
+                from pg_catalog.aclexplode(
+                  coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
+                ) as privilege
+                where privilege.grantee = 0
+                  and privilege.privilege_type = 'EXECUTE'
+              ),
+              'anonExecute', pg_catalog.has_function_privilege('anon', c.oid, 'execute'),
+              'authenticatedExecute', pg_catalog.has_function_privilege('authenticated', c.oid, 'execute'),
+              'serviceRoleExecute', pg_catalog.has_function_privilege('service_role', c.oid, 'execute')
+            ) order by c.identity
+          )
+          from catalog as c
+          left join pg_catalog.pg_proc as p on p.oid = c.oid;
+          SQL
+          python3 - "${RUNNER_TEMP}/rc10-fix-db-contract.raw.json" "${RUNNER_TEMP}/rc10-fix-db-contract.json" <<'PY'
+          import json,pathlib,sys
+          raw_path=pathlib.Path(sys.argv[1])
+          rows=json.loads(raw_path.read_text(encoding="utf-8"))
+          expected={
+            "public.is_movie_buff_room_member(uuid)",
+            "public.is_movie_buff_match_member(uuid)",
+            "public.is_movie_buff_round_member(uuid)",
+          }
+          assert {row["identity"] for row in rows} == expected, rows
+          for row in rows:
+              assert row["exists"] is True, row
+              assert row["owner"] == "postgres", row
+              assert row["securityDefiner"] is True, row
+              assert row["searchPath"] == ["search_path=pg_catalog, public"], row
+              assert row["publicExecute"] is False, row
+              assert row["anonExecute"] is False, row
+              assert row["authenticatedExecute"] is True, row
+              assert row["serviceRoleExecute"] is True, row
+          pathlib.Path(sys.argv[2]).write_text(json.dumps({
+            "classification":"PASS",
+            "target":"disposable-localhost",
+            "helpers":rows,
+          },indent=2)+"\n",encoding="utf-8")
+          raw_path.unlink()
+          PY
+          rm -f "${RUNNER_TEMP}/rc10-fix-status.env"
+          cleanup
+          trap - EXIT
+
+      - id: browser
+        name: Execute disposable three-client journey
+        if: ${{ steps.database.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: bash "${RUNNER_TEMP}/browser-execute.sh"
+
+      - name: Preserve failure evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          for source in \
+            "${RUNNER_TEMP}/rc10-fix-static-contract.log" \
+            "${RUNNER_TEMP}/rc10-fix-db-start.log" \
+            "${RUNNER_TEMP}/rc10-fix-db-reset.log" \
+            "${RUNNER_TEMP}/rc10-fix-db-contract.raw.json"; do
+            if [ -f "${source}" ]; then
+              cp "${source}" "${evidence}/$(basename "${source}")"
+            fi
+          done
+          if [ ! -s "${RUNNER_TEMP}/rc10-fix-static-contract.json" ]; then
+            printf '%s\n' '{"classification":"FAIL","reason":"static contract did not produce PASS evidence"}' > "${RUNNER_TEMP}/rc10-fix-static-contract.json"
+          fi
+          if [ ! -s "${RUNNER_TEMP}/rc10-fix-db-contract.json" ]; then
+            printf '%s\n' '{"classification":"FAIL","reason":"database contract did not produce PASS evidence"}' > "${RUNNER_TEMP}/rc10-fix-db-contract.json"
+          fi
+          if [ ! -s "${evidence}/three-client-full-journey-v2.json" ]; then
+            printf '%s\n' '{"classification":"FAIL","failure":"browser journey did not produce a PASS result artifact"}' > "${evidence}/three-client-full-journey-v2.json"
+          fi
+
+      - name: Bind, sanitize, and hash evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          cp "${RUNNER_TEMP}/rc10-fix-static-contract.json" "${evidence}/static-contract.json"
+          cp "${RUNNER_TEMP}/rc10-fix-db-contract.json" "${evidence}/database-contract.json"
+          controller_tree="$(git rev-parse HEAD^{tree})"
+          workflow_blob="$(git rev-parse HEAD:.github/workflows/movie-buff-rc10-fix-three-client-browser-v1.yml)"
+          python3 - "${evidence}/exact-binding.json" "${controller_tree}" "${workflow_blob}" <<'PY'
+          import json,os,pathlib,sys
+          payload={
+            "repository":"BuffGamesStudio/buff-platform",
+            "productBranch":os.environ["PRODUCT_BRANCH"],
+            "productSha":os.environ["PRODUCT_SHA"],
+            "productTree":os.environ["PRODUCT_TREE"],
+            "controllerBranch":os.environ["CONTROLLER_BRANCH"],
+            "controllerSha":os.environ["CONTROLLER_SHA"],
+            "controllerTree":sys.argv[2],
+            "controllerWorkflowBlob":sys.argv[3],
+            "triggerSha":os.environ["TRIGGER_SHA"],
+            "runId":os.environ["GITHUB_RUN_ID"],
+            "runAttempt":os.environ["GITHUB_RUN_ATTEMPT"],
+            "target":"disposable-localhost",
+          }
+          pathlib.Path(sys.argv[1]).write_text(json.dumps(payload,indent=2)+"\n",encoding="utf-8")
+          PY
+          python3 - "${evidence}" <<'PY'
+          import json,pathlib,re,sys
+          root=pathlib.Path(sys.argv[1])
+          text_suffixes={".txt",".log",".json",".html",".md",".csv",".env"}
+          ansi=re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+          patterns=[
+            (re.compile(r"sb_(?:publishable|secret)_[A-Za-z0-9_-]+"),"[REDACTED_SUPABASE_KEY]"),
+            (re.compile(r"eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}"),"[REDACTED_JWT]"),
+            (re.compile(r"postgres(?:ql)?://[^\s\"']+:[^\s\"']+@[^\s\"']+"),"postgresql://[REDACTED_DATABASE_CREDENTIALS]"),
+            (re.compile(r"(?im)((?:S3\s+)?(?:Access Key|Secret Key)\s*[│|:]\s*)[0-9A-Za-z/+_-]{16,}"),r"\1[REDACTED_LOCAL_STORAGE_KEY]"),
+            (re.compile(r"(?im)((?:Publishable|Secret)\s*[│|:]\s*)[^│\r\n]+"),r"\1[REDACTED_LOCAL_CREDENTIAL] "),
+            (re.compile(r"(?im)^\s*(?:ANON_KEY|SERVICE_ROLE_KEY|JWT_SECRET|DB_URL)=.*$"),"[REDACTED_LOCAL_ENV_CREDENTIAL]"),
+          ]
+          counts={}
+          ansi_removed=0
+          scanned=0
+          for path in sorted(root.rglob("*")):
+              if not path.is_file() or path.name == "SHA256SUMS.txt" or path.suffix.lower() not in text_suffixes:
+                  continue
+              try:
+                  value=path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  continue
+              scanned+=1
+              value,n=ansi.subn("",value)
+              ansi_removed+=n
+              for index,(pattern,replacement) in enumerate(patterns,1):
+                  value,n=pattern.subn(replacement,value)
+                  if n:
+                      counts[str(index)]=counts.get(str(index),0)+n
+              path.write_text(value,encoding="utf-8")
+          (root/"redaction-report.json").write_text(json.dumps({
+            "classification":"PASS",
+            "filesScanned":scanned,
+            "ansiSequencesRemoved":ansi_removed,
+            "replacementCounts":counts,
+          },indent=2)+"\n",encoding="utf-8")
+          PY
+          (
+            cd "${evidence}"
+            find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          )
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/movie-buff-three-client-full-v2
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Enforce exact gate outcome
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.static.outcome }}" = "success"
+          test "${{ steps.preflight.outcome }}" = "success"
+          test "${{ steps.database.outcome }}" = "success"
+          test "${{ steps.browser.outcome }}" = "success"
+          python3 - "${RUNNER_TEMP}/movie-buff-three-client-full-v2" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          assert json.loads((root/"static-contract.json").read_text())["classification"] == "PASS"
+          assert json.loads((root/"database-contract.json").read_text())["classification"] == "PASS"
+          assert json.loads((root/"redaction-report.json").read_text())["classification"] == "PASS"
+          assert json.loads((root/"three-client-full-journey-v2.json").read_text())["classification"] == "PASS"
+          PY
+
+  independent-artifact-inspection:
+    if: ${{ always() }}
+    needs: exact-three-client-browser
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Download exact artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: evidence
+
+      - name: Verify hashes, binding, database contract, redaction, and journey checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd evidence
+          test -s exact-binding.json
+          test -s static-contract.json
+          test -s database-contract.json
+          test -s redaction-report.json
+          test -s three-client-full-journey-v2.json
+          test -s SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          python3 - <<'PY'
+          import json,pathlib,re
+          binding=json.loads(pathlib.Path("exact-binding.json").read_text())
+          static=json.loads(pathlib.Path("static-contract.json").read_text())
+          database=json.loads(pathlib.Path("database-contract.json").read_text())
+          redaction=json.loads(pathlib.Path("redaction-report.json").read_text())
+          result=json.loads(pathlib.Path("three-client-full-journey-v2.json").read_text())
+          assert binding["repository"] == "BuffGamesStudio/buff-platform"
+          assert binding["productSha"] == "0a9c27bcf58dcbd7ba3d855feed78b9dd2068f53"
+          assert binding["productTree"] == "674f79d52dd0014f8b13d13864ce9f985b15e673"
+          assert static["classification"] == "PASS"
+          assert database["classification"] == "PASS"
+          assert redaction["classification"] == "PASS"
+          assert result["classification"] == "PASS", result.get("failure")
+          assert result["sha"] == binding["controllerSha"]
+          assert result["tree"] == binding["controllerTree"]
+          assert result["parentSha"] == binding["productSha"]
+          assert binding["productSha"] in result["parents"]
+          assert result["pageErrorCount"] == 0
+          assert result["consoleErrorCount"] == 0
+          assert result["failedResponseCount"] == 0
+          unexpected=[
+            item for item in result["failedRequests"]
+            if not item.get("expectedOfflineExercise")
+            and item.get("errorText") != "net::ERR_ABORTED"
+          ]
+          assert not unexpected, unexpected
+          checks={item["name"]:item["classification"] for item in result["checks"]}
+          required={
+            "three-independent-chromium-processes",
+            "three-authenticated-public-players",
+            "waiting-room-three-player-convergence-and-automatic-start",
+            "round-intro-private-vip-lock-and-shared-countdown",
+            "cinematic-board-selector-only-control-and-observers",
+            "keyboard-selector-tile-choice",
+            "cinematic-transition-shared-playback-start",
+            "stale-client-rejected",
+            "synchronized-automatic-playback",
+            "refresh-restores-authoritative-session",
+            "offline-reconnect-restores-authoritative-session",
+            "shared-answer-deadline",
+            "browser-back-forward-reconciles-to-authoritative-phase",
+            "synchronized-results-automatic-return-countdown",
+            "automatic-board-return-selector-rotation-used-tile-buster",
+            "no-hydration-runtime-console-or-unexpected-network-failures",
+          }
+          missing=sorted(name for name in required if checks.get(name) != "PASS")
+          assert not missing, missing
+
+          patterns=[
+            re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]"),
+            re.compile(r"sb_(?:publishable|secret)_[A-Za-z0-9_-]+"),
+            re.compile(r"eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}"),
+            re.compile(r"postgres(?:ql)?://[^\s\"']+:[^\s\"']+@[^\s\"']+"),
+            re.compile(r"(?im)(?:S3\s+)?(?:Access Key|Secret Key)\s*[│|:]\s*[0-9A-Za-z/+_-]{16,}"),
+          ]
+          for path in pathlib.Path(".").rglob("*"):
+              if not path.is_file() or path.name == "SHA256SUMS.txt":
+                  continue
+              try:
+                  value=path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  continue
+              for pattern in patterns:
+                  assert not pattern.search(value), f"unredacted credential-shaped material in {path}"
+          PY
