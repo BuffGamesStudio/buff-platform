@@ -21,13 +21,14 @@ env:
   PRODUCT_SHA: f6b23c648a3a2cbabb4237934c125b0bccb215e9
   PRODUCT_TREE: da2781ba523d8283f26ced50de3245b5d3800b8b
   CONTROLLER_BRANCH: validation/movie-buff-mov17-83100-rollback-20260807
-  EVIDENCE_DIR: ${{ runner.temp }}/mov17-83100-rollback-evidence
 
 jobs:
   rollback-reapply:
     name: Rehearse MOV-17 83100 rollback and forward chain
     runs-on: ubuntu-24.04
     timeout-minutes: 65
+    env:
+      EVIDENCE_DIR: ${{ runner.temp }}/mov17-83100-rollback-evidence
 
     steps:
       - name: Check out exact validation controller
