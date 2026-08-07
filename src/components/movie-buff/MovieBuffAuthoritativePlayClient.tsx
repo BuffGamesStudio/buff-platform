@@ -34,6 +34,9 @@ export default function MovieBuffAuthoritativePlayClient({
   const mediaRef = useRef<MediaElement | null>(null);
   const playbackTimerRef = useRef<number | null>(null);
   const playbackRetryRef = useRef<number | null>(null);
+  const serverOffsetRef = useRef(0);
+  const playbackStartRef = useRef<string | null>(null);
+  const playbackEstablishedRef = useRef(false);
   const [phase, setPhase] = useState<MovieBuffAuthoritativePhaseView | null>(null);
   const [round, setRound] = useState<MovieBuffRound | null>(null);
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
@@ -52,9 +55,12 @@ export default function MovieBuffAuthoritativePlayClient({
         getMovieBuffAuthoritativePhase(roomId),
         getCurrentMovieBuffRound(roomId),
       ]);
+      const nextServerOffsetMs =
+        new Date(nextPhase.serverNow).getTime() - Date.now();
+      serverOffsetRef.current = nextServerOffsetMs;
       setPhase(nextPhase);
       setRound(nextRound);
-      setServerOffsetMs(new Date(nextPhase.serverNow).getTime() - Date.now());
+      setServerOffsetMs(nextServerOffsetMs);
     } catch (loadError) {
       if (loadError instanceof Error && loadError.message === "SIGN_IN_REQUIRED") {
         router.replace(
@@ -80,6 +86,28 @@ export default function MovieBuffAuthoritativePlayClient({
     };
   }, [load]);
 
+  const attachMedia = useCallback((node: MediaElement | null) => {
+    if (mediaRef.current !== node) {
+      playbackEstablishedRef.current = false;
+    }
+    mediaRef.current = node;
+
+    if (!node) return;
+
+    node.defaultMuted = true;
+    node.muted = true;
+    node.autoplay = true;
+    node.preload = "auto";
+    node.setAttribute("muted", "");
+    node.setAttribute("autoplay", "");
+    node.setAttribute("preload", "auto");
+
+    if (node instanceof HTMLVideoElement) {
+      node.playsInline = true;
+      node.setAttribute("playsinline", "");
+    }
+  }, []);
+
   const playAtAuthoritativeOffset = useCallback(
     async function attemptPlayback() {
       const media = mediaRef.current;
@@ -95,7 +123,26 @@ export default function MovieBuffAuthoritativePlayClient({
         return;
       }
 
-      const authoritativeNow = Date.now() + serverOffsetMs;
+      if (playbackStartRef.current !== startsAt) {
+        playbackStartRef.current = startsAt;
+        playbackEstablishedRef.current = false;
+      }
+
+      if (media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        setPlaybackRecovering(true);
+        if (media.networkState === HTMLMediaElement.NETWORK_EMPTY) {
+          media.load();
+        }
+        if (playbackRetryRef.current === null) {
+          playbackRetryRef.current = window.setTimeout(() => {
+            playbackRetryRef.current = null;
+            void attemptPlayback();
+          }, 250);
+        }
+        return;
+      }
+
+      const authoritativeNow = Date.now() + serverOffsetRef.current;
       const elapsedSeconds = Math.max(
         0,
         (authoritativeNow - new Date(startsAt).getTime()) / 1000,
@@ -103,17 +150,24 @@ export default function MovieBuffAuthoritativePlayClient({
       const boundedTarget = Number.isFinite(media.duration)
         ? Math.min(elapsedSeconds, Math.max(0, media.duration - 0.05))
         : elapsedSeconds;
+      const driftSeconds = Math.abs(media.currentTime - boundedTarget);
+      const shouldSeek =
+        !media.seeking &&
+        (playbackEstablishedRef.current
+          ? driftSeconds > 2
+          : driftSeconds > 0.05);
 
-      if (Math.abs(media.currentTime - boundedTarget) > 0.35) {
+      if (shouldSeek) {
         try {
           media.currentTime = boundedTarget;
         } catch {
-          // Metadata may still be loading. The automatic retry below will resync.
+          setPlaybackRecovering(true);
         }
       }
 
       try {
         await media.play();
+        playbackEstablishedRef.current = true;
         if (playbackRetryRef.current !== null) {
           window.clearTimeout(playbackRetryRef.current);
           playbackRetryRef.current = null;
@@ -129,7 +183,7 @@ export default function MovieBuffAuthoritativePlayClient({
         }
       }
     },
-    [phase?.phase, phase?.playbackStartsAt, serverOffsetMs],
+    [phase?.phase, phase?.playbackStartsAt],
   );
 
   useEffect(() => {
@@ -143,7 +197,8 @@ export default function MovieBuffAuthoritativePlayClient({
 
     const delay = Math.max(
       0,
-      new Date(phase.playbackStartsAt).getTime() - (Date.now() + serverOffsetMs),
+      new Date(phase.playbackStartsAt).getTime() -
+        (Date.now() + serverOffsetRef.current),
     );
     playbackTimerRef.current = window.setTimeout(
       () => void playAtAuthoritativeOffset(),
@@ -156,7 +211,7 @@ export default function MovieBuffAuthoritativePlayClient({
         playbackTimerRef.current = null;
       }
     };
-  }, [phase?.phase, phase?.playbackStartsAt, playAtAuthoritativeOffset, round?.mediaUrl, serverOffsetMs]);
+  }, [phase?.phase, phase?.playbackStartsAt, playAtAuthoritativeOffset, round?.mediaUrl]);
 
   useEffect(() => {
     return () => {
@@ -248,6 +303,10 @@ export default function MovieBuffAuthoritativePlayClient({
   const isTransition = phase.phase === "transition";
   const answerOpen = phase.phase === "answer" && answerRemainingSeconds > 0;
   const resyncMedia = () => void playAtAuthoritativeOffset();
+  const markPlaybackEstablished = () => {
+    playbackEstablishedRef.current = true;
+    setPlaybackRecovering(false);
+  };
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(127,29,29,0.28),_transparent_34%),linear-gradient(180deg,#090909_0%,#000_100%)] px-5 py-8 text-white">
@@ -285,29 +344,29 @@ export default function MovieBuffAuthoritativePlayClient({
               <p className="mt-5 text-2xl font-black">Listen closely</p>
               <audio
                 data-testid="movie-buff-shared-media"
-                ref={(node) => {
-                  mediaRef.current = node;
-                }}
+                ref={attachMedia}
                 src={round.mediaUrl ?? undefined}
                 preload="auto"
+                autoPlay
                 onCanPlay={resyncMedia}
                 onLoadedData={resyncMedia}
                 onLoadedMetadata={resyncMedia}
+                onPlaying={markPlaybackEstablished}
               />
             </div>
           ) : round.clipType === "video" && round.mediaUrl ? (
             <video
               data-testid="movie-buff-shared-media"
-              ref={(node) => {
-                mediaRef.current = node;
-              }}
+              ref={attachMedia}
               src={round.mediaUrl}
               preload="auto"
+              autoPlay
               playsInline
               className="aspect-video w-full min-w-0 bg-black object-contain"
               onCanPlay={resyncMedia}
               onLoadedData={resyncMedia}
               onLoadedMetadata={resyncMedia}
+              onPlaying={markPlaybackEstablished}
             />
           ) : (
             <div className="flex aspect-video min-w-0 items-center justify-center bg-black px-6 text-center sm:px-8">

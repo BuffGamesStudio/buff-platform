@@ -1,4 +1,5 @@
 import fsp from "node:fs/promises";
+import path from "node:path";
 import { NextResponse } from "next/server";
 
 import { getRoundGeneratedClip } from "@/lib/server/movieClipper";
@@ -99,13 +100,25 @@ async function buildRoundMediaResponse(
       },
     });
   } catch (error) {
+    const filesystemError = error as NodeJS.ErrnoException;
+    const safePath =
+      typeof filesystemError.path === "string"
+        ? path.basename(filesystemError.path)
+        : null;
+
+    console.error("[movie-buff-round-media] resolution failed", {
+      roundId,
+      name:
+        error instanceof Error
+          ? error.name
+          : "UnknownError",
+      code: filesystemError.code ?? null,
+      syscall: filesystemError.syscall ?? null,
+      path: safePath,
+    });
+
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Round media could not be generated.",
-      },
+      { error: "Round media could not be generated." },
       { status: 500 },
     );
   }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
 
 const MEDIA_SELECTOR = '[data-testid="movie-buff-shared-media"]';
+const AUTOPLAY_RETRY_DELAYS_MS = [0, 100, 400, 1_000] as const;
 
 function currentMediaElements() {
   return [...document.querySelectorAll(MEDIA_SELECTOR)].filter(
@@ -18,25 +19,53 @@ export function MovieBuffMediaAutoplayPolicy() {
 
   useEffect(() => {
     const prepared = new WeakSet<HTMLMediaElement>();
+    const retryTimers = new Set<number>();
+    const cleanupListeners = new Map<HTMLMediaElement, () => void>();
+
+    const attempt = (media: HTMLMediaElement) => {
+      if (media.readyState < HTMLMediaElement.HAVE_METADATA) {
+        return;
+      }
+
+      void media.play().catch(() => undefined);
+    };
 
     const prepare = (media: HTMLMediaElement) => {
+      if (prepared.has(media)) {
+        return;
+      }
+
+      prepared.add(media);
       media.defaultMuted = true;
       media.muted = true;
+      media.autoplay = true;
+      media.preload = "auto";
       media.setAttribute("muted", "");
+      media.setAttribute("autoplay", "");
+      media.setAttribute("preload", "auto");
 
-      if (prepared.has(media)) return;
-      prepared.add(media);
+      if (media instanceof HTMLVideoElement) {
+        media.playsInline = true;
+        media.setAttribute("playsinline", "");
+      }
 
-      const attempt = () => {
-        if (media.readyState >= HTMLMediaElement.HAVE_METADATA) {
-          void media.play().catch(() => undefined);
-        }
-      };
+      const retry = () => attempt(media);
+      media.addEventListener("loadedmetadata", retry);
+      media.addEventListener("loadeddata", retry);
+      media.addEventListener("canplay", retry);
+      cleanupListeners.set(media, () => {
+        media.removeEventListener("loadedmetadata", retry);
+        media.removeEventListener("loadeddata", retry);
+        media.removeEventListener("canplay", retry);
+      });
 
-      media.addEventListener("loadedmetadata", attempt);
-      media.addEventListener("loadeddata", attempt);
-      media.addEventListener("canplay", attempt);
-      attempt();
+      for (const delay of AUTOPLAY_RETRY_DELAYS_MS) {
+        const timer = window.setTimeout(() => {
+          retryTimers.delete(timer);
+          attempt(media);
+        }, delay);
+        retryTimers.add(timer);
+      }
     };
 
     const synchronize = () => {
@@ -52,7 +81,13 @@ export function MovieBuffMediaAutoplayPolicy() {
       subtree: true,
     });
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      for (const timer of retryTimers) {
+        window.clearTimeout(timer);
+      }
+      cleanupListeners.forEach((cleanup) => cleanup());
+    };
   }, []);
 
   function toggleSound() {
