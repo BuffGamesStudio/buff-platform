@@ -47,7 +47,7 @@ jobs:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       OWNER_BRANCH: copilot/MOV-17-shared-phase-machine
       VALIDATION_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
-      EVIDENCE_DIR: ${{ runner.temp }}/mov17-answer-preflight-evidence
+      EVIDENCE_DIR: /tmp/mov17-answer-preflight-evidence
 
     steps:
       - name: Check out exact MOV-17 SHA
