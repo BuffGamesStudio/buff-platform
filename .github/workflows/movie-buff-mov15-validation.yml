@@ -1,4 +1,4 @@
-# Exact-SHA validation refresh after owner-repair cleanup.
+# Exact-SHA validation includes positive and fail-closed Windows paths.
 name: MOV-15 admission handoff validation
 
 on:
@@ -8,6 +8,7 @@ on:
     paths:
       - ".github/workflows/movie-buff-mov15-validation.yml"
       - "scripts/movie-buff-mov15-windows-digital-twin.ps1"
+      - "scripts/movie-buff-mov15-windows-negative-paths.ps1"
       - "supabase/migrations/20260804081500_movie_buff_atomic_three_player_matchmaking.sql"
       - "supabase/migrations/20260804081600_movie_buff_admission_phase_handoff.sql"
       - "supabase/rollbacks/20260804081600_movie_buff_admission_phase_handoff.rollback.sql"
@@ -21,6 +22,7 @@ on:
     paths:
       - ".github/workflows/movie-buff-mov15-validation.yml"
       - "scripts/movie-buff-mov15-windows-digital-twin.ps1"
+      - "scripts/movie-buff-mov15-windows-negative-paths.ps1"
       - "supabase/migrations/20260804081500_movie_buff_atomic_three_player_matchmaking.sql"
       - "supabase/migrations/20260804081600_movie_buff_admission_phase_handoff.sql"
       - "supabase/rollbacks/20260804081600_movie_buff_admission_phase_handoff.rollback.sql"
@@ -182,6 +184,14 @@ jobs:
           ./scripts/movie-buff-mov15-windows-digital-twin.ps1 `
             -ExpectedSha $env:EXPECTED_SHA `
             -EvidenceRoot $evidenceRoot
+
+      - name: Execute fail-closed Windows negative paths
+        shell: pwsh
+        run: |
+          $negativeEvidence = Join-Path $env:RUNNER_TEMP 'mov15-windows-evidence\negative-paths'
+          ./scripts/movie-buff-mov15-windows-negative-paths.ps1 `
+            -ExpectedSha $env:EXPECTED_SHA `
+            -EvidenceRoot $negativeEvidence
 
       - name: Upload Windows evidence
         if: always()
