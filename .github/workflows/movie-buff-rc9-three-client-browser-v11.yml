@@ -1,0 +1,270 @@
+name: Movie Buff RC-9 exact three-client browser journey v11
+
+on:
+  pull_request:
+    branches: [validation/movie-buff-rc9-runner-base-v11-20260806]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_BRANCH: release/movie-buff-rc-2026-08-06-01-rc9
+  PRODUCT_SHA: 1da6af7bc4d69795345f15156b329ac2546e91f0
+  PRODUCT_TREE: a4ba792045041e7007d9c2fb9a20151f89443700
+  PARENT_SHA: 1da6af7bc4d69795345f15156b329ac2546e91f0
+  EXPECTED_BRANCH: validation/movie-buff-rc9-runner-base-v11-20260806
+  CONTROLLER_BRANCH: validation/movie-buff-rc9-runner-base-v11-20260806
+  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-rc9-browser-run-v11-20260806
+  CONTROLLER_SHA: ${{ github.event.pull_request.base.sha }}
+  TRIGGER_SHA: ${{ github.event.pull_request.head.sha }}
+  SOURCE_CONTROLLER_SHA: bdbfee5cd160c83bbb43ebc50d48a11fd47b9b91
+  SOURCE_CONTROLLER_BLOB: b499eddc9160a07f61a9d7352d65f1d288b3fdd7
+  ARCHIVE_SOURCE_SHA: d90a7eb73ef724b4ef5205343e655c7597dcf978
+  ARCHIVE_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
+  ARTIFACT_NAME: movie-buff-rc9-three-client-v11-${{ github.run_id }}-${{ github.run_attempt }}
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-three-client-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Materialize reviewed direct controller scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_EVENT_NAME}" = "pull_request"
+          test "${{ github.event.pull_request.base.ref }}" = "${CONTROLLER_BRANCH}"
+          test "${{ github.event.pull_request.head.ref }}" = "${EXPECTED_TRIGGER_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${CONTROLLER_SHA}"
+          test "$(git rev-parse HEAD^)" = "${PRODUCT_SHA}"
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          python3 - <<'PY'
+          import subprocess
+          expected={".github/workflows/movie-buff-rc9-three-client-browser-v11.yml"}
+          actual=set(subprocess.check_output(
+              ["git","diff","--name-only","1da6af7bc4d69795345f15156b329ac2546e91f0..HEAD"],
+              text=True,
+          ).splitlines())
+          if actual != expected:
+              raise SystemExit(f"unexpected product-to-controller delta: {sorted(actual)}")
+          PY
+          git fetch --no-tags --depth=1 origin "${SOURCE_CONTROLLER_SHA}"
+          test "$(git rev-parse "${SOURCE_CONTROLLER_SHA}:.github/workflows/movie-buff-rc8-three-client-browser-v9.yml")" = "${SOURCE_CONTROLLER_BLOB}"
+          git show "${SOURCE_CONTROLLER_SHA}:.github/workflows/movie-buff-rc8-three-client-browser-v9.yml" > "${RUNNER_TEMP}/source-controller.yml"
+          python3 - "${RUNNER_TEMP}/source-controller.yml" "${RUNNER_TEMP}" <<'PY'
+          from pathlib import Path
+          import sys
+
+          lines=Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+          output=Path(sys.argv[2])
+          steps={
+            "Bind product and materialize reviewed laboratory":"01-bind.sh",
+            "Provision runner prerequisites":"02-provision.sh",
+            "Execute reviewed preflight":"03-preflight.sh",
+            "Prove repaired local database ACL matrix":"04-database.sh",
+            "Execute disposable three-client journey":"05-browser.sh",
+            "Preserve failure evidence":"06-preserve.sh",
+            "Bind, sanitize, and hash evidence":"07-evidence.sh",
+            "Verify clean postflight":"08-clean.sh",
+            "Verify hashes, binding, database contract, redaction, and journey checks":"09-inspect.sh",
+          }
+          expression_open="$"+"{{"
+          replacements={
+            "release/movie-buff-rc-2026-08-06-01-rc8":"release/movie-buff-rc-2026-08-06-01-rc9",
+            "0899d19d60b222bf995a0f8116ed032d93794620":"1da6af7bc4d69795345f15156b329ac2546e91f0",
+            "94d6411e9613b8692a0e5ada3dadc398aebcc193":"a4ba792045041e7007d9c2fb9a20151f89443700",
+            "validation/movie-buff-rc8-runner-base-v9-20260806":"validation/movie-buff-rc9-runner-base-v11-20260806",
+            "validation/movie-buff-rc8-browser-run-v9-20260806":"validation/movie-buff-rc9-browser-run-v11-20260806",
+            ".github/workflows/movie-buff-rc8-three-client-browser-v9.yml":".github/workflows/movie-buff-rc9-three-client-browser-v11.yml",
+            "rc8-static":"rc9-static",
+            "rc8-db":"rc9-db",
+            "RC-8":"RC-9",
+            expression_open+" github.event.pull_request.base.ref }}":"${CONTROLLER_BRANCH}",
+            expression_open+" github.event.pull_request.head.ref }}":"${EXPECTED_TRIGGER_BRANCH}",
+          }
+
+          def extract(step_name):
+              marker=f"- name: {step_name}"
+              start=next(i for i,line in enumerate(lines) if line.strip()==marker)
+              run_line=next(
+                  i for i in range(start+1,len(lines))
+                  if lines[i].strip().startswith("run:")
+              )
+              run_value=lines[run_line].strip()
+              if run_value == "run: |":
+                  indent=len(lines[run_line])-len(lines[run_line].lstrip())
+                  body=[]
+                  for line in lines[run_line+1:]:
+                      if line.strip() and len(line)-len(line.lstrip()) <= indent:
+                          break
+                      body.append(line[indent+2:] if line.strip() else "")
+                  value="\n".join(body)+"\n"
+              elif run_value.startswith("run: "):
+                  value=run_value[len("run: "):]+"\n"
+              else:
+                  raise SystemExit(f"unsupported run form for {step_name}: {run_value}")
+              for old,new in replacements.items():
+                  value=value.replace(old,new)
+              return value
+
+          for step_name,filename in steps.items():
+              (output/filename).write_text(extract(step_name),encoding="utf-8")
+          PY
+          for script in "${RUNNER_TEMP}"/0*.sh; do bash -n "${script}"; done
+
+      - name: Bind product and reviewed laboratory
+        run: bash "${RUNNER_TEMP}/01-bind.sh"
+
+      - name: Provision runner prerequisites
+        run: bash "${RUNNER_TEMP}/02-provision.sh"
+
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - id: static
+        name: Execute RC-9 focused source contracts
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            tests/movie-buff-rls-helper-execute-repair.test.mjs \
+            tests/movie-buff-vip-view-startup-reconciliation.test.mjs \
+            | tee "${RUNNER_TEMP}/rc9-static-contract.log"
+          python3 - "${RUNNER_TEMP}/rc9-static-contract.json" <<'PY'
+          import json,pathlib,sys
+          pathlib.Path(sys.argv[1]).write_text(json.dumps({
+            "classification":"PASS",
+            "tests":[
+              "tests/movie-buff-rls-helper-execute-repair.test.mjs",
+              "tests/movie-buff-vip-view-startup-reconciliation.test.mjs",
+            ],
+          },indent=2)+"\n",encoding="utf-8")
+          PY
+
+      - id: preflight
+        name: Execute reviewed preflight
+        continue-on-error: true
+        run: bash "${RUNNER_TEMP}/03-preflight.sh"
+
+      - id: database
+        name: Prove repaired local database ACL matrix
+        if: ${{ steps.static.outcome == 'success' && steps.preflight.outcome == 'success' }}
+        continue-on-error: true
+        run: bash "${RUNNER_TEMP}/04-database.sh"
+
+      - id: browser
+        name: Execute disposable three-client journey
+        if: ${{ steps.database.outcome == 'success' }}
+        continue-on-error: true
+        run: bash "${RUNNER_TEMP}/05-browser.sh"
+
+      - name: Preserve failure evidence
+        if: always()
+        run: bash "${RUNNER_TEMP}/06-preserve.sh"
+
+      - name: Bind, sanitize, and hash evidence
+        if: always()
+        run: bash "${RUNNER_TEMP}/07-evidence.sh"
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/movie-buff-three-client-full-v2
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify clean postflight
+        if: always()
+        run: bash "${RUNNER_TEMP}/08-clean.sh"
+
+      - name: Enforce exact gate outcome
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.static.outcome }}" = "success"
+          test "${{ steps.preflight.outcome }}" = "success"
+          test "${{ steps.database.outcome }}" = "success"
+          test "${{ steps.browser.outcome }}" = "success"
+          python3 - "${RUNNER_TEMP}/movie-buff-three-client-full-v2" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          assert json.loads((root/"static-contract.json").read_text())["classification"] == "PASS"
+          assert json.loads((root/"database-contract.json").read_text())["classification"] == "PASS"
+          assert json.loads((root/"redaction-report.json").read_text())["classification"] == "PASS"
+          assert json.loads((root/"three-client-full-journey-v2.json").read_text())["classification"] == "PASS"
+          PY
+
+  independent-artifact-inspection:
+    if: ${{ always() }}
+    needs: exact-three-client-browser
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download exact artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: evidence
+
+      - name: Materialize independent inspector
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "${SOURCE_CONTROLLER_SHA}"
+          test "$(git rev-parse "${SOURCE_CONTROLLER_SHA}:.github/workflows/movie-buff-rc8-three-client-browser-v9.yml")" = "${SOURCE_CONTROLLER_BLOB}"
+          git show "${SOURCE_CONTROLLER_SHA}:.github/workflows/movie-buff-rc8-three-client-browser-v9.yml" > "${RUNNER_TEMP}/source-controller.yml"
+          python3 - "${RUNNER_TEMP}/source-controller.yml" "${RUNNER_TEMP}/inspect.sh" <<'PY'
+          from pathlib import Path
+          import sys
+          lines=Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+          marker="- name: Verify hashes, binding, database contract, redaction, and journey checks"
+          start=next(i for i,line in enumerate(lines) if line.strip()==marker)
+          run_line=next(i for i in range(start+1,len(lines)) if lines[i].strip()=="run: |")
+          indent=len(lines[run_line])-len(lines[run_line].lstrip())
+          body=[]
+          for line in lines[run_line+1:]:
+              if line.strip() and len(line)-len(line.lstrip()) <= indent:
+                  break
+              body.append(line[indent+2:] if line.strip() else "")
+          value="\n".join(body)+"\n"
+          for old,new in {
+            "0899d19d60b222bf995a0f8116ed032d93794620":"1da6af7bc4d69795345f15156b329ac2546e91f0",
+            "94d6411e9613b8692a0e5ada3dadc398aebcc193":"a4ba792045041e7007d9c2fb9a20151f89443700",
+          }.items():
+              value=value.replace(old,new)
+          Path(sys.argv[2]).write_text(value,encoding="utf-8")
+          PY
+          bash -n "${RUNNER_TEMP}/inspect.sh"
+
+      - name: Verify exact artifact independently
+        run: bash "${RUNNER_TEMP}/inspect.sh"
