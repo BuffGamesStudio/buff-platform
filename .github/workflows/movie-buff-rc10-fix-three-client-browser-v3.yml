@@ -14,6 +14,8 @@ env:
   PRODUCT_TREE: 674f79d52dd0014f8b13d13864ce9f985b15e673
   CONTROLLER_BRANCH: validation/movie-buff-rc10-fix-runner-base-v3-20260807
   EXPECTED_TRIGGER_BRANCH: validation/movie-buff-rc10-fix-browser-run-v3-20260807
+  EXPECTED_BRANCH: validation/movie-buff-rc10-fix-runner-base-v3-20260807
+  PARENT_SHA: 0a9c27bcf58dcbd7ba3d855feed78b9dd2068f53
   CONTROLLER_SHA: ${{ github.event.pull_request.base.sha }}
   TRIGGER_SHA: ${{ github.event.pull_request.head.sha }}
   ARCHIVE_SOURCE_SHA: d90a7eb73ef724b4ef5205343e655c7597dcf978
