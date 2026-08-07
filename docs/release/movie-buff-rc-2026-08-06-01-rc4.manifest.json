@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "releaseTrain": "2026-08-06-01",
+  "candidate": {
+    "name": "RC-4",
+    "classification": "NO-GO_PENDING_GATES",
+    "productBranch": "release/movie-buff-rc-2026-08-06-01-rc4",
+    "productSha": "69a8c14043cde8f32e369e0f9363d117d2210098",
+    "productTree": "fd04c088efbf1f93317eca79c45f247efa4e1968",
+    "controllerBranch": "validation/movie-buff-rc4-controller-20260806"
+  },
+  "integrationBase": {
+    "branch": "integration/movie-buff",
+    "sha": "bf316a15a2120e32d8a32e479df2ae439081f9a1",
+    "tree": "12f425f4c56fb3f3c66df6f3a6543d7fd8b6ef34"
+  },
+  "cutoffProduct": {
+    "sha": "c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6",
+    "tree": "a995a9aeb2fca76d2c1b216ece3a2645c2393c71",
+    "manifestGitBlob": "c86f23e1426774bfcb5f7a920ae17e84e92efcd9"
+  },
+  "acceptedCutoffComponents": [
+    {"id":"PR3","pr":3,"sha":"f692e82a5d524c950011e0300908c9cbec2389cb","tree":"621bd5d39059f76773d84b5a0d1dce851e2ff0de"},
+    {"id":"PR5","pr":5,"sha":"91eac0d55abb1a9568017df687e8395771d24780","tree":"1ae3ed427b2c1b38c3731cc9532b5d0fb0c6336f"},
+    {"id":"MOV15","pr":9,"sha":"48d44bb156b71060d1b9adcc7a2a3f014cf92060","tree":"e010c949920f84e5f7aaca9d50ebf39d6ea13309"},
+    {"id":"MOV16","pr":6,"sha":"1d3b947ca153214028b5ac97a7eea83c382b5c7d","tree":"94fd19ab499b02663b21880aa5efeec37c93ca9d"},
+    {"id":"MOV17_CUTOFF","pr":10,"sha":"9239fcdc731ec05594c75d3ef9961e6cd4d36bbf","tree":"57a00c385e210717bd705b14d2146908736482fe"},
+    {"id":"MOV18","pr":8,"sha":"a416dd1bf6b372d11abcc0541abd9584443b0672","tree":"a866c5610d09c45eb1ff3c3422306a46050e9ec7"},
+    {"id":"ENCODING","pr":12,"sha":"d1f7ca58b534cbccd3071743d542f5788c0e9173","tree":"ea817ad706f4107fc16482cbe6cc40ec6a012ee0"}
+  ],
+  "approvedCandidateFixes": [
+    {"id":"AGENT6_SECURITY_BASE","pr":105,"sha":"915877115479db3c14665ac3fcbe17a0d2ae8921","tree":"47175b18af9e3dd1dc6aa30e41bb3b5bd06aa272","scope":"18 exact files"},
+    {"id":"STAGING_SECURITY_CLEARANCE","pr":114,"sha":"55b317f9aece77a26968ddeebe1ce167cbc0664a","tree":"9f4ddfa93816869efdc793f79dc998572135a9c0","scope":"6 exact files"},
+    {"id":"LOBBY_SESSION_REPAIR","pr":36,"sha":"3d2743da175229de42847c82c71931657c2090da","tree":"52bd3a7a284ef2c7a4ae2d6ac14ec8b7120589c8","scope":"2 exact files"},
+    {"id":"MOV17_CANONICAL_RESPONSE_ROUTE","sourceCommit":"b9d491abeca26407ad3f6c680b15792cecf994c9","path":"src/app/api/movie-buff/match/view/route.ts","gitBlob":"44f47d7f2aa3266d139a9c0e4246818b3f18e31d"},
+    {"id":"MOV17_TYPED_CLIENT_RECONCILIATION","sourceCommit":"aff3c21d3870d8875a79ecf32bd111e38590e338","path":"src/lib/game/movieBuffAuthoritativePhaseClient.ts","gitBlob":"be7c76af8ef151e3ee401c964f6d808857291366"},
+    {"id":"MOV17_ROUTE_ERROR_503_TYPE","path":"src/lib/server/movieBuffPhaseRouteAuthorization.ts","gitBlob":"aa90d1504261cc48719f6bac82ac237925bec440"}
+  ],
+  "compositionOrder": [
+    "cutoff product c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6",
+    "Agent 6 exact 18-file overlay",
+    "PR #114 exact six-file overlay",
+    "lobby exact two-file overlay",
+    "MOV-17 canonical response route",
+    "MOV-17 typed client reconciliation",
+    "remove eleven MOV-19 validator artifacts from product",
+    "restore active-leave compatibility",
+    "allow intentional 503 in shared route-error type"
+  ],
+  "validator": {
+    "embeddedInProduct": false,
+    "sha": "e2d14447d7036cf9dc645514c4713bd4d8e42db1",
+    "rulesetVersion": "v1",
+    "linearIssue": "MOV-19",
+    "githubPr": 7
+  },
+  "vercelPreview": {
+    "classification": "PASS_BUILD_PROVENANCE_ONLY",
+    "deploymentId": "dpl_54U9DGXo9u3XYRJDpn5sVxW7i8oa",
+    "url": "movie-buff-1yxre27pu-shaheed1.vercel.app",
+    "projectId": "prj_u2IlNNHUvEhnAytuuymv9GdN7hJY",
+    "projectName": "movie-buff",
+    "sourceSha": "69a8c14043cde8f32e369e0f9363d117d2210098",
+    "target": "preview",
+    "state": "READY"
+  },
+  "supabaseStaging": {
+    "projectRef": "eddwkxcillhzkvwmavsc",
+    "projectName": "movie-buff-staging",
+    "organization": "tleuzztdjpajaltwcclj",
+    "region": "us-east-1",
+    "postgres": "17.6.1.155",
+    "securityAdvisor": {
+      "rlsEnabledNoPolicyFindings": 0,
+      "remainingWarnings": 22,
+      "warningKind": "authenticated_security_definer_function_executable",
+      "classification": "PASS_BY_PRIOR_INDEPENDENT_ALLOWLIST_REVIEW"
+    },
+    "exactRc4Alignment": "PASS_BY_BYTE_IDENTITY_FOR_DATABASE_SECURITY_BYTES; RUNTIME_REEXECUTION_UNKNOWN"
+  },
+  "predecessors": [
+    {"name":"RC-1","classification":"FAIL_IMMUTABILITY","firstSha":"78c35aa15ec7f1bb3cb3de316f260fec438f00dc","laterSha":"d1798058f360c96059c529ecdf141561a02a3f4f"},
+    {"name":"RC-2","classification":"FAIL_BUILD","sha":"2c36032f32ed84711312045d65506af1313e3f40","tree":"9fe62aba99c4710a59e39f60b8ecd5a5a70ae9c0"},
+    {"name":"RC-3","classification":"FAIL_TYPECHECK","sha":"6a2e352ccec53caafceeac0bb884f607bb6eb613","tree":"9dbeb29dab9ed6a579a59ed64409c92423529e0b"}
+  ],
+  "knownHardStops": [
+    {"id":"MOV17_83100_ROLLBACK","classification":"FAIL","path":"supabase/migrations/20260804083100_movie_buff_server_phase_machine_hardening.sql","sha256":"602d64cf2c7de8135ec4d21b29f587e5420945d6eb3339b91b3a9fc028b9ab8f"},
+    {"id":"GITHUB_ACTIONS_ALLOCATION","classification":"FAIL_INFRASTRUCTURE_ZERO_RUNS"},
+    {"id":"DATABASE_PGTAP_PERSONAS_RACES","classification":"UNKNOWN"},
+    {"id":"THREE_CLIENT_BROWSER","classification":"UNKNOWN"},
+    {"id":"DESIGNATED_VERCEL_STAGING","classification":"UNKNOWN"},
+    {"id":"BACKUP_PITR_PRODUCTION_TARGETS","classification":"UNKNOWN"},
+    {"id":"OPERATIONS_AUTHORITIES","classification":"UNKNOWN"}
+  ],
+  "operationsAuthority": {
+    "operator": null,
+    "independentObserver": null,
+    "rollbackAuthority": null,
+    "containmentAuthority": null,
+    "maintenanceWindowUtc": null,
+    "monitoringOwner": null,
+    "authorizationExpiryUtc": null,
+    "classification": "UNKNOWN"
+  },
+  "evidenceContract": {
+    "fullMigrationRollbackSha256Ledger": "must be generated by exact controller artifact",
+    "workflow": ".github/workflows/movie-buff-rc4-gates.yml",
+    "canonicalManifestSha256ExcludingThisField": "724173ba46b6372e34241d2db4549fa858037e3da37019d81e30bc52e1111806"
+  }
+}
