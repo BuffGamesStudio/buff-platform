@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "releaseCandidate": "RC-9",
+  "repository": "BuffGamesStudio/buff-platform",
+  "remote": "https://github.com/BuffGamesStudio/buff-platform.git",
+  "branch": "validation/movie-buff-rc-9-controller",
+  "integrationBranch": "integration/movie-buff",
+  "integrationSha": "bf316a15a2120e32d8a32e479df2ae439081f9a1",
+  "integrationTreeSha": "12f425f4c56fb3f3c66df6f3a6543d7fd8b6ef34",
+  "controllerBaseSha": "973b210e391c754bd2f5057ed3ae14dfdf5f5c10",
+  "componentHeads": {
+    "PR-3-visuals": "f692e82a5d524c950011e0300908c9cbec2389cb",
+    "PR-5-hardening": "91eac0d55abb1a9568017df687e8395771d24780",
+    "MOV-15-PR-9": "7db078157f09565ea0a16f345e6f14896d36fe3b",
+    "MOV-16-PR-6": "95c292ead66fc83cf13d7154bd3cf691610f549d",
+    "MOV-17-PR-10": "6d7e9aabe5b07796a3a17fdf6c11df091dd1f978",
+    "MOV-18-PR-8": "e335a07eed20c97bc2487962ad0cf67c4f9dcc03",
+    "MOV-19-PR-7": "46c549675d44f19c22a7786421cf2581dc22af3c",
+    "migration-encoding-PR-12": "bf5e6d6f251f6840d17eed2fc68e0d580295437f",
+    "validation-twin-PR-13": "973b210e391c754bd2f5057ed3ae14dfdf5f5c10"
+  },
+  "migrationIdentity": {
+    "roots": [
+      "supabase/migrations",
+      "supabase/rollbacks",
+      "supabase/tests"
+    ],
+    "requiredPaths": [
+      "supabase/migrations/202607250001_start_movie_buff_match.sql",
+      "supabase/migrations/202607250002_fix_start_match_ambiguity.sql",
+      "supabase/migrations/202607250003_movie_buff_answers.sql",
+      "supabase/migrations/202607250004_advance_movie_buff_round.sql",
+      "supabase/migrations/202607250005_movie_buff_round_results.sql",
+      "supabase/migrations/202607250006_exact_movie_buff_round_results.sql",
+      "supabase/migrations/202607260001_movie_buff_final_results.sql",
+      "supabase/migrations/202607262300_add_movie_buff_trivia_clips.sql",
+      "supabase/migrations/202607270002_buff_games_content_engine.sql",
+      "supabase/migrations/20260804081500_movie_buff_atomic_three_player_matchmaking.sql",
+      "supabase/migrations/20260804083500_movie_buff_shared_phase_machine.sql"
+    ]
+  },
+  "requiredWrappers": [
+    "scripts/movie-buff-rc9-controller.mjs",
+    "scripts/movie-buff-migration-encoding-check.mjs",
+    "scripts/movie-buff-migration-bom-only-check.mjs"
+  ],
+  "gatePolicy": {
+    "classifications": ["PASS", "FAIL", "UNKNOWN", "NOT APPLICABLE"],
+    "overallUntilIndependentGo": "NO-GO",
+    "localhostOnly": true,
+    "mergeAllowed": false,
+    "deployAllowed": false,
+    "hostedMutationAllowed": false,
+    "productionMutationAllowed": false
+  }
+}
