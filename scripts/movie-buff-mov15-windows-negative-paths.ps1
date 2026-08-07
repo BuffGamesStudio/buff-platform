@@ -18,7 +18,8 @@ Set-StrictMode -Version Latest
 $repositoryRoot = (Get-Location).Path
 $wrapperPath = Join-Path $repositoryRoot 'scripts\movie-buff-mov15-windows-digital-twin.ps1'
 $pwshPath = (Get-Command pwsh -ErrorAction Stop).Source
-$workspaceRoot = Join-Path ([System.IO.Path]::GetTempPath()) 'mov15 negative path laboratory'
+$tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
+$workspaceRoot = Join-Path $tempRoot 'm15neg'
 $results = [System.Collections.Generic.List[object]]::new()
 
 function Invoke-WrapperExpectedFailure {
@@ -88,23 +89,6 @@ function Invoke-WrapperExpectedFailure {
   })
 }
 
-function Add-DetachedWorktree {
-  param([Parameter(Mandatory = $true)][string]$Path)
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
-  git worktree add --detach $Path $ExpectedSha | Out-Null
-  if ($LASTEXITCODE -ne 0) {
-    throw "Unable to create detached test worktree: $Path"
-  }
-}
-
-function Remove-DetachedWorktree {
-  param([Parameter(Mandatory = $true)][string]$Path)
-  if (Test-Path -LiteralPath $Path) {
-    git worktree remove --force $Path | Out-Null
-  }
-  git worktree prune | Out-Null
-}
-
 New-Item -ItemType Directory -Force -Path $EvidenceRoot | Out-Null
 Remove-Item -LiteralPath $workspaceRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $workspaceRoot | Out-Null
@@ -122,7 +106,7 @@ try {
     throw 'Harness requires a clean worktree.'
   }
 
-  $wrongFolder = Join-Path $workspaceRoot 'wrong folder'
+  $wrongFolder = Join-Path $workspaceRoot 'wrong-folder'
   New-Item -ItemType Directory -Force -Path $wrongFolder | Out-Null
   Invoke-WrapperExpectedFailure `
     -Name 'wrong-folder' `
@@ -136,22 +120,22 @@ try {
     -Sha ('0' * 40) `
     -ExpectedFailurePattern 'Exact SHA mismatch'
 
-  $missingFileWorktree = Join-Path $workspaceRoot 'missing file worktree'
+  $requiredFile = Join-Path $repositoryRoot 'tests\movie-buff-public-matchmaking-handoff.test.mjs'
+  $requiredFileBackup = Join-Path $workspaceRoot 'movie-buff-public-matchmaking-handoff.test.mjs.backup'
   try {
-    Add-DetachedWorktree -Path $missingFileWorktree
-    Remove-Item -LiteralPath (
-      Join-Path $missingFileWorktree 'tests\movie-buff-public-matchmaking-handoff.test.mjs'
-    ) -Force
+    Move-Item -LiteralPath $requiredFile -Destination $requiredFileBackup
     Invoke-WrapperExpectedFailure `
       -Name 'missing-file' `
-      -WorkingDirectory $missingFileWorktree `
+      -WorkingDirectory $repositoryRoot `
       -Sha $ExpectedSha `
       -ExpectedFailurePattern 'Required MOV-15 file is missing from the expected working directory'
   } finally {
-    Remove-DetachedWorktree -Path $missingFileWorktree
+    if (Test-Path -LiteralPath $requiredFileBackup -PathType Leaf) {
+      Move-Item -LiteralPath $requiredFileBackup -Destination $requiredFile -Force
+    }
   }
 
-  $emptyPath = Join-Path $workspaceRoot 'empty path'
+  $emptyPath = Join-Path $workspaceRoot 'empty-path'
   New-Item -ItemType Directory -Force -Path $emptyPath | Out-Null
   Invoke-WrapperExpectedFailure `
     -Name 'missing-tool' `
@@ -160,17 +144,21 @@ try {
     -ExpectedFailurePattern 'Required command is missing: git' `
     -PathOverride $emptyPath
 
-  $dirtyWorktree = Join-Path $workspaceRoot 'dirty worktree'
+  $dirtyFile = Join-Path $repositoryRoot 'README.md'
+  $dirtyFileOriginalBytes = [System.IO.File]::ReadAllBytes($dirtyFile)
   try {
-    Add-DetachedWorktree -Path $dirtyWorktree
-    Add-Content -LiteralPath (Join-Path $dirtyWorktree 'README.md') -Value '' -Encoding utf8
+    Add-Content -LiteralPath $dirtyFile -Value '' -Encoding utf8
     Invoke-WrapperExpectedFailure `
       -Name 'dirty-worktree' `
-      -WorkingDirectory $dirtyWorktree `
+      -WorkingDirectory $repositoryRoot `
       -Sha $ExpectedSha `
       -ExpectedFailurePattern 'Worktree is not clean before validation'
   } finally {
-    Remove-DetachedWorktree -Path $dirtyWorktree
+    [System.IO.File]::WriteAllBytes($dirtyFile, $dirtyFileOriginalBytes)
+  }
+
+  if (git status --porcelain) {
+    throw 'Negative-path cleanup did not restore a clean worktree.'
   }
 
   $results | Export-Csv -LiteralPath (Join-Path $EvidenceRoot 'negative-path-results.csv') -NoTypeInformation
@@ -184,6 +172,7 @@ try {
     'missing_file=PASS'
     'missing_tool=PASS'
     'dirty_worktree=PASS'
+    'cleanup=PASS'
     "generated_at=$([DateTime]::UtcNow.ToString('o'))"
   ) | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'metadata.txt') -Encoding utf8
 
@@ -219,5 +208,4 @@ try {
   exit 1
 } finally {
   Remove-Item -LiteralPath $workspaceRoot -Recurse -Force -ErrorAction SilentlyContinue
-  git worktree prune | Out-Null
 }
