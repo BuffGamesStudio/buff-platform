@@ -1,0 +1,109 @@
+name: MOV-9 round-media concurrency repair
+
+on:
+  push:
+    branches:
+      - fix/movie-buff-round-media-concurrency-20260807
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  REPAIR_BRANCH: fix/movie-buff-round-media-concurrency-20260807
+
+jobs:
+  repair-and-validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify clean exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test -z "$(git status --porcelain)"
+          node --version
+          npm --version
+
+      - name: Apply product repair once
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! grep -q 'movieRoundMediaFilesystem' src/lib/server/movieClipper.ts; then
+            node scripts/movie-buff-apply-round-media-concurrency-repair.mjs
+          fi
+
+      - name: Install committed lock
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run deterministic concurrency regression
+        run: node --test tests/movie-buff-round-media-concurrency.test.mjs
+
+      - name: Run TypeScript
+        run: npx --no-install tsc --noEmit
+
+      - name: Run localhost-placeholder production build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-build-placeholder
+          SUPABASE_SERVICE_ROLE_KEY: local-build-placeholder
+        run: npm run build
+
+      - name: Verify patch and commit repair when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          if test -n "$(git status --porcelain)"; then
+            git config user.name "movie-buff-work-autopilot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add src/lib/server/movieClipper.ts src/app/api/movie-buff/round-media/'[roundId]'/route.ts
+            git commit -m "fix(movie-buff): serialize round media pool consumption"
+            git push origin HEAD:${REPAIR_BRANCH}
+          fi
+
+      - name: Record exact-SHA evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/mov9-round-media-evidence"
+          {
+            echo "lane=MOV-9"
+            echo "run_source_sha=${GITHUB_SHA}"
+            echo "validated_tree=$(git write-tree)"
+            echo "node_version=$(node --version)"
+            echo "npm_version=$(npm --version)"
+            echo "concurrency_regression=see-job-result"
+            echo "browser_journey=UNKNOWN"
+            echo "hosted_state=UNKNOWN"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${RUNNER_TEMP}/mov9-round-media-evidence/metadata.txt"
+          sha256sum \
+            src/lib/server/movieRoundMediaFilesystem.ts \
+            src/lib/server/movieClipper.ts \
+            src/app/api/movie-buff/round-media/'[roundId]'/route.ts \
+            tests/movie-buff-round-media-concurrency.test.mjs \
+            > "${RUNNER_TEMP}/mov9-round-media-evidence/source-sha256.txt"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov9-round-media-${{ github.sha }}
+          path: ${{ runner.temp }}/mov9-round-media-evidence
+          if-no-files-found: error
+          retention-days: 7
