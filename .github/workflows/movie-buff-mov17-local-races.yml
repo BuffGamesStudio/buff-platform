@@ -66,11 +66,52 @@ jobs:
           node --check scripts/movie-buff-three-client-phase-proof.mjs
           node --check scripts/movie-buff-reconnect-race-proof.mjs
 
+      - name: Prepare local-only fixture-grant controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp scripts/movie-buff-mov17-local-race-evidence.sh "${RUNNER_TEMP}/mov17-race-lab.sh"
+          python3 - "${RUNNER_TEMP}/mov17-race-lab.sh" <<'PY'
+          import pathlib,sys
+          path=pathlib.Path(sys.argv[1])
+          text=path.read_text(encoding='utf-8')
+          anchor='  [[ -n "$publishable_key" && -n "$service_key" ]] || { fail credential-shape; return 1; }\n'
+          insertion='''  [[ -n "$publishable_key" && -n "$service_key" ]] || { fail credential-shape; return 1; }
+  local database_url="${DB_URL:-}"
+  [[ -n "$database_url" ]] || { fail database-url; return 1; }
+
+  cat >"$EVIDENCE_ROOT/local-fixture-grants.sql" <<'SQL'
+-- Disposable localhost fixture scaffolding only. These grants are not product,
+-- staging, hosted, or production security evidence.
+grant select, insert, update, delete on table
+  public.game_rooms,
+  public.room_players,
+  public.matches,
+  public.match_players,
+  public.match_rounds,
+  public.movie_buff_boards,
+  public.movie_buff_board_categories,
+  public.movie_buff_board_tiles,
+  public.movies,
+  public.clips
+  to service_role;
+SQL
+  run_step fixture-grants psql "$database_url" -X -v ON_ERROR_STOP=1 \
+    -f "$EVIDENCE_ROOT/local-fixture-grants.sql" \
+    || { fail fixture-grants; return 1; }
+'''
+          if anchor not in text:
+              raise SystemExit('credential anchor missing')
+          path.write_text(text.replace(anchor,insertion,1),encoding='utf-8')
+          PY
+          bash -n "${RUNNER_TEMP}/mov17-race-lab.sh"
+          grep -q 'Disposable localhost fixture scaffolding only' "${RUNNER_TEMP}/mov17-race-lab.sh"
+
       - name: Execute disposable exact-product race laboratory
         shell: bash
         run: |
           evidence_dir="${RUNNER_TEMP}/mov17-race-evidence"
-          bash scripts/movie-buff-mov17-local-race-evidence.sh \
+          bash "${RUNNER_TEMP}/mov17-race-lab.sh" \
             "${PRODUCT_SHA}" \
             "${PRODUCT_TREE}" \
             "${evidence_dir}"
