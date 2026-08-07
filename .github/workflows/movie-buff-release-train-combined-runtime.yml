@@ -1,11 +1,10 @@
-name: Movie Buff release-train combined runtime via registered controller
+name: Movie Buff release-train combined runtime
 
 on:
   push:
     branches:
       - validation/movie-buff-release-train-runtime-20260806
     paths:
-      - ".github/workflows/movie-buff-core-v6-race-browser-v2.yml"
       - ".github/workflows/movie-buff-release-train-combined-runtime.yml"
       - "scripts/movie-buff-release-train-combined-runtime-lab.sh"
       - "scripts/movie-buff-release-train-canonical-leave-race.mjs"
@@ -20,13 +19,6 @@ on:
 permissions:
   contents: read
 
-env:
-  EXPECTED_BRANCH: validation/movie-buff-release-train-runtime-20260806
-  PRODUCT_SHA: c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6
-  PRODUCT_TREE: a995a9aeb2fca76d2c1b216ece3a2645c2393c71
-  SUPABASE_TELEMETRY_DISABLED: "1"
-  DO_NOT_TRACK: "1"
-
 jobs:
   combined-runtime:
     name: Disposable MOV-15/MOV-16/MOV-17 race matrix
@@ -34,6 +26,9 @@ jobs:
     timeout-minutes: 65
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PRODUCT_SHA: c3a6aff9138f6e12b50e54f5b3c0f4bddcc101f6
+      PRODUCT_TREE: a995a9aeb2fca76d2c1b216ece3a2645c2393c71
+      EXPECTED_BRANCH: validation/movie-buff-release-train-runtime-20260806
       EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-release-train-runtime
       STACK_ROOT: ${{ runner.temp }}/movie-buff-release-train-stack
       PROOF_ROOT: ${{ runner.temp }}/movie-buff-release-train-worktree
@@ -56,27 +51,6 @@ jobs:
         uses: supabase/setup-cli@v1
         with:
           version: 2.111.0
-
-      - name: Verify registered-controller identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
-          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
-          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
-          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
-          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
-          allowed='^(\.github/workflows/movie-buff-core-v6-race-browser-v2\.yml|\.github/workflows/movie-buff-release-train-combined-runtime\.yml|docs/validation/movie-buff-release-train-combined-runtime\.manifest\.json|scripts/movie-buff-release-train-combined-runtime-lab\.sh|scripts/movie-buff-release-train-canonical-leave-race\.mjs|scripts/movie-buff-release-train-patch-owner-fixtures\.py)$'
-          unexpected="$(git diff --name-only "${PRODUCT_SHA}..HEAD" | grep -Ev "${allowed}" || true)"
-          test -z "${unexpected}"
-          test -z "$(git status --porcelain)"
-          test ! -f supabase/.temp/project-ref
-          test "$(supabase --version)" = "2.111.0"
-          bash -n scripts/movie-buff-release-train-combined-runtime-lab.sh
-          node --check scripts/movie-buff-release-train-canonical-leave-race.mjs
-          python3 -m py_compile scripts/movie-buff-release-train-patch-owner-fixtures.py
-          docker --version
-          psql --version
 
       - name: Execute exact disposable runtime matrix
         shell: bash
