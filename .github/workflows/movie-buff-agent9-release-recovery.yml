@@ -1,0 +1,101 @@
+name: Movie Buff Agent 9 release recovery preflight
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - "operations/movie-buff/**"
+      - "docs/operations/**"
+      - "scripts/movie-buff-agent9-staging-rehearsal.ps1"
+      - ".github/workflows/movie-buff-agent9-release-recovery.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Agent 9 preflight (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Capture exact tree
+        id: identity
+        shell: pwsh
+        run: |
+          "tree=$(git rev-parse 'HEAD^{tree}')" >> $env:GITHUB_OUTPUT
+
+      - name: Run fail-closed preflight
+        shell: pwsh
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/movie-buff-agent9-${{ runner.os }}-${{ github.run_id }}
+        run: |
+          ./scripts/movie-buff-agent9-staging-rehearsal.ps1 `
+            -Mode Preflight `
+            -ExpectedBranch '${{ github.head_ref || github.ref_name }}' `
+            -ExpectedSha '${{ github.event.pull_request.head.sha || github.sha }}' `
+            -ExpectedTree '${{ steps.identity.outputs.tree }}' `
+            -EvidenceDirectory $env:EVIDENCE_DIR `
+            -PackageOnly
+
+      - name: Prove refusal paths
+        shell: pwsh
+        run: |
+          function Assert-Refusal {
+            param([string]$Name, [string]$ExpectedMessage, [scriptblock]$Action)
+            try {
+              & $Action
+              throw "$Name did not fail closed."
+            } catch {
+              if ($_.Exception.Message -notmatch [regex]::Escape($ExpectedMessage)) {
+                throw "$Name failed for the wrong reason: $($_.Exception.Message)"
+              }
+              Write-Host "$Name refusal PASS"
+            }
+          }
+
+          $common = @{
+            ExpectedBranch = '${{ github.head_ref || github.ref_name }}'
+            ExpectedTree = '${{ steps.identity.outputs.tree }}'
+            PackageOnly = $true
+          }
+
+          Assert-Refusal -Name 'wrong-sha' -ExpectedMessage 'Wrong SHA' -Action {
+            ./scripts/movie-buff-agent9-staging-rehearsal.ps1 @common `
+              -Mode Preflight `
+              -ExpectedSha '0000000000000000000000000000000000000000' `
+              -EvidenceDirectory '${{ runner.temp }}/agent9-negative-wrong-sha'
+          }
+
+          Assert-Refusal -Name 'hosted-target' -ExpectedMessage 'Refusing non-localhost database target' -Action {
+            ./scripts/movie-buff-agent9-staging-rehearsal.ps1 @common `
+              -Mode DryRun `
+              -ExpectedSha '${{ github.event.pull_request.head.sha || github.sha }}' `
+              -DatabaseUrl 'postgresql://example.invalid/movie_buff' `
+              -EvidenceDirectory '${{ runner.temp }}/agent9-negative-hosted-target'
+          }
+
+          Assert-Refusal -Name 'evidence-inside-checkout' -ExpectedMessage 'EvidenceDirectory must be outside the source checkout' -Action {
+            ./scripts/movie-buff-agent9-staging-rehearsal.ps1 @common `
+              -Mode Preflight `
+              -ExpectedSha '${{ github.event.pull_request.head.sha || github.sha }}' `
+              -EvidenceDirectory './agent9-invalid-evidence'
+          }
+
+      - name: Upload preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-agent9-preflight-${{ runner.os }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/movie-buff-agent9-${{ runner.os }}-${{ github.run_id }}
+          if-no-files-found: error

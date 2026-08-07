@@ -1,0 +1,126 @@
+name: Movie Buff Agent 9 live recovery binding
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - "operations/movie-buff/release-recovery-overlay-v3.json"
+      - "scripts/movie-buff-agent9-live-recovery.ps1"
+      - ".github/workflows/movie-buff-agent9-live-recovery.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-binding:
+    name: Agent 9 live binding (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Capture exact tree
+        id: identity
+        shell: pwsh
+        run: |
+          "tree=$(git rev-parse 'HEAD^{tree}')" >> $env:GITHUB_OUTPUT
+
+      - name: Exact live preflight
+        shell: pwsh
+        run: |
+          ./scripts/movie-buff-agent9-live-recovery.ps1 `
+            -Mode Preflight `
+            -ExpectedBranch '${{ github.head_ref || github.ref_name }}' `
+            -ExpectedSha '${{ github.event.pull_request.head.sha || github.sha }}' `
+            -ExpectedTree '${{ steps.identity.outputs.tree }}' `
+            -ExpectedCandidateSha '520a06c9c79e6a2b0ef9ce7816abd70514cba922' `
+            -ExpectedCandidateTree '6f9ec763ed2256266af63d0e023eeef7e277e452' `
+            -EvidenceDirectory '${{ runner.temp }}/agent9-live-${{ runner.os }}-${{ github.run_id }}'
+
+      - name: Allowlisted staging identity dry run
+        shell: pwsh
+        run: |
+          ./scripts/movie-buff-agent9-live-recovery.ps1 `
+            -Mode StagingDryRun `
+            -ExpectedBranch '${{ github.head_ref || github.ref_name }}' `
+            -ExpectedSha '${{ github.event.pull_request.head.sha || github.sha }}' `
+            -ExpectedTree '${{ steps.identity.outputs.tree }}' `
+            -ExpectedCandidateSha '520a06c9c79e6a2b0ef9ce7816abd70514cba922' `
+            -ExpectedCandidateTree '6f9ec763ed2256266af63d0e023eeef7e277e452' `
+            -ApprovedStagingProjectRef 'eddwkxcillhzkvwmavsc' `
+            -ApprovedStagingDatabaseHost 'db.eddwkxcillhzkvwmavsc.supabase.co' `
+            -EvidenceDirectory '${{ runner.temp }}/agent9-staging-${{ runner.os }}-${{ github.run_id }}'
+
+      - name: Refusal laboratory
+        shell: pwsh
+        run: |
+          function Assert-Refusal {
+            param([string]$Name, [string]$Expected, [scriptblock]$Action)
+            try {
+              & $Action
+              throw "$Name did not fail closed."
+            } catch {
+              if ($_.Exception.Message -notmatch [regex]::Escape($Expected)) {
+                throw "$Name failed for the wrong reason: $($_.Exception.Message)"
+              }
+              Write-Host "$Name refusal PASS"
+            }
+          }
+
+          $common = @{
+            ExpectedBranch = '${{ github.head_ref || github.ref_name }}'
+            ExpectedSha = '${{ github.event.pull_request.head.sha || github.sha }}'
+            ExpectedTree = '${{ steps.identity.outputs.tree }}'
+            ExpectedCandidateSha = '520a06c9c79e6a2b0ef9ce7816abd70514cba922'
+            ExpectedCandidateTree = '6f9ec763ed2256266af63d0e023eeef7e277e452'
+          }
+
+          Assert-Refusal 'wrong-candidate' 'Candidate SHA mismatch' {
+            $args = $common.Clone()
+            $args.ExpectedCandidateSha = '0000000000000000000000000000000000000000'
+            ./scripts/movie-buff-agent9-live-recovery.ps1 @args `
+              -Mode Preflight `
+              -EvidenceDirectory '${{ runner.temp }}/agent9-live-wrong-candidate'
+          }
+
+          Assert-Refusal 'unapproved-staging' 'Unapproved staging project ref' {
+            ./scripts/movie-buff-agent9-live-recovery.ps1 @common `
+              -Mode StagingDryRun `
+              -ApprovedStagingProjectRef 'wrongprojectref' `
+              -ApprovedStagingDatabaseHost 'db.eddwkxcillhzkvwmavsc.supabase.co' `
+              -EvidenceDirectory '${{ runner.temp }}/agent9-live-wrong-staging'
+          }
+
+          Assert-Refusal 'missing-backup' 'Required backup/PITR identity is missing or unverified' {
+            ./scripts/movie-buff-agent9-live-recovery.ps1 @common `
+              -Mode Preflight `
+              -RequireBackupIdentity `
+              -EvidenceDirectory '${{ runner.temp }}/agent9-live-missing-backup'
+          }
+
+          Assert-Refusal 'candidate-fail-local-execution' 'LocalRehearsal is blocked while the current candidate classification is FAIL' {
+            ./scripts/movie-buff-agent9-live-recovery.ps1 @common `
+              -Mode LocalRehearsal `
+              -Execute `
+              -DatabaseUrl 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' `
+              -EvidenceDirectory '${{ runner.temp }}/agent9-live-candidate-fail'
+          }
+
+      - name: Upload live evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-agent9-live-${{ runner.os }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/agent9-live-${{ runner.os }}-${{ github.run_id }}
+            ${{ runner.temp }}/agent9-staging-${{ runner.os }}-${{ github.run_id }}
+          if-no-files-found: error
