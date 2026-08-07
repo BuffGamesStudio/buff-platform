@@ -13,12 +13,15 @@ env:
   PRODUCT_SHA: 51e22cdf383b037607a874da410f088bbfeab890
   PRODUCT_TREE: 6ab306f913f42f5448a9c842849fe30295fb769d
   CONTROLLER_BRANCH: validation/movie-buff-mov18-strict-runner-base-v11-20260807
-  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-mov18-strict-browser-run-v11-20260807
+  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-mov18-strict-browser-run-v11b-20260807
   EXPECTED_BRANCH: validation/movie-buff-mov18-strict-runner-base-v11-20260807
   PARENT_SHA: 51e22cdf383b037607a874da410f088bbfeab890
   CONTROLLER_SHA: ${{ github.event.pull_request.base.sha }}
   TRIGGER_SHA: ${{ github.event.pull_request.head.sha }}
   V9_WORKFLOW: .github/workflows/movie-buff-mov18-chrome-three-client-browser-v9.yml
+  ARCHIVE_SOURCE_SHA: d90a7eb73ef724b4ef5205343e655c7597dcf978
+  ARCHIVE_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
+  ORIGINAL_HARNESS_BLOB: 3b08204937f26af9287f303906509dc057b399dc
   ARTIFACT_NAME: movie-buff-mov18-chrome-three-client-v11-${{ github.run_id }}-${{ github.run_attempt }}
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
@@ -74,8 +77,6 @@ jobs:
               body.append(line[run_indent+2:] if line.strip() else "")
           script="\n".join(body)+"\n"
 
-          # Construct GitHub-expression literals at runtime so Actions cannot
-          # pre-expand the source strings before Python sees them.
           base_expr="$" + "{{ github.event.pull_request.base.ref }}"
           head_expr="$" + "{{ github.event.pull_request.head.ref }}"
           if script.count(base_expr) != 1 or script.count(head_expr) != 1:
