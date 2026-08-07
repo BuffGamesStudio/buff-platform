@@ -1,8 +1,8 @@
-name: Movie Buff MOV-18 exact Chrome validation v12
+name: Movie Buff MOV-18 exact Chrome validation v12d
 
 on:
   pull_request:
-    branches: [validation/movie-buff-mov18-reduced-runner-base-v12-20260807]
+    branches: [validation/movie-buff-mov18-reduced-runner-base-v12d-20260807]
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -12,9 +12,10 @@ env:
   PRODUCT_BRANCH: fix/movie-buff-history-authoritative-reconciliation-20260807
   PRODUCT_SHA: 51e22cdf383b037607a874da410f088bbfeab890
   PRODUCT_TREE: 6ab306f913f42f5448a9c842849fe30295fb769d
-  CONTROLLER_BRANCH: validation/movie-buff-mov18-reduced-runner-base-v12-20260807
-  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-mov18-reduced-browser-run-v12c-20260807
-  EXPECTED_BRANCH: validation/movie-buff-mov18-reduced-runner-base-v12-20260807
+  CONTROLLER_BRANCH: validation/movie-buff-mov18-reduced-runner-base-v12d-20260807
+  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-mov18-reduced-browser-run-v12d-20260807
+  EXPECTED_BRANCH: validation/movie-buff-mov18-reduced-runner-base-v12d-20260807
+  PARENT_SHA: 51e22cdf383b037607a874da410f088bbfeab890
   CONTROLLER_SHA: ${{ github.event.pull_request.base.sha }}
   TRIGGER_SHA: ${{ github.event.pull_request.head.sha }}
   V11_WORKFLOW: .github/workflows/movie-buff-mov18-chrome-three-client-browser-v11.yml
@@ -22,7 +23,7 @@ env:
   ARCHIVE_SOURCE_SHA: d90a7eb73ef724b4ef5205343e655c7597dcf978
   ARCHIVE_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
   ORIGINAL_HARNESS_BLOB: 3b08204937f26af9287f303906509dc057b399dc
-  ARTIFACT_NAME: movie-buff-mov18-chrome-three-client-v12-${{ github.run_id }}-${{ github.run_attempt }}
+  ARTIFACT_NAME: movie-buff-mov18-chrome-three-client-v12d-${{ github.run_id }}-${{ github.run_attempt }}
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
 
@@ -56,6 +57,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "${CONTROLLER_SHA}"
           git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
           test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test "${PARENT_SHA}" = "${PRODUCT_SHA}"
           test -z "$(git status --porcelain --untracked-files=all)"
 
           python3 - "${RUNNER_TEMP}" "${V11_WORKFLOW}" <<'PY'
@@ -107,6 +109,7 @@ jobs:
           correction["v12ReducedMotionStrictLocatorCorrection"]="select first of duplicate reduced-motion fallback descriptions; reduced-motion requirement, text, timeout, and behavior are unchanged"
           correction["reducedMotionStrictLocatorReplacementCount"]=count
           correction["journeyContract"]="V3 substantive requirements preserved"
+          correction["v12dParentShaBindingCorrection"]="restore inherited PARENT_SHA to exact product SHA before reviewed preflight; no product or journey behavior changed"
           correction_path.write_text(json.dumps(correction,indent=2)+"\n",encoding="utf-8")
           PY
           node --check "${RUNNER_TEMP}/movie-buff-three-client-full-journey-v9-chrome.mjs"
@@ -149,7 +152,7 @@ jobs:
         shell: bash
         run: bash "${RUNNER_TEMP}/browser-execute.sh"
 
-      - name: Bind and hash V12 evidence
+      - name: Bind and hash V12D evidence
         if: always()
         shell: bash
         run: |
@@ -165,6 +168,7 @@ jobs:
             "productBranch":os.environ["PRODUCT_BRANCH"],
             "productSha":os.environ["PRODUCT_SHA"],
             "productTree":os.environ["PRODUCT_TREE"],
+            "parentSha":os.environ["PARENT_SHA"],
             "controllerBranch":os.environ["CONTROLLER_BRANCH"],
             "controllerSha":os.environ["CONTROLLER_SHA"],
             "controllerTree":sys.argv[2],
@@ -172,7 +176,7 @@ jobs:
             "runId":os.environ["GITHUB_RUN_ID"],
             "runAttempt":os.environ["GITHUB_RUN_ATTEMPT"],
             "target":"disposable-localhost-system-chrome",
-            "validationVersion":"V12",
+            "validationVersion":"V12D",
             "journeyContract":"V3 substantive requirements preserved",
           },indent=2)+"\n",encoding="utf-8")
           PY
@@ -198,7 +202,7 @@ jobs:
           git diff --check
           test -z "$(git status --porcelain --untracked-files=all)"
 
-      - name: Enforce V12 browser gate
+      - name: Enforce V12D browser gate
         if: always()
         shell: bash
         run: |
@@ -213,6 +217,7 @@ jobs:
           assert correction["mov18StrictLocatorReplacementCount"] == 1
           assert correction["reducedMotionStrictLocatorReplacementCount"] == 1
           assert correction["productBytesChanged"] is False
+          assert "v12dParentShaBindingCorrection" in correction
           journey=json.loads((root/"three-client-full-journey-v2.json").read_text())
           assert journey["classification"] == "PASS", journey.get("failure")
           assert journey["target"]["kind"] == "disposable-localhost"
@@ -228,7 +233,7 @@ jobs:
           name: ${{ env.ARTIFACT_NAME }}
           path: evidence
 
-      - name: Verify exact V12 binding, hashes, redaction, and browser PASS
+      - name: Verify exact V12D binding, hashes, redaction, and browser PASS
         shell: bash
         run: |
           set -euo pipefail
@@ -241,13 +246,15 @@ jobs:
           assert binding['repository']=='BuffGamesStudio/buff-platform'
           assert binding['productSha']=='51e22cdf383b037607a874da410f088bbfeab890'
           assert binding['productTree']=='6ab306f913f42f5448a9c842849fe30295fb769d'
+          assert binding['parentSha']=='51e22cdf383b037607a874da410f088bbfeab890'
           assert binding['target']=='disposable-localhost-system-chrome'
-          assert binding['validationVersion']=='V12'
+          assert binding['validationVersion']=='V12D'
           correction=json.loads((root/'harness-correction.json').read_text())
           assert correction['classification']=='PASS'
           assert correction['mov18StrictLocatorReplacementCount']==1
           assert correction['reducedMotionStrictLocatorReplacementCount']==1
           assert correction['productBytesChanged'] is False
+          assert 'v12dParentShaBindingCorrection' in correction
           journey=json.loads((root/'three-client-full-journey-v2.json').read_text())
           assert journey['classification']=='PASS', journey.get('failure')
           text='\n'.join(p.read_text(encoding='utf-8',errors='ignore') for p in root.rglob('*') if p.is_file() and p.suffix.lower() in {'.txt','.log','.json','.env','.csv','.md'})
