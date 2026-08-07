@@ -1,0 +1,7 @@
+Movie Buff validation-only V3 trigger
+
+Product SHA: 0a9c27bcf58dcbd7ba3d855feed78b9dd2068f53
+Product tree: 674f79d52dd0014f8b13d13864ce9f985b15e673
+Controller SHA: 43b9d194fb18ecff99cb82b133f28ec02ee7be37
+Scope: workflow trigger only; no product bytes changed.
+DO NOT MERGE. DO NOT DEPLOY. DO NOT PROMOTE.
