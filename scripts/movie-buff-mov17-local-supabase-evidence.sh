@@ -406,6 +406,16 @@ PY
   fi
   ACTIVE_LEAVE_FORWARD_REAPPLY="PASS"
 
+  if ! run_step board-boundary-forward-reapply psql \
+    -h 127.0.0.1 -p 55322 -U postgres -d postgres \
+    -v ON_ERROR_STOP=1 \
+    -f "$WORK_ROOT/supabase/migrations/20260804083710_movie_buff_buster_board_boundary_only.sql"; then
+    BOARD_BOUNDARY_FORWARD_REAPPLY="FAIL"
+    FAILURE_STEP="board-boundary-forward-reapply"
+    return 1
+  fi
+  BOARD_BOUNDARY_FORWARD_REAPPLY="PASS"
+
   if ! (
     cd "$WORK_ROOT" &&
       run_step active-leave-pgtap-forward supabase test db \
@@ -416,16 +426,6 @@ PY
     return 1
   fi
   ACTIVE_LEAVE_PGTAP_FORWARD="PASS"
-
-  if ! run_step board-boundary-forward-reapply psql \
-    -h 127.0.0.1 -p 55322 -U postgres -d postgres \
-    -v ON_ERROR_STOP=1 \
-    -f "$WORK_ROOT/supabase/migrations/20260804083710_movie_buff_buster_board_boundary_only.sql"; then
-    BOARD_BOUNDARY_FORWARD_REAPPLY="FAIL"
-    FAILURE_STEP="board-boundary-forward-reapply"
-    return 1
-  fi
-  BOARD_BOUNDARY_FORWARD_REAPPLY="PASS"
 
   if ! (
     cd "$WORK_ROOT" &&
