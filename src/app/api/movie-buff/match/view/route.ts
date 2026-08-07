@@ -1,6 +1,6 @@
 import "server-only";
 
-import { ensureMovieBuffBoardForRoom } from "@/lib/server/movieBuffBoard";
+import { ensureMovieBuffBoardForRoomRaceSafe } from "@/lib/server/movieBuffBoardRaceSafe";
 import {
   isMovieBuffPhaseUuid,
   movieBuffPhaseErrorResponse,
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     // Board creation/loading is allowed only after verified active membership.
     // The authenticated match-view response is the only normal browser source
     // for both canonical phase state and the persisted rich board preview.
-    const board = await ensureMovieBuffBoardForRoom(body.roomId);
+    const board = await ensureMovieBuffBoardForRoomRaceSafe(body.roomId);
 
     const { data, error } = await caller.rpc(
       "get_movie_buff_match_phase_view",
