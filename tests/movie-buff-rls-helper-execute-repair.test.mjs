@@ -56,7 +56,13 @@ test("RLS helper repair preserves the least-privilege browser contract", async (
     );
   }
 
+  assert.match(sql, /pg_catalog\.aclexplode\s*\(/i);
+  assert.match(sql, /pg_catalog\.acldefault\('f',\s*p\.proowner\)/i);
+  assert.match(sql, /privilege\.grantee\s*=\s*0/i);
+  assert.match(sql, /privilege\.privilege_type\s*=\s*'EXECUTE'/i);
+  assert.doesNotMatch(sql, /has_function_privilege\('public'/i);
   assert.match(sql, /not\s+coalesce\(v_security_definer,\s*false\)/i);
+  assert.match(sql, /coalesce\(v_public_execute,\s*false\)/i);
   assert.match(sql, /has_function_privilege\('anon',\s*v_oid,\s*'execute'\)/i);
   assert.match(
     sql,
