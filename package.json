@@ -30,6 +30,7 @@
     "movie-buff:verify-analytics": "node ./scripts/verify-movie-buff-analytics.mjs"
   },
   "dependencies": {
+    "@rive-app/react-webgl2": "4.30.0",
     "@supabase/supabase-js": "^2.110.8",
     "lucide-react": "^1.26.0",
     "next": "16.2.11",
