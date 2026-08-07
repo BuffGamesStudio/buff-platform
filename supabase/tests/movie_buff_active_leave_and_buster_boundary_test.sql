@@ -48,10 +48,10 @@ select ok(position('phase_version <> v_quote.phase_version' in pg_get_functionde
 select ok(position('Contradictory duplicate active-leave confirmation' in pg_get_functiondef('public.confirm_movie_buff_active_leave(uuid,text,text)'::regprocedure)) > 0,'contradictory replay is rejected');
 select ok(position('return v_existing.result' in pg_get_functiondef('public.confirm_movie_buff_active_leave(uuid,text,text)'::regprocedure)) > 0,'identical replay returns stable result');
 select ok(position('voluntary_active_leave' in pg_get_functiondef('public.confirm_movie_buff_active_leave(uuid,text,text)'::regprocedure)) > 0,'leave reason is immutable and explicit');
-select ok(position('old.phase in (''round_intro'', ''vip_lock'')' in pg_get_functiondef('public.movie_buff_activate_busters_on_phase_boundary()'::regprocedure)) > 0,'intro or VIP abandonment is recognized');
-select ok(position('new.phase = ''board_select''' in pg_get_functiondef('public.movie_buff_activate_busters_on_phase_boundary()'::regprocedure)) > 0,'board entry is the immediate Buster boundary');
-select ok(position('replacement_ready_at <= v_now' in pg_get_functiondef('public.movie_buff_activate_ready_busters(uuid)'::regprocedure)) > 0,'non-entry takeover still respects replacement delay');
-select ok(position('''vip_lock''' in pg_get_functiondef('public.movie_buff_activate_ready_busters(uuid)'::regprocedure)) = 0,'delayed Buster worker never activates during VIP');
+select ok(position('new.phase <> ''board_select''' in pg_get_functiondef('public.movie_buff_activate_busters_on_phase_boundary()'::regprocedure)) > 0,'non-board phase entry returns without Buster activation');
+select ok(position('''results''' in pg_get_functiondef('public.movie_buff_activate_busters_on_phase_boundary()'::regprocedure)) = 0,'phase trigger does not activate during results');
+select ok(position('replacement_ready_at <= v_now' in pg_get_functiondef('public.movie_buff_activate_ready_busters(uuid)'::regprocedure)) > 0,'board-boundary worker respects replacement delay');
+select ok(position('''vip_lock''' in pg_get_functiondef('public.movie_buff_activate_ready_busters(uuid)'::regprocedure)) = 0,'Buster worker never activates during VIP');
 
 select * from finish();
 rollback;

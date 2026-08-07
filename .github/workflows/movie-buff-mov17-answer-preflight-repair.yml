@@ -1,0 +1,115 @@
+name: MOV-17 answer phase preflight repair
+
+on:
+  push:
+    branches:
+      - copilot/MOV-17-shared-phase-machine
+    paths:
+      - ".github/workflows/movie-buff-mov17-answer-preflight-repair.yml"
+      - "scripts/movie-buff-mov17-answer-preflight-evidence.sh"
+      - "supabase/migrations/20260804083710_movie_buff_buster_board_boundary_only.sql"
+      - "supabase/migrations/20260804083720_movie_buff_answer_phase_preflight.sql"
+      - "supabase/rollbacks/20260804083710_movie_buff_buster_board_boundary_only.rollback.sql"
+      - "supabase/rollbacks/20260804083720_movie_buff_answer_phase_preflight.rollback.sql"
+      - "supabase/tests/movie_buff_buster_board_boundary_only_test.sql"
+      - "supabase/tests/movie_buff_answer_phase_preflight_test.sql"
+      - "supabase/tests/movie_buff_answer_phase_preflight_rollback_test.sql"
+      - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - ".github/workflows/movie-buff-mov17-answer-preflight-repair.yml"
+      - "scripts/movie-buff-mov17-answer-preflight-evidence.sh"
+      - "supabase/migrations/20260804083710_movie_buff_buster_board_boundary_only.sql"
+      - "supabase/migrations/20260804083720_movie_buff_answer_phase_preflight.sql"
+      - "supabase/rollbacks/20260804083710_movie_buff_buster_board_boundary_only.rollback.sql"
+      - "supabase/rollbacks/20260804083720_movie_buff_answer_phase_preflight.rollback.sql"
+      - "supabase/tests/movie_buff_buster_board_boundary_only_test.sql"
+      - "supabase/tests/movie_buff_answer_phase_preflight_test.sql"
+      - "supabase/tests/movie_buff_answer_phase_preflight_rollback_test.sql"
+      - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  answer-phase-preflight:
+    name: Validate answer preflight and rollback at exact SHA
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      OWNER_BRANCH: copilot/MOV-17-shared-phase-machine
+      VALIDATION_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+      EVIDENCE_DIR: /tmp/mov17-answer-preflight-evidence
+
+    steps:
+      - name: Check out exact MOV-17 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify isolated exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "${VALIDATION_REF}"
+          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
+            test "${resolved_ref}" = "${OWNER_BRANCH}"
+          fi
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          case "$(git remote get-url origin)" in
+            https://github.com/BuffGamesStudio/buff-platform|https://github.com/BuffGamesStudio/buff-platform.git) ;;
+            *) exit 1 ;;
+          esac
+          bash -n scripts/movie-buff-mov17-answer-preflight-evidence.sh
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Run disposable answer preflight rehearsal
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          set +e
+          bash scripts/movie-buff-mov17-answer-preflight-evidence.sh \
+            "${EXPECTED_SHA}" \
+            "${EVIDENCE_DIR}"
+          wrapper_exit=$?
+          set -e
+          (
+            cd "${EVIDENCE_DIR}"
+            sha256sum -c sha256.txt
+          )
+          exit "${wrapper_exit}"
+
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Upload exact-SHA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov17-answer-preflight-${{ env.EXPECTED_SHA }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 7
