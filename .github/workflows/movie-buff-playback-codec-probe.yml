@@ -1,0 +1,106 @@
+name: Movie Buff playback codec probe
+
+on:
+  pull_request:
+    branches: [validation/movie-buff-playback-codec-probe-base-20260807]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_SHA: be86fc1683e27936fe737e05de558063829cae02
+  PRODUCT_TREE: ef4573904523e96292491f1eee57a7c84074cc2c
+  CONTROLLER_BRANCH: validation/movie-buff-playback-codec-probe-base-20260807
+  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-playback-codec-probe-run-20260807
+
+jobs:
+  codec-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Bind exact product
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ github.event.pull_request.base.ref }}" = "${CONTROLLER_BRANCH}"
+          test "${{ github.event.pull_request.head.ref }}" = "${EXPECTED_TRIGGER_BRANCH}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Install exact Playwright browser used by journey
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/codec-probe"
+          cd "${RUNNER_TEMP}/codec-probe"
+          npm init -y >/dev/null
+          npm install --ignore-scripts --no-audit --no-fund playwright@1.54.2
+          npx playwright install --with-deps chromium
+
+      - name: Probe bundled Chromium and system Chrome codecs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/codec-probe"
+          cat > probe.mjs <<'JS'
+          import { chromium } from 'playwright';
+
+          async function probe(label, options) {
+            let browser;
+            try {
+              browser = await chromium.launch({ headless: true, args: ['--autoplay-policy=no-user-gesture-required'], ...options });
+              const page = await browser.newPage();
+              const result = await page.evaluate(() => {
+                const video = document.createElement('video');
+                const audio = document.createElement('audio');
+                return {
+                  userAgent: navigator.userAgent,
+                  h264Baseline: video.canPlayType('video/mp4; codecs="avc1.42E01E"'),
+                  h264High: video.canPlayType('video/mp4; codecs="avc1.64001F"'),
+                  aac: audio.canPlayType('audio/mp4; codecs="mp4a.40.2"'),
+                  mp4H264Aac: video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'),
+                  vp9Webm: video.canPlayType('video/webm; codecs="vp9, opus"'),
+                  av1: video.canPlayType('video/mp4; codecs="av01.0.05M.08"'),
+                };
+              });
+              return { label, launched: true, ...result };
+            } catch (error) {
+              return { label, launched: false, error: String(error) };
+            } finally {
+              await browser?.close().catch(() => undefined);
+            }
+          }
+
+          const bundled = await probe('playwright-bundled-chromium', {});
+          const chrome = await probe('system-google-chrome', { channel: 'chrome' });
+          console.log(JSON.stringify({ bundled, chrome }, null, 2));
+
+          if (!bundled.launched) process.exit(2);
+          JS
+          node probe.mjs | tee "${RUNNER_TEMP}/codec-probe.json"
+
+      - name: Upload codec evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-playback-codec-probe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/codec-probe.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify clean postflight
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
