@@ -43,7 +43,8 @@ permissions:
 env:
   EXPECTED_BRANCH: copilot/MOV-16-vip-authority
   ENCODING_SHA: bf5e6d6f251f6840d17eed2fc68e0d580295437f
-  MOV17_SHA: 9239fcdc731ec05594c75d3ef9961e6cd4d36bbf
+  MOV17_SHA: ffff733d856c8c6dca5a04fdbe84e3a0c5839111
+  MOV17_TREE: 99cbd5b0554e3d5499d9789c500bbff8e8fd82a5
   HARNESS_SHA: fdbbbf31efae88c0815d349297d27474c7f701e7
   HARNESS_BLOB: fde92b7d6b2b4e8f0a0dcf09235b13c4f93a5574
   SUPABASE_TELEMETRY_DISABLED: "1"
@@ -162,6 +163,12 @@ jobs:
           git fetch --no-tags origin $env:MOV17_SHA
           if ($LASTEXITCODE -ne 0) { throw "Unable to fetch exact MOV-17 SHA." }
 
+          $observedTree = (git rev-parse "$($env:MOV17_SHA)^{tree}").Trim()
+          if ($LASTEXITCODE -ne 0) { throw "Unable to resolve exact MOV-17 tree." }
+          if ($observedTree -ne $env:MOV17_TREE) {
+            throw "MOV-17 tree mismatch: expected $env:MOV17_TREE, observed $observedTree."
+          }
+
           New-Item -ItemType Directory -Force -Path $env:RUNNER_TEMP\movie-buff-mov16-windows | Out-Null
 
           $paths = @(
@@ -192,11 +199,21 @@ jobs:
             }
           }
 
+          $migrationBlobs = [ordered]@{}
+          foreach ($path in $paths) {
+            $blob = (git rev-parse "$($env:MOV17_SHA):$path").Trim()
+            if ($LASTEXITCODE -ne 0 -or -not $blob) {
+              throw "Unable to resolve MOV-17 migration blob for $path."
+            }
+            $migrationBlobs[$path] = $blob
+          }
+
           $record = [ordered]@{
             classification = "PASS"
             mov17Sha = $env:MOV17_SHA
-            mov17Tree = (git rev-parse "$($env:MOV17_SHA)^{tree}").Trim()
+            mov17Tree = $observedTree
             migrationCount = $paths.Count
+            migrationBlobs = $migrationBlobs
             requiredCalls = @(
               "open_movie_buff_vip_round_window(uuid,uuid,uuid,timestamptz,uuid[])"
               "finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)"
@@ -204,7 +221,7 @@ jobs:
               "set_movie_buff_vip_activation_phase(uuid,uuid,text)"
             )
           }
-          $record | ConvertTo-Json -Depth 5 |
+          $record | ConvertTo-Json -Depth 8 |
             Out-File -FilePath $env:RUNNER_TEMP\movie-buff-mov16-windows\mov17-compatibility.json -Encoding utf8
 
       - name: Execute Windows digital twin
