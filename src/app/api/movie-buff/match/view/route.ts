@@ -1,6 +1,6 @@
 import "server-only";
 
-import { ensureMovieBuffBoardForRoom } from "@/lib/server/movieBuffBoard";
+import { ensureReconciledMovieBuffBoardForRoom } from "@/lib/server/movieBuffBoardInitialization";
 import {
   isMovieBuffPhaseUuid,
   movieBuffPhaseErrorResponse,
@@ -47,9 +47,10 @@ export async function POST(request: Request) {
     const sourceSha = requireMovieBuffSourceSha();
 
     // Board creation/loading is allowed only after verified active membership.
-    // The authenticated match-view response is the only normal browser source
-    // for both canonical phase state and the persisted rich board preview.
-    const board = await ensureMovieBuffBoardForRoom(body.roomId);
+    // Concurrent clients share one local initialization promise. Cross-instance
+    // unique-key races are reconciled by retrying until the persisted board has
+    // complete categories and tiles, so no client receives a partial board.
+    const board = await ensureReconciledMovieBuffBoardForRoom(body.roomId);
 
     const { data, error } = await caller.rpc(
       "get_movie_buff_match_phase_view",
