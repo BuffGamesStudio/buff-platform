@@ -53,11 +53,11 @@ select is(
 );
 
 select ok(
-  pg_catalog.position(
-    'pg_advisory_xact_lock' in
+  pg_catalog.strpos(
     pg_catalog.pg_get_functiondef(
       'public.ensure_movie_buff_match_phase_state(uuid)'::regprocedure
-    )
+    ),
+    'pg_advisory_xact_lock'
   ) = 0,
   '83100 bootstrap advisory-lock hardening is reversed'
 );
@@ -115,11 +115,11 @@ select is(
 );
 
 select ok(
-  pg_catalog.position(
-    'positive expected phase version is required' in
+  pg_catalog.strpos(
     pg_catalog.pg_get_functiondef(
       'public.select_movie_buff_match_tile(uuid,uuid,bigint,text)'::regprocedure
-    )
+    ),
+    'positive expected phase version is required'
   ) = 0,
   '83100 positive-version hardening is reversed'
 );
