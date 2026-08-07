@@ -1,0 +1,247 @@
+name: Movie Buff repaired round-media exact Chrome V12E
+
+on:
+  push:
+    branches: [validation/movie-buff-round-media-chrome-v12e-20260807]
+    paths:
+      - ".github/workflows/movie-buff-round-media-chrome-v12e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_BRANCH: fix/movie-buff-round-media-concurrency-20260807
+  PRODUCT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
+  PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
+  EXPECTED_BRANCH: validation/movie-buff-round-media-chrome-v12e-20260807
+  V2_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
+  V2_HARNESS_BLOB: 3b08204937f26af9287f303906509dc057b399dc
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-three-client-chrome:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind repaired product and isolate validation delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          test "$(git rev-parse "${PRODUCT_SHA}:scripts/movie-buff-three-client-full-journey-v2.mjs")" = "${V2_HARNESS_BLOB}"
+          test "$(git rev-parse "${PRODUCT_SHA}:.github/validation-archive/movie-buff-three-client-full-journey-v2.yml")" = "${V2_WORKFLOW_BLOB}"
+          python3 - <<'PY'
+          import os, subprocess
+          expected={".github/workflows/movie-buff-round-media-chrome-v12e.yml"}
+          actual=set(subprocess.check_output(
+              ["git","diff","--name-only",f"{os.environ['PRODUCT_SHA']}..HEAD"], text=True
+          ).splitlines())
+          if actual != expected:
+              raise SystemExit(f"unexpected validation delta: {sorted(actual)}")
+          PY
+
+      - name: Provision codec-capable Chrome laboratory
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg postgresql-client
+          command -v google-chrome || command -v google-chrome-stable
+          command -v ffmpeg
+          command -v ffprobe
+          command -v psql
+          test "$(supabase --version)" = "2.111.0"
+
+      - name: Materialize preserved journey with validation-only Chrome corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${RUNNER_TEMP}" <<'PY'
+          from pathlib import Path
+          import json, os, sys
+
+          output=Path(sys.argv[1])
+          archived=Path('.github/validation-archive/movie-buff-three-client-full-journey-v2.yml')
+          lines=archived.read_text(encoding='utf-8').splitlines()
+
+          def extract(step_name):
+              marker=f'- name: {step_name}'
+              start=next(i for i,line in enumerate(lines) if line.strip()==marker)
+              run_line=next(i for i in range(start+1,len(lines)) if lines[i].strip()=='run: |')
+              indent=len(lines[run_line])-len(lines[run_line].lstrip())
+              body=[]
+              for line in lines[run_line+1:]:
+                  if line.strip() and len(line)-len(line.lstrip()) <= indent:
+                      break
+                  body.append(line[indent+2:] if line.strip() else '')
+              return '\n'.join(body)+'\n'
+
+          preflight=extract('Bind exact source and validate harness')
+          execute=extract('Execute disposable exact-SHA browser journey v2')
+          preflight=preflight.replace('${GITHUB_REF_NAME}',os.environ['EXPECTED_BRANCH']).replace('${GITHUB_SHA}',os.environ['GITHUB_SHA'])
+          execute=execute.replace('${GITHUB_REF_NAME}',os.environ['EXPECTED_BRANCH']).replace('${GITHUB_SHA}',os.environ['GITHUB_SHA'])
+          execute=execute.replace(
+              'git status --porcelain >"${raw}/git-status-before-repair.txt"',
+              'git status --porcelain --untracked-files=all >"${raw}/git-status-before-repair.txt"',
+          )
+          old_shape='\n'.join([
+              'allowed={"next-env.d.ts",fixture}', 'unexpected=[]', 'for line in status:',
+              '    path=line[3:].strip()', '    if " -> " in path: path=path.split(" -> ",1)[1]',
+              '    if path not in allowed: unexpected.append(line)',
+              'if unexpected: raise SystemExit("unexpected worktree changes: "+repr(unexpected))',
+          ])
+          new_shape='\n'.join([
+              'allowed={"next-env.d.ts",fixture}', 'allowed_prefixes=("public/media/movie-buff/runtime-generated/",)',
+              'unexpected=[]', 'for line in status:', '    path=line[3:].strip()',
+              '    if " -> " in path: path=path.split(" -> ",1)[1]',
+              '    if path not in allowed and not path.startswith(allowed_prefixes): unexpected.append(line)',
+              'if unexpected: raise SystemExit("unexpected worktree changes: "+repr(unexpected))',
+          ])
+          if old_shape not in execute: raise SystemExit('postflight status anchor missing')
+          execute=execute.replace(old_shape,new_shape)
+          old_cleanup='\n'.join(['rm -f "${fixture}"','git checkout -- next-env.d.ts >/dev/null 2>&1 || true','rmdir public/media/movie-buff public/media 2>/dev/null || true'])
+          new_cleanup='\n'.join(['rm -f "${fixture}"','rm -rf public/media/movie-buff/runtime-generated','git checkout -- next-env.d.ts >/dev/null 2>&1 || true','rmdir public/media/movie-buff public/media 2>/dev/null || true'])
+          if old_cleanup not in execute: raise SystemExit('cleanup anchor missing')
+          execute=execute.replace(old_cleanup,new_cleanup)
+
+          source=Path('scripts/movie-buff-three-client-full-journey-v2.mjs').read_text(encoding='utf-8')
+          replacements=[
+            ('body.includes("Private VIP Selection")','body.toLowerCase().includes("private vip selection")',1),
+            (r'/\/games\/movie-buff\/board\?/',r'/\/games\/movie-buff\/board-preview\?/',2),
+            ('const browser = await chromium.launch({ headless: true, args: ["--autoplay-policy=no-user-gesture-required"] });','const browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--autoplay-policy=no-user-gesture-required"] });',1),
+          ]
+          corrected=source
+          for old,new,count in replacements:
+              if corrected.count(old) != count: raise SystemExit(f'unexpected correction anchor count for {old}: {corrected.count(old)}')
+              corrected=corrected.replace(old,new,count)
+
+          observer_old='\n'.join([
+            '    const enabledTiles = await pages[index].locator("button").filter({ hasText: "Select this scene" }).evaluateAll((buttons) => buttons.filter((button) => !button.disabled).length);',
+            '    const observerLabels = await pages[index].getByText("Waiting for selector", { exact: false }).count();',
+            '    boardUi.push({ player: index + 1, enabledTiles, observerLabels });',
+            '    if (index === selectorIndex) assert.ok(enabledTiles > 0 && observerLabels === 0);',
+            '    else assert.ok(enabledTiles === 0 && observerLabels > 0);',
+          ])
+          observer_new='\n'.join([
+            '    const enabledTiles = await pages[index].locator("button").filter({ hasText: "Select this scene" }).evaluateAll((buttons) => buttons.filter((button) => !button.disabled).length);',
+            '    const observerTileLabels = await pages[index].getByText("Waiting for selector", { exact: false }).count();',
+            '    const observerBanner = await pages[index].getByText("You are watching the shared board. Only the current active human selector can choose a tile.", { exact: true }).count();',
+            '    boardUi.push({ player: index + 1, enabledTiles, observerTileLabels, observerBanner });',
+            '    if (index === selectorIndex) assert.ok(enabledTiles > 0 && observerTileLabels === 0 && observerBanner === 0);',
+            '    else assert.ok(enabledTiles === 0 && observerTileLabels > 0 && observerBanner === 1);',
+          ])
+          if corrected.count(observer_old)!=1: raise SystemExit('observer correction anchor missing')
+          corrected=corrected.replace(observer_old,observer_new,1)
+
+          console_old='\n'.join(['  page.on("console", (message) => {','    if (message.type() === "error") evidence.consoleErrors.push({ player: index + 1, message: redact(message.text()) });','  });'])
+          console_new='\n'.join(['  page.on("console", (message) => {','    if (message.type() !== "error") return;','    const text = redact(message.text());','    evidence.consoleErrors.push({ player: index + 1, message: text, expectedOfflineExercise: offlineExercise[index] && /net::ERR_INTERNET_DISCONNECTED/i.test(text) });','  });'])
+          if corrected.count(console_old)!=1: raise SystemExit('console correction anchor missing')
+          corrected=corrected.replace(console_old,console_new,1)
+          assert_old='  assert.equal(evidence.consoleErrors.length, 0, `Console errors: ${JSON.stringify(evidence.consoleErrors)}`);'
+          assert_new='\n'.join(['  const unexpectedConsoleErrors = evidence.consoleErrors.filter((entry) => !entry.expectedOfflineExercise);','  assert.equal(unexpectedConsoleErrors.length, 0, `Console errors: ${JSON.stringify(unexpectedConsoleErrors)}`);'])
+          if corrected.count(assert_old)!=1: raise SystemExit('console assertion anchor missing')
+          corrected=corrected.replace(assert_old,assert_new,1)
+
+          corrected_path=output/'movie-buff-three-client-v12e-chrome.mjs'
+          corrected_path.write_text(corrected,encoding='utf-8')
+          if 'scripts/movie-buff-three-client-full-journey-v2.mjs' not in execute: raise SystemExit('journey invocation anchor missing')
+          execute=execute.replace('scripts/movie-buff-three-client-full-journey-v2.mjs',str(corrected_path))
+          (output/'v12e-preflight.sh').write_text(preflight,encoding='utf-8')
+          (output/'v12e-execute.sh').write_text(execute,encoding='utf-8')
+          (output/'harness-correction.json').write_text(json.dumps({
+            'classification':'PASS','scope':'validation-harness-only','productSha':os.environ['PRODUCT_SHA'],
+            'productTree':os.environ['PRODUCT_TREE'],'productBytesChanged':False,
+            'browser':'system Google Chrome','journeyContract':'preserved V2/V3 substantive flow with prior reviewed route/observer/console corrections'
+          },indent=2)+'\n',encoding='utf-8')
+          PY
+          bash -n "${RUNNER_TEMP}/v12e-preflight.sh"
+          bash -n "${RUNNER_TEMP}/v12e-execute.sh"
+          node --check "${RUNNER_TEMP}/movie-buff-three-client-v12e-chrome.mjs"
+
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - id: preflight
+        name: Execute preserved exact-SHA preflight
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          bash -x "${RUNNER_TEMP}/v12e-preflight.sh" >"${evidence}/v12e-preflight.log" 2>&1
+          code=$?
+          echo "${code}" >"${evidence}/v12e-preflight.exit"
+          cat "${evidence}/v12e-preflight.log"
+          exit "${code}"
+
+      - id: browser
+        name: Execute exact full three-client Chrome journey
+        if: ${{ steps.preflight.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: bash "${RUNNER_TEMP}/v12e-execute.sh"
+
+      - name: Bind immutable V12E evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          cp "${RUNNER_TEMP}/harness-correction.json" "${evidence}/harness-correction.json"
+          {
+            echo "product_branch=${PRODUCT_BRANCH}"
+            echo "product_sha=${PRODUCT_SHA}"
+            echo "product_tree=${PRODUCT_TREE}"
+            echo "validation_sha=${GITHUB_SHA}"
+            echo "validation_branch=${EXPECTED_BRANCH}"
+            echo "preflight_outcome=${{ steps.preflight.outcome }}"
+            echo "browser_outcome=${{ steps.browser.outcome }}"
+            echo "browser=Google Chrome"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${evidence}/v12e-metadata.txt"
+          (cd "${evidence}" && find . -maxdepth 1 -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum > sha256.txt)
+
+      - name: Upload immutable exact Chrome evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-round-media-v12e-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-three-client-full-v2
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Classify exact journey
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test "${{ steps.preflight.outcome }}" = "success" && test "${{ steps.browser.outcome }}" = "success"; then
+            echo "MOVIE_BUFF_V12E=PASS"
+            exit 0
+          fi
+          echo "MOVIE_BUFF_V12E=FAIL"
+          exit 1
