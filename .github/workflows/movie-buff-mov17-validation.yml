@@ -1,0 +1,166 @@
+name: MOV-17 repository validation evidence
+
+on:
+  push:
+    branches:
+      - validation/MOV-17-encoding-twin-v2
+    paths:
+      - ".github/workflows/movie-buff-mov17-validation.yml"
+      - ".github/workflows/movie-buff-mov17-windows-digital-twin.yml"
+      - "scripts/movie-buff-mov17-windows-digital-twin.ps1"
+      - "scripts/movie-buff-three-client-phase-proof.mjs"
+      - "scripts/movie-buff-reconnect-race-proof.mjs"
+      - "scripts/movie-buff-three-client-phase-evidence-runner.mjs"
+      - "supabase/migrations/20260804083*_movie_buff_*.sql"
+      - "supabase/rollbacks/20260804083*_movie_buff_*.sql"
+      - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+      - "tests/movie-buff-server-phase-machine.test.mjs"
+      - "tests/movie-buff-authoritative-phase-runtime.test.mjs"
+      - "tests/movie-buff-buster-safe-boundary.test.mjs"
+      - "tests/movie-buff-phase-tile-mutation-guard.test.mjs"
+  pull_request:
+    branches:
+      - integration/movie-buff
+    paths:
+      - ".github/workflows/movie-buff-mov17-validation.yml"
+      - ".github/workflows/movie-buff-mov17-windows-digital-twin.yml"
+      - "scripts/movie-buff-mov17-windows-digital-twin.ps1"
+      - "scripts/movie-buff-three-client-phase-proof.mjs"
+      - "scripts/movie-buff-reconnect-race-proof.mjs"
+      - "scripts/movie-buff-three-client-phase-evidence-runner.mjs"
+      - "supabase/migrations/20260804083*_movie_buff_*.sql"
+      - "supabase/rollbacks/20260804083*_movie_buff_*.sql"
+      - "supabase/tests/movie_buff_server_phase_machine_test.sql"
+      - "tests/movie-buff-server-phase-machine.test.mjs"
+      - "tests/movie-buff-authoritative-phase-runtime.test.mjs"
+      - "tests/movie-buff-buster-safe-boundary.test.mjs"
+      - "tests/movie-buff-phase-tile-mutation-guard.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-mov17:
+    name: Validate MOV-17 repository contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_BRANCH: validation/MOV-17-encoding-twin-v2
+
+    steps:
+      - name: Check out exact MOV-17 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify isolated exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test -z "$(git status --porcelain)"
+          node --version
+          npm --version
+
+      - name: Install committed lock without package scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Check proof and wrapper syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/movie-buff-three-client-phase-proof.mjs
+          node --check scripts/movie-buff-reconnect-race-proof.mjs
+          node --check scripts/movie-buff-three-client-phase-evidence-runner.mjs
+
+      - name: Run MOV-17 repository contract tests
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          node --test \
+            tests/movie-buff-server-phase-machine.test.mjs \
+            tests/movie-buff-authoritative-phase-runtime.test.mjs \
+            tests/movie-buff-buster-safe-boundary.test.mjs \
+            tests/movie-buff-phase-tile-mutation-guard.test.mjs \
+            2>&1 | tee "${EVIDENCE_DIR}/repository-contract-tests.tap"
+
+      - name: Run TypeScript
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-evidence
+        run: |
+          set -euo pipefail
+          npx --no-install tsc --noEmit 2>&1 | tee "${EVIDENCE_DIR}/typescript.txt"
+
+      - name: Run production build with localhost-only placeholders
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-evidence
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-build-publishable-key
+          SUPABASE_SERVICE_ROLE_KEY: local-build-service-role-key
+        run: |
+          set -euo pipefail
+          npm run build 2>&1 | tee "${EVIDENCE_DIR}/build.txt"
+
+      - name: Verify no generated repository changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Write and verify portable exact-SHA artifact metadata
+        if: always()
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/mov17-evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          {
+            echo "lane=MOV-17-validation-twin-v2"
+            echo "source_sha=$(git rev-parse HEAD)"
+            echo "source_ref=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "node_version=$(node --version)"
+            echo "npm_version=$(npm --version)"
+            echo "target_kind=repository-static-and-localhost-placeholder-build"
+            echo "database_migration_pgtap_race_behavior=UNKNOWN"
+            echo "browser_behavior=UNKNOWN"
+            echo "workflow_run_id=${GITHUB_RUN_ID}"
+            echo "workflow_run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${EVIDENCE_DIR}/metadata.txt"
+          (
+            cd "${EVIDENCE_DIR}"
+            find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > sha256.txt
+            sha256sum -c sha256.txt
+          )
+
+      - name: Upload exact-SHA repository artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov17-repository-evidence-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/mov17-evidence
+          if-no-files-found: error
+          retention-days: 7
