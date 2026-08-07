@@ -13,6 +13,7 @@ on:
       - "tests/movie-buff-public-matchmaking-contract.test.mjs"
       - "tests/movie-buff-public-matchmaking-handoff.test.mjs"
       - "src/app/games/movie-buff/waiting-room/page.tsx"
+      - "src/app/games/movie-buff/lobby/LobbyClient.tsx"
   pull_request:
     branches:
       - integration/movie-buff
@@ -25,6 +26,7 @@ on:
       - "tests/movie-buff-public-matchmaking-contract.test.mjs"
       - "tests/movie-buff-public-matchmaking-handoff.test.mjs"
       - "src/app/games/movie-buff/waiting-room/page.tsx"
+      - "src/app/games/movie-buff/lobby/LobbyClient.tsx"
   workflow_dispatch:
 
 permissions:
