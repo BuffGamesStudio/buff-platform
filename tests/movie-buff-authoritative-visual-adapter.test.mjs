@@ -274,9 +274,9 @@ test("adapter evidence binds the current reviewed MOV-17 SHA, tree, and client b
     "../.github/workflows/movie-buff-mov18-authoritative-adapter-evidence.yml",
   );
 
-  assert.match(workflow, /9239fcdc731ec05594c75d3ef9961e6cd4d36bbf/);
-  assert.match(workflow, /57a00c385e210717bd705b14d2146908736482fe/);
-  assert.match(workflow, /9830f47460d0ccba0cac161c93ca1f284c1b53e1/);
+  assert.match(workflow, /ffff733d856c8c6dca5a04fdbe84e3a0c5839111/);
+  assert.match(workflow, /99cbd5b0554e3d5499d9789c500bbff8e8fd82a5/);
+  assert.match(workflow, /505ce6445c0b9bff1c80e62807c860d25000e257/);
   assert.match(workflow, /reviewed_mov17_schema_version_field/);
   assert.match(workflow, /contracts\.exit/);
   assert.match(workflow, /typescript\.exit/);
