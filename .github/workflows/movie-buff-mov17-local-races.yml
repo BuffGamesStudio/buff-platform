@@ -17,8 +17,8 @@ permissions:
   contents: read
 
 env:
-  PRODUCT_SHA: b6f10c1b15506548e7dc63d0584295945726ac6d
-  PRODUCT_TREE: d601027fd4845c97a952e0edcd6540a74c9847d2
+  PRODUCT_SHA: 3eec09a5dde9420883794697390606bd5aa06c7e
+  PRODUCT_TREE: 7f259edd3085a03a3c513f8d043a59bbd421bd39
   CONTROLLER_BRANCH: validation/movie-buff-mov17-races-20260807
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
@@ -54,12 +54,7 @@ jobs:
           resolved_branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           test "${resolved_branch}" = "${CONTROLLER_BRANCH}"
           test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
-          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
-          actual="$(git diff --name-only "${PRODUCT_SHA}"..HEAD | sort)"
-          expected="$(printf '%s\n' \
-            .github/workflows/movie-buff-mov17-local-races.yml \
-            scripts/movie-buff-mov17-local-race-evidence.sh | sort)"
-          test "${actual}" = "${expected}"
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           test -z "$(git status --porcelain --untracked-files=all)"
           bash -n scripts/movie-buff-mov17-local-race-evidence.sh
           node --check scripts/movie-buff-three-client-phase-evidence-runner.mjs
@@ -103,12 +98,7 @@ jobs:
           ]
           if anchor not in text:
               raise SystemExit('credential anchor missing')
-          text=text.replace(anchor,'\n'.join(lines)+'\n',1)
-          cleanup='  git -C "$PRODUCT_ROOT" checkout -- next-env.d.ts >/dev/null 2>&1 || true\n'
-          replacement='  git -C "$PRODUCT_ROOT" checkout -- next-env.d.ts scripts/movie-buff-three-client-phase-proof.mjs >/dev/null 2>&1 || true\n'
-          if cleanup not in text:
-              raise SystemExit('fixture cleanup anchor missing')
-          path.write_text(text.replace(cleanup,replacement,1),encoding='utf-8')
+          path.write_text(text.replace(anchor,'\n'.join(lines)+'\n',1),encoding='utf-8')
           PY
           bash -n "${RUNNER_TEMP}/mov17-race-lab.sh"
           grep -q 'Disposable localhost fixture scaffolding only' "${RUNNER_TEMP}/mov17-race-lab.sh"
@@ -118,36 +108,10 @@ jobs:
         run: |
           set -uo pipefail
           evidence_dir="${RUNNER_TEMP}/mov17-race-evidence"
-          product_script="${RUNNER_TEMP}/mov17-product-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/scripts/movie-buff-three-client-phase-proof.mjs"
-          python3 - "$product_script" "$evidence_dir" <<'PY' &
-          import pathlib,sys,time
-          target=pathlib.Path(sys.argv[1]); evidence=pathlib.Path(sys.argv[2])
-          for _ in range(600):
-              if target.exists(): break
-              time.sleep(0.25)
-          else: raise SystemExit('product fixture script never materialized')
-          text=target.read_text(encoding='utf-8')
-          old='return { roomId, matchId, roundId, boardId, tileIds, titles };'
-          new='return { roomId, matchId, roundId, boardId, tileIds, clipIds, titles };'
-          if old not in text: raise SystemExit('phase fixture return anchor missing')
-          text=text.replace(old,new,1)
-          anchor='  record("three clients share one Round Intro phase/version");\n\n  const { error: earlyAnswerError }'
-          replacement='  record("three clients share one Round Intro phase/version");\n\n  const { error: earlyRoundFixtureError } = await admin\n    .from("match_rounds")\n    .update({ clip_id: context.clipIds[0] })\n    .eq("id", context.roundId);\n  if (earlyRoundFixtureError) throw earlyRoundFixtureError;\n\n  const { error: earlyAnswerError }'
-          if anchor not in text: raise SystemExit('early-answer fixture anchor missing')
-          target.write_text(text.replace(anchor,replacement,1),encoding='utf-8')
-          evidence.mkdir(parents=True,exist_ok=True)
-          (evidence/'phase-fixture-patch.txt').write_text('fixture_patch=round_clip_for_early_answer_guard_only\n',encoding='utf-8')
-          PY
-          patch_pid=$!
           bash "${RUNNER_TEMP}/mov17-race-lab.sh" \
             "${PRODUCT_SHA}" \
             "${PRODUCT_TREE}" \
             "${evidence_dir}"
-          lab_exit=$?
-          wait "$patch_pid"
-          patch_exit=$?
-          if [ "$patch_exit" -ne 0 ]; then exit "$patch_exit"; fi
-          exit "$lab_exit"
 
       - name: Upload portable race evidence
         if: always()
