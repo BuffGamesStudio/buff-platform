@@ -22,6 +22,9 @@ RECONNECT_ROLLBACK_PROBE="UNKNOWN"
 RECONNECT_FORWARD_REAPPLY="UNKNOWN"
 ACTIVE_LEAVE_FORWARD_REAPPLY="UNKNOWN"
 ACTIVE_LEAVE_PGTAP_FORWARD="UNKNOWN"
+BOARD_BOUNDARY_FORWARD_REAPPLY="UNKNOWN"
+BOARD_BOUNDARY_PGTAP_FORWARD="UNKNOWN"
+ANSWER_PREFLIGHT_PGTAP_FORWARD="UNKNOWN"
 SERVER_PGTAP_FORWARD="UNKNOWN"
 CLEANUP="UNKNOWN"
 FAILURE_STEP=""
@@ -108,6 +111,9 @@ write_metadata() {
     printf 'reconnect_forward_reapply=%s\n' "$RECONNECT_FORWARD_REAPPLY"
     printf 'active_leave_forward_reapply=%s\n' "$ACTIVE_LEAVE_FORWARD_REAPPLY"
     printf 'active_leave_pgtap_forward=%s\n' "$ACTIVE_LEAVE_PGTAP_FORWARD"
+    printf 'board_boundary_forward_reapply=%s\n' "$BOARD_BOUNDARY_FORWARD_REAPPLY"
+    printf 'board_boundary_pgtap_forward=%s\n' "$BOARD_BOUNDARY_PGTAP_FORWARD"
+    printf 'answer_preflight_pgtap_forward=%s\n' "$ANSWER_PREFLIGHT_PGTAP_FORWARD"
     printf 'server_pgtap_forward=%s\n' "$SERVER_PGTAP_FORWARD"
     printf 'cleanup=%s\n' "$CLEANUP"
     printf 'three_client_race=UNKNOWN\n'
@@ -281,12 +287,12 @@ PY
   if ! run_step migration-ledger psql \
     -h 127.0.0.1 -p 55322 -U postgres -d postgres \
     -v ON_ERROR_STOP=1 -Atc \
-    "select version from supabase_migrations.schema_migrations where version in ('20260804083500','20260804083600','20260804083700') order by version;"; then
+    "select version from supabase_migrations.schema_migrations where version in ('20260804083500','20260804083600','20260804083700','20260804083710','20260804083720') order by version;"; then
     MIGRATION_APPLY="FAIL"
     FAILURE_STEP="migration-ledger"
     return 1
   fi
-  for required_version in 20260804083500 20260804083600 20260804083700; do
+  for required_version in 20260804083500 20260804083600 20260804083700 20260804083710 20260804083720; do
     if ! grep -qx "$required_version" "$EVIDENCE_ROOT/migration-ledger.stdout.txt"; then
       MIGRATION_APPLY="FAIL"
       FAILURE_STEP="migration-ledger-missing-${required_version}"
@@ -400,6 +406,16 @@ PY
   fi
   ACTIVE_LEAVE_FORWARD_REAPPLY="PASS"
 
+  if ! run_step board-boundary-forward-reapply psql \
+    -h 127.0.0.1 -p 55322 -U postgres -d postgres \
+    -v ON_ERROR_STOP=1 \
+    -f "$WORK_ROOT/supabase/migrations/20260804083710_movie_buff_buster_board_boundary_only.sql"; then
+    BOARD_BOUNDARY_FORWARD_REAPPLY="FAIL"
+    FAILURE_STEP="board-boundary-forward-reapply"
+    return 1
+  fi
+  BOARD_BOUNDARY_FORWARD_REAPPLY="PASS"
+
   if ! (
     cd "$WORK_ROOT" &&
       run_step active-leave-pgtap-forward supabase test db \
@@ -410,6 +426,28 @@ PY
     return 1
   fi
   ACTIVE_LEAVE_PGTAP_FORWARD="PASS"
+
+  if ! (
+    cd "$WORK_ROOT" &&
+      run_step board-boundary-pgtap-forward supabase test db \
+        supabase/tests/movie_buff_buster_board_boundary_only_test.sql --local
+  ); then
+    BOARD_BOUNDARY_PGTAP_FORWARD="FAIL"
+    FAILURE_STEP="board-boundary-pgtap-forward"
+    return 1
+  fi
+  BOARD_BOUNDARY_PGTAP_FORWARD="PASS"
+
+  if ! (
+    cd "$WORK_ROOT" &&
+      run_step answer-preflight-pgtap-forward supabase test db \
+        supabase/tests/movie_buff_answer_phase_preflight_test.sql --local
+  ); then
+    ANSWER_PREFLIGHT_PGTAP_FORWARD="FAIL"
+    FAILURE_STEP="answer-preflight-pgtap-forward"
+    return 1
+  fi
+  ANSWER_PREFLIGHT_PGTAP_FORWARD="PASS"
 
   if ! (
     cd "$WORK_ROOT" &&
