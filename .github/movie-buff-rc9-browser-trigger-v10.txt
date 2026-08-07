@@ -1,0 +1,5 @@
+Movie Buff RC-9 exact browser validation trigger v10
+product_sha=1da6af7bc4d69795345f15156b329ac2546e91f0
+product_tree=a4ba792045041e7007d9c2fb9a20151f89443700
+controller_sha=fd05af638a779771e0b5ea57f3697e476956fdb6
+controller_tree=3d7ed8714fa1098d2f582d2c10b06a215ee733c1
