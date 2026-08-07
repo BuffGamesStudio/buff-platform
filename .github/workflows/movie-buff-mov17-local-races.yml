@@ -75,9 +75,8 @@ jobs:
           import pathlib,sys
           path=pathlib.Path(sys.argv[1])
           text=path.read_text(encoding='utf-8')
-
-          credential_anchor='  [[ -n "$publishable_key" && -n "$service_key" ]] || { fail credential-shape; return 1; }\n'
-          grant_lines=[
+          anchor='  [[ -n "$publishable_key" && -n "$service_key" ]] || { fail credential-shape; return 1; }\n'
+          lines=[
             '  [[ -n "$publishable_key" && -n "$service_key" ]] || { fail credential-shape; return 1; }',
             '  local database_url="${DB_URL:-}"',
             '  [[ -n "$database_url" ]] || { fail database-url; return 1; }',
@@ -102,53 +101,53 @@ jobs:
             '    -f "$EVIDENCE_ROOT/local-fixture-grants.sql" \\',
             '    || { fail fixture-grants; return 1; }',
           ]
-          if credential_anchor not in text:
+          if anchor not in text:
               raise SystemExit('credential anchor missing')
-          text=text.replace(credential_anchor,'\n'.join(grant_lines)+'\n',1)
-
-          worktree_anchor='''  [[ "$(git -C "$PRODUCT_ROOT" rev-parse HEAD^{tree})" = "$PRODUCT_TREE" ]] \\
-    || { fail product-worktree-tree; return 1; }\n'''
-          fixture_lines=[
-            worktree_anchor.rstrip('\n'),
-            '',
-            '  python3 - "$PRODUCT_ROOT/scripts/movie-buff-three-client-phase-proof.mjs" <<\'PY\'',
-            'import pathlib,sys',
-            'p=pathlib.Path(sys.argv[1]); text=p.read_text(encoding="utf-8")',
-            'old_return="return { roomId, matchId, roundId, boardId, tileIds, titles };"',
-            'new_return="return { roomId, matchId, roundId, boardId, tileIds, clipIds, titles };"',
-            'if old_return not in text: raise SystemExit("phase fixture return anchor missing")',
-            'text=text.replace(old_return,new_return,1)',
-            'anchor=\'  record("three clients share one Round Intro phase/version");\\n\\n  const { error: earlyAnswerError }\'',
-            'replacement=\'  record("three clients share one Round Intro phase/version");\\n\\n  const { error: earlyRoundFixtureError } = await admin\\n    .from("match_rounds")\\n    .update({ clip_id: context.clipIds[0] })\\n    .eq("id", context.roundId);\\n  if (earlyRoundFixtureError) throw earlyRoundFixtureError;\\n\\n  const { error: earlyAnswerError }\'',
-            'if anchor not in text: raise SystemExit("early-answer fixture anchor missing")',
-            'p.write_text(text.replace(anchor,replacement,1),encoding="utf-8")',
-            'PY',
-            '  printf \'fixture_patch=round_clip_for_early_answer_guard_only\\n\' >"$EVIDENCE_ROOT/phase-fixture-patch.txt"',
-          ]
-          if worktree_anchor not in text:
-              raise SystemExit('worktree anchor missing')
-          text=text.replace(worktree_anchor,'\n'.join(fixture_lines)+'\n',1)
-
-          cleanup_anchor='  git -C "$PRODUCT_ROOT" checkout -- next-env.d.ts >/dev/null 2>&1 || true\n'
-          cleanup_replacement='  git -C "$PRODUCT_ROOT" checkout -- next-env.d.ts scripts/movie-buff-three-client-phase-proof.mjs >/dev/null 2>&1 || true\n'
-          if cleanup_anchor not in text:
+          text=text.replace(anchor,'\n'.join(lines)+'\n',1)
+          cleanup='  git -C "$PRODUCT_ROOT" checkout -- next-env.d.ts >/dev/null 2>&1 || true\n'
+          replacement='  git -C "$PRODUCT_ROOT" checkout -- next-env.d.ts scripts/movie-buff-three-client-phase-proof.mjs >/dev/null 2>&1 || true\n'
+          if cleanup not in text:
               raise SystemExit('fixture cleanup anchor missing')
-          text=text.replace(cleanup_anchor,cleanup_replacement,1)
-
-          path.write_text(text,encoding='utf-8')
+          path.write_text(text.replace(cleanup,replacement,1),encoding='utf-8')
           PY
           bash -n "${RUNNER_TEMP}/mov17-race-lab.sh"
           grep -q 'Disposable localhost fixture scaffolding only' "${RUNNER_TEMP}/mov17-race-lab.sh"
-          grep -q 'phase fixture return anchor missing' "${RUNNER_TEMP}/mov17-race-lab.sh"
 
       - name: Execute disposable exact-product race laboratory
         shell: bash
         run: |
+          set -uo pipefail
           evidence_dir="${RUNNER_TEMP}/mov17-race-evidence"
+          product_script="${RUNNER_TEMP}/mov17-product-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/scripts/movie-buff-three-client-phase-proof.mjs"
+          python3 - "$product_script" "$evidence_dir" <<'PY' &
+          import pathlib,sys,time
+          target=pathlib.Path(sys.argv[1]); evidence=pathlib.Path(sys.argv[2])
+          for _ in range(600):
+              if target.exists(): break
+              time.sleep(0.25)
+          else: raise SystemExit('product fixture script never materialized')
+          text=target.read_text(encoding='utf-8')
+          old='return { roomId, matchId, roundId, boardId, tileIds, titles };'
+          new='return { roomId, matchId, roundId, boardId, tileIds, clipIds, titles };'
+          if old not in text: raise SystemExit('phase fixture return anchor missing')
+          text=text.replace(old,new,1)
+          anchor='  record("three clients share one Round Intro phase/version");\n\n  const { error: earlyAnswerError }'
+          replacement='  record("three clients share one Round Intro phase/version");\n\n  const { error: earlyRoundFixtureError } = await admin\n    .from("match_rounds")\n    .update({ clip_id: context.clipIds[0] })\n    .eq("id", context.roundId);\n  if (earlyRoundFixtureError) throw earlyRoundFixtureError;\n\n  const { error: earlyAnswerError }'
+          if anchor not in text: raise SystemExit('early-answer fixture anchor missing')
+          target.write_text(text.replace(anchor,replacement,1),encoding='utf-8')
+          evidence.mkdir(parents=True,exist_ok=True)
+          (evidence/'phase-fixture-patch.txt').write_text('fixture_patch=round_clip_for_early_answer_guard_only\n',encoding='utf-8')
+          PY
+          patch_pid=$!
           bash "${RUNNER_TEMP}/mov17-race-lab.sh" \
             "${PRODUCT_SHA}" \
             "${PRODUCT_TREE}" \
             "${evidence_dir}"
+          lab_exit=$?
+          wait "$patch_pid"
+          patch_exit=$?
+          if [ "$patch_exit" -ne 0 ]; then exit "$patch_exit"; fi
+          exit "$lab_exit"
 
       - name: Upload portable race evidence
         if: always()
