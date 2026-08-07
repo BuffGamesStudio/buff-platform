@@ -1,0 +1,158 @@
+name: Movie Buff staging security independent clearance
+
+on:
+  push:
+    branches: [security/movie-buff-staging-independent-clearance-v1]
+    paths:
+      - ".github/workflows/movie-buff-staging-security-clearance.yml"
+      - "scripts/movie-buff-staging-security-clearance-v2.sh"
+      - "supabase/migrations/20260806214500_movie_buff_staging_security_independent_clearance.sql"
+      - "supabase/rollbacks/20260806214500_movie_buff_staging_security_independent_clearance.rollback.sql"
+      - "supabase/tests/movie_buff_staging_security_independent_clearance_test.sql"
+  pull_request:
+    branches: [security/movie-buff-rls-acl-staging]
+    paths:
+      - ".github/workflows/movie-buff-staging-security-clearance.yml"
+      - "scripts/movie-buff-staging-security-clearance-v2.sh"
+      - "supabase/migrations/20260806214500_movie_buff_staging_security_independent_clearance.sql"
+      - "supabase/rollbacks/20260806214500_movie_buff_staging_security_independent_clearance.rollback.sql"
+      - "supabase/tests/movie_buff_staging_security_independent_clearance_test.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_BRANCH: security/movie-buff-staging-independent-clearance-v1
+  PRODUCT_SHA: b975c7ca13d39675ea2d2294df2869c9b5c73b4f
+  PRODUCT_TREE: 3abebd91a58d640d1b08049b6ee429c26c452312
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-product-clearance:
+    name: Exact-product RPC, RLS, cross-room, rollback and reapply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Check out exact clearance source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind exact source and prepare fail-closed execution copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          test "${resolved_ref}" = "${EXPECTED_BRANCH}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          echo "SOURCE_TREE=$(git rev-parse HEAD^{tree})" >> "${GITHUB_ENV}"
+          git fetch --no-tags --depth=1 origin "${PRODUCT_SHA}"
+          test "$(git rev-parse ${PRODUCT_SHA}^{tree})" = "${PRODUCT_TREE}"
+
+          checked_in=scripts/movie-buff-staging-security-clearance-v2.sh
+          executable="${RUNNER_TEMP}/movie-buff-staging-security-clearance-v2-exec.sh"
+          bash -n "${checked_in}"
+          python3 - "${checked_in}" "${executable}" <<'PY'
+          from pathlib import Path
+          import sys
+          source=Path(sys.argv[1]).read_text(encoding='utf-8')
+          old='''if ! main; then
+            [[ -n "${FAILURE_STEP}" ]] || FAILURE_STEP=unclassified
+            exit 1
+          fi
+          '''
+          if source.count(old) != 1:
+              raise SystemExit('expected exactly one wrapper control-flow tail')
+          Path(sys.argv[2]).write_text(source.replace(old,'main\n'),encoding='utf-8')
+          PY
+          chmod +x "${executable}"
+          bash -n "${executable}"
+          echo "EXECUTABLE_WRAPPER=${executable}" >> "${GITHUB_ENV}"
+          sha256sum "${checked_in}" "${executable}"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          for path in [
+              Path('scripts/movie-buff-staging-security-clearance-v2.sh'),
+              Path('supabase/migrations/20260806214500_movie_buff_staging_security_independent_clearance.sql'),
+              Path('supabase/rollbacks/20260806214500_movie_buff_staging_security_independent_clearance.rollback.sql'),
+              Path('supabase/tests/movie_buff_staging_security_independent_clearance_test.sql'),
+          ]:
+              data=path.read_bytes()
+              if data.startswith(b'\xef\xbb\xbf'): raise SystemExit(f'UTF-8 BOM refused: {path}')
+              data.decode('utf-8')
+              if b'\r\n' in data: raise SystemExit(f'CRLF refused: {path}')
+          PY
+          test "$(supabase --version)" = "2.111.0"
+          docker --version
+          psql --version
+
+      - name: Exercise fail-closed preflight paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          valid="${RUNNER_TEMP}/clearance-v2-valid"
+          bash "${EXECUTABLE_WRAPPER}" "${EXPECTED_SHA}" "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${valid}" preflight
+
+          wrong_sha="${RUNNER_TEMP}/clearance-v2-wrong-sha"
+          if bash "${EXECUTABLE_WRAPPER}" 0000000000000000000000000000000000000000 "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${wrong_sha}" preflight; then
+            echo "wrong-SHA preflight unexpectedly succeeded" >&2; exit 1
+          fi
+          grep -q '^failure_step=exact-source-sha$' "${wrong_sha}/metadata.txt"
+
+          wrong_tree="${RUNNER_TEMP}/clearance-v2-wrong-tree"
+          if bash "${EXECUTABLE_WRAPPER}" "${EXPECTED_SHA}" 0000000000000000000000000000000000000000 "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${wrong_tree}" preflight; then
+            echo "wrong-tree preflight unexpectedly succeeded" >&2; exit 1
+          fi
+          grep -q '^failure_step=exact-source-tree$' "${wrong_tree}/metadata.txt"
+
+          touch .clearance-dirty-negative-path
+          dirty="${RUNNER_TEMP}/clearance-v2-dirty"
+          if bash "${EXECUTABLE_WRAPPER}" "${EXPECTED_SHA}" "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" "${dirty}" preflight; then
+            rm -f .clearance-dirty-negative-path
+            echo "dirty-worktree preflight unexpectedly succeeded" >&2; exit 1
+          fi
+          rm -f .clearance-dirty-negative-path
+          grep -q '^failure_step=dirty-source$' "${dirty}/metadata.txt"
+          test -z "$(git status --porcelain)"
+
+      - name: Execute disposable exact-product clearance proof
+        shell: bash
+        run: |
+          evidence="${RUNNER_TEMP}/movie-buff-staging-security-clearance-evidence"
+          bash "${EXECUTABLE_WRAPPER}" \
+            "${EXPECTED_SHA}" "${SOURCE_TREE}" "${PRODUCT_SHA}" "${PRODUCT_TREE}" \
+            "${evidence}" full
+          sha256sum "${EXECUTABLE_WRAPPER}" >"${evidence}/executed-wrapper.sha256.txt"
+          (cd "${evidence}" && find . -maxdepth 1 -type f ! -name sha256.txt -print0 | sort -z | xargs -0 sha256sum >sha256.txt && sha256sum -c sha256.txt)
+
+      - name: Upload exact clearance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-staging-security-clearance-${{ env.EXPECTED_SHA }}
+          path: ${{ runner.temp }}/movie-buff-staging-security-clearance-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
