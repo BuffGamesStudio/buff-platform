@@ -1,0 +1,6 @@
+validation-only trigger
+product_sha=51e22cdf383b037607a874da410f088bbfeab890
+product_tree=6ab306f913f42f5448a9c842849fe30295fb769d
+controller_sha=19a20b9f6409d4e095738bc4f3dbcccb934f10ea
+journey_contract=V3 substantive requirements preserved
+browser=system-google-chrome
