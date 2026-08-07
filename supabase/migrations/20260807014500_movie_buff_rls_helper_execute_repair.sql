@@ -1,7 +1,7 @@
 -- Restore the least-privilege EXECUTE contract required by Movie Buff RLS
 -- policies after the catalog-driven function security finalizer.
 --
--- Additive and transaction-wrapped. This migration is intended for local and
+-- This candidate migration is transaction-wrapped and intended for local and
 -- isolated-staging proof only until the exact candidate completes independent
 -- validation. It does not authorize hosted or production execution.
 
@@ -54,6 +54,7 @@ declare
   v_owner text;
   v_config text[];
   v_security_definer boolean;
+  v_public_execute boolean;
 begin
   foreach v_identity in array array[
     'public.is_movie_buff_room_member(uuid)',
@@ -65,18 +66,30 @@ begin
     select
       pg_catalog.pg_get_userbyid(p.proowner),
       p.proconfig,
-      p.prosecdef
+      p.prosecdef,
+      exists (
+        select 1
+        from pg_catalog.aclexplode(
+          coalesce(
+            p.proacl,
+            pg_catalog.acldefault('f', p.proowner)
+          )
+        ) as privilege
+        where privilege.grantee = 0
+          and privilege.privilege_type = 'EXECUTE'
+      )
     into
       v_owner,
       v_config,
-      v_security_definer
+      v_security_definer,
+      v_public_execute
     from pg_catalog.pg_proc as p
     where p.oid = v_oid;
 
     if v_owner is distinct from 'postgres'
        or v_config is distinct from array['search_path=pg_catalog, public']::text[]
        or not coalesce(v_security_definer, false)
-       or pg_catalog.has_function_privilege('public', v_oid, 'execute')
+       or coalesce(v_public_execute, false)
        or pg_catalog.has_function_privilege('anon', v_oid, 'execute')
        or not pg_catalog.has_function_privilege('authenticated', v_oid, 'execute')
        or not pg_catalog.has_function_privilege('service_role', v_oid, 'execute') then
