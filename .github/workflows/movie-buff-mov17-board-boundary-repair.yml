@@ -1,0 +1,218 @@
+name: MOV-17 Buster board-boundary repair proof
+
+on:
+  push:
+    branches:
+      - copilot/MOV-17-shared-phase-machine
+    paths:
+      - ".github/workflows/movie-buff-mov17-board-boundary-repair.yml"
+      - "scripts/movie-buff-redact-evidence.py"
+      - "scripts/movie-buff-redact-evidence-test.py"
+      - "supabase/migrations/20260804083710_movie_buff_buster_board_boundary_only.sql"
+      - "supabase/rollbacks/20260804083710_movie_buff_buster_board_boundary_only.rollback.sql"
+      - "supabase/tests/movie_buff_buster_board_boundary_only_test.sql"
+      - "tests/movie-buff-buster-board-boundary-only.test.mjs"
+  pull_request:
+    branches:
+      - integration/movie-buff
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: local-placeholder-publishable-key
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: local-placeholder-anon-key
+  SUPABASE_SERVICE_ROLE_KEY: local-placeholder-service-role-key
+  NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  linux-source-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Exact identity and clean preflight
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          git diff --check
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Focused contracts
+        run: |
+          node --test \
+            tests/movie-buff-buster-board-boundary-only.test.mjs \
+            tests/movie-buff-buster-safe-boundary.test.mjs \
+            tests/movie-buff-authoritative-phase-runtime.test.mjs \
+            tests/movie-buff-server-phase-machine.test.mjs
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - name: Evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/mov17-board-boundary-linux"
+          mkdir -p "$evidence"
+          printf 'sha=%s\ntree=%s\nnode=%s\nnpm=%s\n' \
+            "$(git rev-parse HEAD)" "$(git rev-parse HEAD^{tree})" \
+            "$(node --version)" "$(npm --version)" >"$evidence/identity.txt"
+          git status --porcelain --untracked-files=all >"$evidence/git-status.txt"
+          sha256sum \
+            scripts/movie-buff-redact-evidence.py \
+            scripts/movie-buff-redact-evidence-test.py \
+            supabase/migrations/20260804083710_movie_buff_buster_board_boundary_only.sql \
+            supabase/rollbacks/20260804083710_movie_buff_buster_board_boundary_only.rollback.sql \
+            supabase/tests/movie_buff_buster_board_boundary_only_test.sql \
+            tests/movie-buff-buster-board-boundary-only.test.mjs \
+            >"$evidence/source-sha256.txt"
+          (cd "$evidence" && sha256sum identity.txt git-status.txt source-sha256.txt >sha256.txt && sha256sum -c sha256.txt)
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov17-board-boundary-linux-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/mov17-board-boundary-linux
+          if-no-files-found: error
+          retention-days: 14
+      - name: Clean postflight
+        if: always()
+        run: test -z "$(git status --porcelain --untracked-files=all)"
+
+  windows-source-build:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Exact identity and clean preflight
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'SHA mismatch' }
+          if ((git status --porcelain --untracked-files=all)) { throw 'Dirty preflight' }
+          git diff --check
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Focused contracts
+        run: node --test tests/movie-buff-buster-board-boundary-only.test.mjs tests/movie-buff-buster-safe-boundary.test.mjs tests/movie-buff-authoritative-phase-runtime.test.mjs tests/movie-buff-server-phase-machine.test.mjs
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - name: Clean postflight
+        if: always()
+        shell: pwsh
+        run: |
+          if ((git status --porcelain --untracked-files=all)) { throw 'Dirty postflight' }
+
+  database-rollback-reapply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Execute disposable database proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/mov17-board-boundary-db"
+          stack="${RUNNER_TEMP}/mov17-board-boundary-stack"
+          mkdir -p "$evidence" "$stack"
+          cp -a supabase "$stack/supabase"
+          python3 - "$stack/supabase/config.toml" "mov17-board-boundary-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" <<'PY'
+          import pathlib,re,sys
+          p=pathlib.Path(sys.argv[1]); text=p.read_text(encoding='utf-8')
+          text,n=re.subn(r'(?m)^project_id\s*=\s*"[^"]+"\s*$',f'project_id = "{sys.argv[2]}"',text,count=1)
+          text,m=re.subn(r'(?ms)(^\[db\.seed\]\s*.*?^enabled\s*=\s*)true(\s*$)',r'\1false\2',text,count=1)
+          if n != 1 or m != 1: raise SystemExit('ephemeral config rewrite failed')
+          p.write_text(text,encoding='utf-8')
+          PY
+          finalize() {
+            status=$?
+            trap - EXIT
+            set +e
+            (cd "$stack" && supabase stop --no-backup) >"$evidence/cleanup.txt" 2>&1
+            cleanup_status=$?
+            rm -rf "$stack"
+            unset DB_URL ANON_KEY SERVICE_ROLE_KEY PGPASSWORD
+            rm -f "$evidence/sha256.txt"
+            for evidence_file in "$evidence"/*; do
+              [[ -f "$evidence_file" ]] || continue
+              python3 scripts/movie-buff-redact-evidence.py \
+                "$evidence_file" "${evidence_file}.redacted"
+              redact_status=$?
+              if [[ "$redact_status" -ne 0 ]]; then status=1; fi
+              if [[ "$redact_status" -eq 0 ]]; then mv "${evidence_file}.redacted" "$evidence_file"; fi
+            done
+            if grep -R -E \
+              'eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|sb_(publishable|secret|anon|service[_-]?role)_[A-Za-z0-9._-]+' \
+              "$evidence"; then
+              status=1
+            fi
+            if grep -R -E 'postgres(ql)?://[^[:space:]]+' "$evidence" \
+              | grep -v -F 'postgresql://[REDACTED_LOCAL_DB_URL]'; then
+              status=1
+            fi
+            (
+              cd "$evidence" || exit 1
+              find . -maxdepth 1 -type f ! -name sha256.txt -print0 \
+                | sort -z | xargs -0 sha256sum >sha256.txt
+              sha256sum -c sha256.txt
+            )
+            hash_status=$?
+            if [[ "$cleanup_status" -ne 0 || "$hash_status" -ne 0 ]]; then status=1; fi
+            exit "$status"
+          }
+          trap finalize EXIT
+          (cd "$stack" && supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor) >"$evidence/start.txt" 2>&1
+          (cd "$stack" && supabase db reset --local) >"$evidence/reset.txt" 2>&1
+          status_env="$(cd "$stack" && supabase status -o env)"
+          eval "$status_env"
+          database_url="${DB_URL:?DB_URL unavailable}"
+          (cd "$stack" && supabase test db supabase/tests/movie_buff_buster_board_boundary_only_test.sql --local) >"$evidence/pgtap-before.txt" 2>&1
+          psql "$database_url" -X -v ON_ERROR_STOP=1 \
+            -f "$stack/supabase/rollbacks/20260804083710_movie_buff_buster_board_boundary_only.rollback.sql" \
+            >"$evidence/rollback.txt" 2>&1
+          psql "$database_url" -X -Atq -v ON_ERROR_STOP=1 \
+            -c "select json_build_object('guard',to_regprocedure('public.movie_buff_enforce_buster_board_boundary()') is not null,'legacy_ready',strpos(pg_get_functiondef('public.movie_buff_activate_ready_busters(uuid)'::regprocedure),'''round_intro''')>0)" \
+            >"$evidence/rollback-probe.json"
+          grep -Eq '"guard"[[:space:]]*:[[:space:]]*false' "$evidence/rollback-probe.json"
+          grep -Eq '"legacy_ready"[[:space:]]*:[[:space:]]*true' "$evidence/rollback-probe.json"
+          psql "$database_url" -X -v ON_ERROR_STOP=1 \
+            -f "$stack/supabase/migrations/20260804083710_movie_buff_buster_board_boundary_only.sql" \
+            >"$evidence/reapply.txt" 2>&1
+          (cd "$stack" && supabase test db supabase/tests/movie_buff_buster_board_boundary_only_test.sql --local) >"$evidence/pgtap-after.txt" 2>&1
+          (cd "$stack" && supabase test db supabase/tests/movie_buff_active_leave_and_buster_boundary_test.sql --local) >"$evidence/active-leave-after.txt" 2>&1
+          printf 'sha=%s\ntree=%s\nsupabase=%s\n' "$(git rev-parse HEAD)" "$(git rev-parse HEAD^{tree})" "$(supabase --version)" >"$evidence/identity.txt"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mov17-board-boundary-db-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/mov17-board-boundary-db
+          if-no-files-found: error
+          retention-days: 14
+      - name: Clean postflight
+        if: always()
+        run: test -z "$(git status --porcelain --untracked-files=all)"

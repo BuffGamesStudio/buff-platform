@@ -10,8 +10,20 @@ const repair = fs.readFileSync(
   "supabase/migrations/20260804083500_movie_buff_reconnect_buster_boundary_repair.sql",
   "utf8",
 );
+const boardBoundary = fs.readFileSync(
+  "supabase/migrations/20260804083710_movie_buff_buster_board_boundary_only.sql",
+  "utf8",
+);
+const answerPreflight = fs.readFileSync(
+  "supabase/migrations/20260804083720_movie_buff_answer_phase_preflight.sql",
+  "utf8",
+);
 const rollback = fs.readFileSync(
   "supabase/rollbacks/20260804083500_movie_buff_reconnect_buster_boundary_repair.rollback.sql",
+  "utf8",
+);
+const answerPreflightRollback = fs.readFileSync(
+  "supabase/rollbacks/20260804083720_movie_buff_answer_phase_preflight.rollback.sql",
   "utf8",
 );
 const alignment = fs.readFileSync(
@@ -74,6 +86,37 @@ test("Buster activates only at the authoritative board-select boundary", () => {
   assert.match(activation, /buster_activated_at_board_select/);
 });
 
+test("final boundary migration blocks Buster outside board_select", () => {
+  assert.match(boardBoundary, /movie_buff_enforce_buster_board_boundary/);
+  assert.match(boardBoundary, /v_phase is distinct from 'board_select'/);
+  assert.match(boardBoundary, /new\.controller_type := 'human'/);
+  assert.match(boardBoundary, /new\.controller_player_id := old\.controller_player_id/);
+  assert.match(boardBoundary, /v_state\.phase <> 'board_select'/);
+  assert.match(boardBoundary, /new\.phase <> 'board_select'/);
+  assert.doesNotMatch(
+    boardBoundary,
+    /phase not in \('board_select', 'results', 'round_intro'\)/,
+  );
+});
+
+test("answer RPC rejects non-answer phases before legacy round resolution", () => {
+  assert.match(
+    answerPreflight,
+    /alter function public\.submit_movie_buff_answer\(uuid,text\)[\s\S]*rename to submit_movie_buff_answer_legacy_unchecked/,
+  );
+  assert.match(answerPreflight, /v_state\.phase <> 'answer'/);
+  assert.match(answerPreflight, /Movie Buff answer window is not open/);
+  assert.match(
+    answerPreflight,
+    /submit_movie_buff_answer_legacy_unchecked\([\s\S]*p_room_id,[\s\S]*p_submitted_answer/,
+  );
+  assert.match(answerPreflight, /set search_path = pg_catalog/);
+  assert.match(
+    answerPreflight,
+    /revoke all on function public\.submit_movie_buff_answer_legacy_unchecked\(uuid,text\)[\s\S]*authenticated/,
+  );
+});
+
 test("repair rollback restores only the immediately preceding function contracts", () => {
   assert.match(rollback, /create or replace function public\.touch_movie_buff_match_participant/);
   assert.match(rollback, /create or replace function public\.movie_buff_activate_ready_busters/);
@@ -82,6 +125,19 @@ test("repair rollback restores only the immediately preceding function contracts
     /'round_intro', 'vip_lock', 'board_select', 'results'/,
   );
   assert.doesNotMatch(rollback, /drop table|truncate|delete from/i);
+
+  assert.match(
+    answerPreflightRollback,
+    /allow_answer_phase_preflight_rollback=on/,
+  );
+  assert.match(
+    answerPreflightRollback,
+    /rename to submit_movie_buff_answer/,
+  );
+  assert.doesNotMatch(
+    answerPreflightRollback,
+    /drop table|truncate|delete from/i,
+  );
 });
 
 test("canonical view applies ready replacements after authoritative advancement", () => {
@@ -120,4 +176,8 @@ test("only the evidence wrapper can make an exact-SHA proof claim", () => {
   assert.match(evidenceRunner, /stderrSha256/);
   assert.match(evidenceRunner, /profilesRestored/);
   assert.match(evidenceRunner, /classification:/);
+  assert.match(
+    evidenceRunner,
+    /20260804083720_movie_buff_answer_phase_preflight\.sql/,
+  );
 });
