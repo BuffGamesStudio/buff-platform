@@ -1,3 +1,4 @@
+# Exact-SHA validation refresh after owner-repair cleanup.
 name: MOV-15 admission handoff validation
 
 on:
