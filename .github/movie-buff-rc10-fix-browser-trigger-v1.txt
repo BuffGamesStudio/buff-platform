@@ -1,0 +1,4 @@
+Movie Buff RC-9 board-bootstrap candidate-fix exact validation trigger v1.
+Product: 0a9c27bcf58dcbd7ba3d855feed78b9dd2068f53
+Controller parent: 5e9d9d07868de43e588d4c010e8ed8fe86a3c0fd
+Validation-only. Do not merge or deploy.
