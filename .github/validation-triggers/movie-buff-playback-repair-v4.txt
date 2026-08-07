@@ -1,0 +1,5 @@
+validation-only trigger
+product_sha=f09df0238f21fcdb80e05f07678523dfc85350d1
+product_tree=0dd070df04db507bb769ce0f3df8dde00f82f483
+controller_sha=6bd970edf0bafa943b3216c37061e77db88d1246
+journey_contract=V3 unchanged
