@@ -1,0 +1,171 @@
+name: Movie Buff RC-1 recovery rollback and reapply v1
+
+on:
+  pull_request:
+    branches: [operations/movie-buff-rc1-recovery-seat2-20260807]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
+  PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
+  FORWARD: supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql
+  ROLLBACK: supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql
+  ARTIFACT_NAME: movie-buff-rc1-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  recovery-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Verify exact RC ancestry and recovery-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          python3 - <<'PY'
+          import os,subprocess
+          actual=set(subprocess.check_output(['git','diff','--name-only',f"{os.environ['PRODUCT_SHA']}..HEAD"],text=True).splitlines())
+          expected={
+            '.github/workflows/movie-buff-rc1-recovery-v1.yml',
+            'supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql',
+          }
+          if actual != expected:
+              raise SystemExit(f'unexpected recovery delta: {sorted(actual)}')
+          PY
+          git diff --check
+
+      - name: Start disposable Supabase and reset exact RC migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/rc1-recovery"
+          supabase start >"${RUNNER_TEMP}/rc1-recovery/supabase-start.log" 2>&1
+          supabase db reset >"${RUNNER_TEMP}/rc1-recovery/db-reset.log" 2>&1
+          supabase status -o env >"${RUNNER_TEMP}/rc1-recovery/status.env"
+          python3 - "${RUNNER_TEMP}/rc1-recovery/status.env" "${RUNNER_TEMP}/rc1-recovery/db-url.txt" <<'PY'
+          import pathlib,re,sys
+          text=pathlib.Path(sys.argv[1]).read_text()
+          m=re.search(r'^DB_URL=(?:"([^"]+)"|(\S+))$',text,re.M)
+          if not m: raise SystemExit('DB_URL missing from local Supabase status')
+          pathlib.Path(sys.argv[2]).write_text((m.group(1) or m.group(2))+'\n')
+          PY
+
+      - name: Capture forward state, rollback, verify containment, and reapply
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/rc1-recovery"
+          DB_URL="$(cat "${evidence}/db-url.txt")"
+          cat >"${evidence}/helper-state.sql" <<'SQL'
+          \pset format unaligned
+          \pset tuples_only on
+          \pset fieldsep '|'
+          select p.oid::regprocedure::text,
+                 pg_get_userbyid(p.proowner),
+                 p.prosecdef,
+                 array_to_string(p.proconfig,','),
+                 has_function_privilege('public',p.oid,'execute'),
+                 has_function_privilege('anon',p.oid,'execute'),
+                 has_function_privilege('authenticated',p.oid,'execute'),
+                 has_function_privilege('service_role',p.oid,'execute')
+          from pg_proc p
+          where p.oid in (
+            'public.is_movie_buff_room_member(uuid)'::regprocedure,
+            'public.is_movie_buff_match_member(uuid)'::regprocedure,
+            'public.is_movie_buff_round_member(uuid)'::regprocedure
+          )
+          order by 1;
+          SQL
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -Atc "select version from supabase_migrations.schema_migrations where version='20260807014500';" | tee "${evidence}/ledger-forward.txt"
+          test "$(cat "${evidence}/ledger-forward.txt")" = "20260807014500"
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${evidence}/helper-state.sql" >"${evidence}/forward-before.tsv"
+          grep -q '|t|search_path=pg_catalog, public|f|f|t|t$' "${evidence}/forward-before.tsv"
+
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${ROLLBACK}" >"${evidence}/rollback.log" 2>&1
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${evidence}/helper-state.sql" >"${evidence}/rollback-state.tsv"
+          test "$(grep -c '|t|search_path=pg_catalog, public|f|f|f|t$' "${evidence}/rollback-state.tsv")" = "3"
+
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${FORWARD}" >"${evidence}/forward-reapply.log" 2>&1
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${evidence}/helper-state.sql" >"${evidence}/forward-after.tsv"
+          diff -u "${evidence}/forward-before.tsv" "${evidence}/forward-after.tsv" >"${evidence}/catalog-equivalence.diff"
+          test ! -s "${evidence}/catalog-equivalence.diff"
+
+      - name: Record recovery manifest and hashes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/rc1-recovery"
+          rm -f "${evidence}/status.env" "${evidence}/db-url.txt"
+          python3 - "${evidence}/recovery-manifest.json" <<'PY'
+          import json,pathlib
+          pathlib.Path(__import__('sys').argv[1]).write_text(json.dumps({
+            'classification':'PASS',
+            'repository':'BuffGamesStudio/buff-platform',
+            'productSha':'81d3618ce7be28a6ce81363a8bda524cd18ece15',
+            'productTree':'511c3501bd6a73f7556f636bc9e12ef30935d58d',
+            'scope':'disposable-localhost rollback containment and forward reapply',
+            'forward':'supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql',
+            'rollback':'supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql',
+            'dataDeletion':False,
+            'pitrInvocation':'NOT APPLICABLE',
+            'hostedMutation':'NOT APPLICABLE',
+            'productionBackupIdentity':'UNKNOWN',
+          },indent=2)+'\n')
+          PY
+          sha256sum "${FORWARD}" "${ROLLBACK}" >"${evidence}/source-sha256.txt"
+          (cd "${evidence}" && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
+
+      - name: Stop disposable Supabase
+        if: always()
+        shell: bash
+        run: supabase stop --no-backup || true
+
+      - name: Upload recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/rc1-recovery
+          if-no-files-found: error
+          retention-days: 30
+
+  independent-recovery-inspection:
+    needs: recovery-proof
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: evidence
+      - name: Verify recovery artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd evidence
+          sha256sum -c SHA256SUMS.txt
+          test ! -s catalog-equivalence.diff
+          test "$(grep -c '|t|search_path=pg_catalog, public|f|f|f|t$' rollback-state.tsv)" = "3"
+          python3 - <<'PY'
+          import json
+          m=json.load(open('recovery-manifest.json'))
+          assert m['classification']=='PASS'
+          assert m['productSha']=='81d3618ce7be28a6ce81363a8bda524cd18ece15'
+          assert m['productTree']=='511c3501bd6a73f7556f636bc9e12ef30935d58d'
+          assert m['dataDeletion'] is False
+          PY
