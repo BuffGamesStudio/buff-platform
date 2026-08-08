@@ -1,0 +1,6 @@
+fresh recovery evidence trigger
+source_logic_run=31237968713
+source_logic_result=PASS
+source_artifact_hygiene=REJECTED
+product_sha=81d3618ce7be28a6ce81363a8bda524cd18ece15
+correction=evidence-sanitization-only
