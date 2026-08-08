@@ -270,7 +270,14 @@ begin
         owner_role.rolname <> 'postgres'
         or p.prosecdef is distinct from true
         or not coalesce(p.proconfig, '{}'::text[]) @> array['search_path=pg_catalog, public']
-        or pg_catalog.has_function_privilege('PUBLIC', p.oid, 'EXECUTE')
+        or exists (
+          select 1
+          from pg_catalog.aclexplode(
+            coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
+          ) as acl
+          where acl.grantee = 0
+            and acl.privilege_type = 'EXECUTE'
+        )
         or pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
         or not pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
         or not pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')
