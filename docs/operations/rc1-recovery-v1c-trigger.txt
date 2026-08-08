@@ -1,0 +1,5 @@
+fresh recovery V1C trigger
+product_sha=81d3618ce7be28a6ce81363a8bda524cd18ece15
+product_tree=511c3501bd6a73f7556f636bc9e12ef30935d58d
+failed_v1b_run=31238311068
+correction=raw credential capture isolated outside evidence plus fail-closed scanner
