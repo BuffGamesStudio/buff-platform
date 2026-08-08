@@ -1,0 +1,225 @@
+name: RC-1 strict resilience browser evidence v2
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-rc1-resilience-browser-v2-20260808
+    paths:
+      - ".github/workflows/movie-buff-rc1-resilience-browser-v2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
+  PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
+  V1_CONTROLLER_SHA: 30886c95f14e7c1b5b8e716fd176d552bb1b6bc4
+  V1_CONTROLLER_TREE: 291201cc122c3b6709bb0bf5ca42c50c962a634f
+  V1_WORKFLOW: .github/workflows/movie-buff-rc1-resilience-browser-v1.yml
+  V1_HARNESS: scripts/validation/movie-buff-rc1-resilience-browser-v1.mjs
+  EXPECTED_BRANCH: validation/movie-buff-rc1-resilience-browser-v2-20260808
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  resilience-browser:
+    name: Three-browser reconnect expiry and Buster timing lab v2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    steps:
+      - name: Check out exact validation controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind RC-1 and materialize corrected validation controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test "$(git rev-parse "${V1_CONTROLLER_SHA}^{tree}")" = "${V1_CONTROLLER_TREE}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          git merge-base --is-ancestor "${V1_CONTROLLER_SHA}" HEAD
+          git diff --name-only "${PRODUCT_SHA}"...HEAD > "${RUNNER_TEMP}/composition-paths.txt"
+          test -s "${RUNNER_TEMP}/composition-paths.txt"
+          if grep -Ev '^(\.github/workflows/movie-buff-rc1-resilience-browser-v1\.yml|scripts/validation/movie-buff-rc1-resilience-browser-v1\.mjs|\.github/workflows/movie-buff-rc1-resilience-browser-v2\.yml)$' "${RUNNER_TEMP}/composition-paths.txt"; then
+            echo "Unexpected product-owned path in validation composition" >&2
+            exit 1
+          fi
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          node --version
+          npm --version
+          docker --version
+          psql --version
+
+          git show "${V1_CONTROLLER_SHA}:${V1_HARNESS}" > "${RUNNER_TEMP}/resilience-v2.mjs"
+          python3 - "${RUNNER_TEMP}/resilience-v2.mjs" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1])
+          text=p.read_text(encoding='utf-8')
+          anchor='''function pass(name, details = {}) {\n  evidence.checks.push({ name, classification: "PASS", observedAt: new Date().toISOString(), details });\n}\n'''
+          helper='''function pass(name, details = {}) {\n  evidence.checks.push({ name, classification: "PASS", observedAt: new Date().toISOString(), details });\n}\n\nfunction failureRecord(error, extras = {}) {\n  if (error instanceof Error) {\n    return {\n      ...extras,\n      type: error.name || "Error",\n      message: redact(error.message || ""),\n      stack: redact(error.stack || ""),\n    };\n  }\n  if (error && typeof error === "object") {\n    const record = { ...extras, type: error.constructor?.name || "Object" };\n    for (const key of ["code", "message", "details", "hint", "status", "statusText"]) {\n      if (key in error && error[key] != null) record[key] = redact(error[key]);\n    }\n    try {\n      record.serialized = redact(JSON.stringify(error));\n    } catch {\n      record.serialized = "[UNSERIALIZABLE_OBJECT]";\n    }\n    return record;\n  }\n  return { ...extras, type: typeof error, message: redact(error) };\n}\n'''
+          if text.count(anchor) != 1:
+            raise SystemExit('failure helper anchor mismatch')
+          text=text.replace(anchor,helper,1)
+          old='''  evidence.failures.push({\n    message: redact(error instanceof Error ? error.message : error),\n    stack: redact(error instanceof Error ? error.stack ?? "" : ""),\n  });'''
+          new='''  evidence.failures.push(failureRecord(error, { stage: "resilience-browser" }));'''
+          if text.count(old) != 1:
+            raise SystemExit('primary catch anchor mismatch')
+          text=text.replace(old,new,1)
+          old_cleanup='''      evidence.failures.push({ cleanup: roomId, message: redact(error) });'''
+          new_cleanup='''      evidence.failures.push(failureRecord(error, { stage: "cleanup", cleanup: roomId }));'''
+          if text.count(old_cleanup) != 1:
+            raise SystemExit('cleanup catch anchor mismatch')
+          text=text.replace(old_cleanup,new_cleanup,1)
+          p.write_text(text,encoding='utf-8')
+          PY
+          node --check "${RUNNER_TEMP}/resilience-v2.mjs"
+
+          git show "${V1_CONTROLLER_SHA}:${V1_WORKFLOW}" > "${RUNNER_TEMP}/v1.yml"
+          python3 - "${RUNNER_TEMP}/v1.yml" "${RUNNER_TEMP}/run-v2.sh" <<'PY'
+          from pathlib import Path
+          import sys
+          source=Path(sys.argv[1]).read_text(encoding='utf-8').splitlines()
+          marker='- name: Run disposable localhost resilience browser lab'
+          start=next(i for i,line in enumerate(source) if line.strip()==marker)
+          run_line=next(i for i in range(start+1,len(source)) if source[i].strip()=='run: |')
+          run_indent=len(source[run_line])-len(source[run_line].lstrip())
+          body=[]
+          for line in source[run_line+1:]:
+            if line.strip() and len(line)-len(line.lstrip()) <= run_indent:
+              break
+            body.append(line[run_indent+2:] if line.strip() else '')
+          script='\n'.join(body)+'\n'
+          old='node scripts/validation/movie-buff-rc1-resilience-browser-v1.mjs >"${raw}/resilience-browser.log" 2>&1'
+          new='node "${RUNNER_TEMP}/resilience-v2.mjs" >"${raw}/resilience-browser.log" 2>&1'
+          if script.count(old) != 1:
+            raise SystemExit('harness invocation anchor mismatch')
+          script=script.replace(old,new,1)
+          anchor='cp "${RUNNER_TEMP}/composition-paths.txt" "${evidence}/composition-paths.txt"'
+          harden=r'''python3 - "${evidence}" <<'PY2'
+import pathlib,re,sys
+root=pathlib.Path(sys.argv[1])
+ANSI=re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+FULL_DB_URL=re.compile(r'(?i)postgres(?:ql)?://[^\s\"\'<>]+')
+ROW=re.compile(r'(?im)^(\s*│?\s*(?:Access Key|Secret Key)\s*│\s*)([^│\r\n]+?)(\s*│\s*)$')
+ASSIGN=re.compile(r'(?im)^(\s*(?:AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_DB_PASSWORD|POSTGRES_PASSWORD)\s*[:=]\s*)([^\s]+)')
+JWT=re.compile(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+')
+SB=re.compile(r'sb_(?:secret|publishable)_[A-Za-z0-9_-]+',re.I)
+for p in root.rglob('*'):
+  if not p.is_file() or p.suffix.lower() in {'.png','.zip'}: continue
+  text=p.read_text(encoding='utf-8',errors='replace')
+  text=ANSI.sub('',text)
+  text=ROW.sub(lambda m:m.group(1)+'[REDACTED]'+m.group(2),text)
+  text=ASSIGN.sub(lambda m:m.group(1)+'[REDACTED]',text)
+  text=JWT.sub('[REDACTED_JWT]',text)
+  text=SB.sub('[REDACTED_SUPABASE_KEY]',text)
+  text=FULL_DB_URL.sub('postgresql://[REDACTED_LOCAL_DB_URL]',text)
+  p.write_text(text,encoding='utf-8')
+PY2
+'''
+          if script.count(anchor) != 1:
+            raise SystemExit('redaction insertion anchor mismatch')
+          script=script.replace(anchor,harden+'\n'+anchor,1)
+          Path(sys.argv[2]).write_text(script,encoding='utf-8')
+          PY
+          bash -n "${RUNNER_TEMP}/run-v2.sh"
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run corrected disposable localhost resilience browser lab
+        shell: bash
+        run: bash "${RUNNER_TEMP}/run-v2.sh"
+
+      - name: Upload resilience browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-rc1-resilience-browser-v2-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-rc1-resilience-browser-v1
+          if-no-files-found: error
+          retention-days: 7
+
+  inspect:
+    name: Independent resilience evidence inspection v2
+    needs: resilience-browser
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download evidence artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: movie-buff-rc1-resilience-browser-v2-${{ github.sha }}
+          path: evidence
+
+      - name: Inspect exact identities, hashes, classification, and required checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f evidence/metadata.txt
+          test -f evidence/resilience-browser-evidence.json
+          test -f evidence/sha256.txt
+          grep -Fx "product_sha=${PRODUCT_SHA}" evidence/metadata.txt
+          grep -Fx "product_tree=${PRODUCT_TREE}" evidence/metadata.txt
+          grep -Fx "controller_sha=${GITHUB_SHA}" evidence/metadata.txt
+          grep -Fx "target=disposable-localhost" evidence/metadata.txt
+          grep -Fx "classification=PASS" evidence/metadata.txt
+          grep -Fx "cleanup_exit=0" evidence/metadata.txt
+          test "$(cat evidence/redaction-scan.exit.txt)" = "0"
+          test "$(cat evidence/hash-verification.exit.txt)" = "0"
+          (cd evidence && sha256sum -c sha256.txt)
+          node - <<'NODE'
+          const fs=require('fs');
+          const j=JSON.parse(fs.readFileSync('evidence/resilience-browser-evidence.json','utf8'));
+          if(j.classification!=='PASS') throw new Error(`browser classification ${j.classification}; failures=${JSON.stringify(j.failures)}`);
+          const required=[
+            'three-authenticated-browser-processes',
+            'browser-reconnect-immediately-before-expiry',
+            'browser-reconnect-immediately-after-expiry-fails-closed',
+            'concurrent-browser-reconnect-versus-expiry-finalization',
+            'duplicate-expiry-workers-converge',
+            'buster-inactive-during-private-vip',
+            'buster-activates-at-authoritative-safe-boundary',
+          ];
+          const got=new Map((j.checks||[]).map(x=>[x.name,x.classification]));
+          for(const name of required) if(got.get(name)!=='PASS') throw new Error(`missing PASS ${name}`);
+          if((j.failures||[]).length) throw new Error(`unexpected failures ${JSON.stringify(j.failures)}`);
+          if(j.product?.sha!==process.env.PRODUCT_SHA || j.product?.tree!==process.env.PRODUCT_TREE) throw new Error('product binding mismatch');
+          NODE
+          python3 - <<'PY'
+          import pathlib,re
+          root=pathlib.Path('evidence')
+          forbidden=[
+            re.compile(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'),
+            re.compile(r'postgres(?:ql)?://[^\s]+',re.I),
+            re.compile(r'sb_(?:secret|publishable)_[A-Za-z0-9_-]+',re.I),
+          ]
+          hits=[]
+          for p in root.rglob('*'):
+            if not p.is_file() or p.suffix.lower() in {'.png','.zip'}: continue
+            t=p.read_text(encoding='utf-8',errors='replace')
+            for pat in forbidden:
+              if pat.search(t): hits.append(f'{p}:{pat.pattern}')
+          if hits: raise SystemExit('secret-pattern findings: '+','.join(hits))
+          PY
