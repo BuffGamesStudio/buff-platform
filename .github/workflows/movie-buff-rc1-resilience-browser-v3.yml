@@ -1,0 +1,161 @@
+name: RC-1 strict resilience browser evidence v3
+
+on:
+  push:
+    branches:
+      - validation/movie-buff-rc1-resilience-browser-v3-20260808
+    paths:
+      - ".github/workflows/movie-buff-rc1-resilience-browser-v3.yml"
+      - "scripts/validation/movie-buff-rc1-resilience-browser-v3-materialize.py"
+      - "scripts/validation/movie-buff-rc1-resilience-browser-v3-redact.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
+  PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
+  V1_CONTROLLER_SHA: 30886c95f14e7c1b5b8e716fd176d552bb1b6bc4
+  V1_CONTROLLER_TREE: 291201cc122c3b6709bb0bf5ca42c50c962a634f
+  EXPECTED_BRANCH: validation/movie-buff-rc1-resilience-browser-v3-20260808
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  resilience-browser:
+    name: Three-browser reconnect expiry and Buster timing lab v3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    steps:
+      - name: Check out exact validation controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Bind RC-1 and materialize corrected validation controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "${EXPECTED_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git remote get-url origin)" = "https://github.com/BuffGamesStudio/buff-platform"
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test "$(git rev-parse "${V1_CONTROLLER_SHA}^{tree}")" = "${V1_CONTROLLER_TREE}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          git merge-base --is-ancestor "${V1_CONTROLLER_SHA}" HEAD
+          git diff --name-only "${PRODUCT_SHA}"...HEAD > "${RUNNER_TEMP}/composition-paths.txt"
+          test -s "${RUNNER_TEMP}/composition-paths.txt"
+          if grep -Ev '^(\.github/workflows/movie-buff-rc1-resilience-browser-v1\.yml|scripts/validation/movie-buff-rc1-resilience-browser-v1\.mjs|\.github/workflows/movie-buff-rc1-resilience-browser-v3\.yml|scripts/validation/movie-buff-rc1-resilience-browser-v3-materialize\.py|scripts/validation/movie-buff-rc1-resilience-browser-v3-redact\.py)$' "${RUNNER_TEMP}/composition-paths.txt"; then
+            echo "Unexpected product-owned path in validation composition" >&2
+            exit 1
+          fi
+          test -z "$(git status --porcelain)"
+          test ! -f supabase/.temp/project-ref
+          test "$(supabase --version)" = "2.111.0"
+          node --version
+          npm --version
+          docker --version
+          psql --version
+          python3 -m py_compile scripts/validation/movie-buff-rc1-resilience-browser-v3-materialize.py scripts/validation/movie-buff-rc1-resilience-browser-v3-redact.py
+          python3 scripts/validation/movie-buff-rc1-resilience-browser-v3-materialize.py \
+            .github/workflows/movie-buff-rc1-resilience-browser-v1.yml \
+            scripts/validation/movie-buff-rc1-resilience-browser-v1.mjs \
+            "${RUNNER_TEMP}/resilience-v3.mjs" \
+            "${RUNNER_TEMP}/run-v3.sh"
+          node --check "${RUNNER_TEMP}/resilience-v3.mjs"
+          bash -n "${RUNNER_TEMP}/run-v3.sh"
+          test -z "$(git status --porcelain)"
+
+      - name: Install committed dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run corrected disposable localhost resilience browser lab
+        shell: bash
+        run: bash "${RUNNER_TEMP}/run-v3.sh"
+
+      - name: Upload resilience browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-buff-rc1-resilience-browser-v3-${{ github.sha }}
+          path: ${{ runner.temp }}/movie-buff-rc1-resilience-browser-v1
+          if-no-files-found: error
+          retention-days: 7
+
+  inspect:
+    name: Independent resilience evidence inspection v3
+    needs: resilience-browser
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download evidence artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: movie-buff-rc1-resilience-browser-v3-${{ github.sha }}
+          path: evidence
+
+      - name: Inspect exact identities, hashes, classification, and required checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f evidence/metadata.txt
+          test -f evidence/resilience-browser-evidence.json
+          test -f evidence/sha256.txt
+          grep -Fx "product_sha=${PRODUCT_SHA}" evidence/metadata.txt
+          grep -Fx "product_tree=${PRODUCT_TREE}" evidence/metadata.txt
+          grep -Fx "controller_sha=${GITHUB_SHA}" evidence/metadata.txt
+          grep -Fx "target=disposable-localhost" evidence/metadata.txt
+          grep -Fx "classification=PASS" evidence/metadata.txt
+          grep -Fx "cleanup_exit=0" evidence/metadata.txt
+          test "$(cat evidence/redaction-scan.exit.txt)" = "0"
+          test "$(cat evidence/hash-verification.exit.txt)" = "0"
+          (cd evidence && sha256sum -c sha256.txt)
+          node - <<'NODE'
+          const fs=require('fs');
+          const j=JSON.parse(fs.readFileSync('evidence/resilience-browser-evidence.json','utf8'));
+          if(j.classification!=='PASS') throw new Error(`browser classification ${j.classification}; failures=${JSON.stringify(j.failures)}`);
+          const required=[
+            'three-authenticated-browser-processes',
+            'browser-reconnect-immediately-before-expiry',
+            'browser-reconnect-immediately-after-expiry-fails-closed',
+            'concurrent-browser-reconnect-versus-expiry-finalization',
+            'duplicate-expiry-workers-converge',
+            'buster-inactive-during-private-vip',
+            'buster-activates-at-authoritative-safe-boundary',
+          ];
+          const got=new Map((j.checks||[]).map(x=>[x.name,x.classification]));
+          for(const name of required) if(got.get(name)!=='PASS') throw new Error(`missing PASS ${name}`);
+          if((j.failures||[]).length) throw new Error(`unexpected failures ${JSON.stringify(j.failures)}`);
+          if(j.product?.sha!==process.env.PRODUCT_SHA || j.product?.tree!==process.env.PRODUCT_TREE) throw new Error('product binding mismatch');
+          NODE
+          python3 scripts_check.py 2>/dev/null || true
+          python3 - <<'PY'
+          import pathlib,re
+          root=pathlib.Path('evidence')
+          forbidden=[
+            re.compile(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'),
+            re.compile(r'postgres(?:ql)?://[^\s]+',re.I),
+            re.compile(r'sb_(?:secret|publishable)_[A-Za-z0-9_-]+',re.I),
+          ]
+          hits=[]
+          for p in root.rglob('*'):
+            if not p.is_file() or p.suffix.lower() in {'.png','.zip'}: continue
+            t=p.read_text(encoding='utf-8',errors='replace')
+            for pat in forbidden:
+              if pat.search(t): hits.append(f'{p}:{pat.pattern}')
+          if hits: raise SystemExit('secret-pattern findings: '+','.join(hits))
+          PY
