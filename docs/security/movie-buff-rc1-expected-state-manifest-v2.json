@@ -1,0 +1,164 @@
+{
+  "manifestVersion": 2,
+  "repository": "BuffGamesStudio/buff-platform",
+  "product": {
+    "branch": "release-candidate/movie-buff-2026-08-07-rc-1",
+    "pr": 199,
+    "sha": "81d3618ce7be28a6ce81363a8bda524cd18ece15",
+    "tree": "511c3501bd6a73f7556f636bc9e12ef30935d58d"
+  },
+  "stagingTarget": {
+    "projectName": "movie-buff-staging",
+    "projectRef": "eddwkxcillhzkvwmavsc",
+    "organizationId": "tleuzztdjpajaltwcclj",
+    "region": "us-east-1",
+    "environment": "isolated-staging"
+  },
+  "sixTargetTables": [
+    {
+      "table": "public.match_round_player_hints",
+      "rls": true,
+      "forceRls": true,
+      "directGrants": {"authenticated": ["SELECT"], "anon": [], "service_role": ["ALL"]},
+      "policy": {"name": "match_round_player_hints_select_self", "command": "SELECT", "roles": ["authenticated"], "using": "player_id=auth.uid() AND active membership through match_rounds -> matches -> room_players with left_at IS NULL"}
+    },
+    {
+      "table": "public.match_round_player_playback",
+      "rls": true,
+      "forceRls": true,
+      "directGrants": {"authenticated": ["SELECT"], "anon": [], "service_role": ["ALL"]},
+      "policy": {"name": "match_round_player_playback_select_self", "command": "SELECT", "roles": ["authenticated"], "using": "player_id=auth.uid() AND active membership through match_rounds -> matches -> room_players with left_at IS NULL"}
+    },
+    {
+      "table": "public.movie_buff_boards",
+      "rls": true,
+      "forceRls": true,
+      "directGrants": {"authenticated": ["SELECT"], "anon": [], "service_role": ["ALL"]},
+      "policy": {"name": "movie_buff_boards_select_active_member", "command": "SELECT", "roles": ["authenticated"], "using": "EXISTS room_players for board.room_id, player_id=auth.uid(), left_at IS NULL"}
+    },
+    {
+      "table": "public.movie_buff_board_categories",
+      "rls": true,
+      "forceRls": true,
+      "directGrants": {"authenticated": ["SELECT"], "anon": [], "service_role": ["ALL"]},
+      "policy": {"name": "movie_buff_board_categories_select_active_member", "command": "SELECT", "roles": ["authenticated"], "using": "EXISTS movie_buff_boards -> room_players for board_id, player_id=auth.uid(), left_at IS NULL"}
+    },
+    {
+      "table": "public.movie_buff_board_tiles",
+      "rls": true,
+      "forceRls": true,
+      "directGrants": {"authenticated": ["SELECT"], "anon": [], "service_role": ["ALL"]},
+      "policy": {"name": "movie_buff_board_tiles_select_active_member", "command": "SELECT", "roles": ["authenticated"], "using": "EXISTS movie_buff_boards -> room_players for board_id, player_id=auth.uid(), left_at IS NULL"}
+    },
+    {
+      "table": "public.movie_buff_board_events",
+      "rls": true,
+      "forceRls": true,
+      "directGrants": {"authenticated": [], "anon": [], "service_role": ["ALL"]},
+      "policy": {"name": "movie_buff_internal_browser_deny", "command": "ALL", "roles": ["anon", "authenticated"], "using": "false", "withCheck": "false", "permissive": false}
+    }
+  ],
+  "criticalFunctionContract": {
+    "common": {"owner": "postgres", "securityDefiner": true, "PUBLIC_EXECUTE": false, "anon_EXECUTE": false},
+    "authenticatedAndServiceRole_searchPath_pg_catalog": [
+      "public.find_or_create_movie_buff_public_room(uuid,text,integer,integer)",
+      "public.set_movie_buff_player_ready(uuid,boolean)",
+      "public.get_movie_buff_match_phase_view(uuid)",
+      "public.advance_movie_buff_match_phase(uuid,bigint)",
+      "public.select_movie_buff_match_tile(uuid,uuid,bigint,text)",
+      "public.touch_movie_buff_match_participant(uuid)",
+      "public.get_movie_buff_vip_round_view(uuid,uuid)",
+      "public.lock_movie_buff_round_vip(uuid,uuid,uuid,text)",
+      "public.activate_movie_buff_round_vip(uuid,uuid,text)",
+      "public.get_movie_buff_active_leave_quote(uuid)",
+      "public.confirm_movie_buff_active_leave(uuid,text,text)"
+    ],
+    "authenticatedAndServiceRole_searchPath_pg_catalog_public": [
+      "public.join_movie_buff_room(text)",
+      "public.leave_movie_buff_room(uuid)",
+      "public.touch_movie_buff_room_presence(uuid)",
+      "public.get_movie_buff_round(uuid)",
+      "public.mark_movie_buff_round_media_ready(uuid)",
+      "public.use_movie_buff_round_hint(uuid,integer)",
+      "public.submit_movie_buff_answer(uuid,text)",
+      "public.get_movie_buff_round_results(uuid)",
+      "public.get_movie_buff_round_results(uuid,uuid)",
+      "public.get_movie_buff_final_results(uuid)",
+      "public.is_buff_content_manager()",
+      "public.is_movie_buff_room_member(uuid)",
+      "public.is_movie_buff_match_member(uuid)",
+      "public.is_movie_buff_round_member(uuid)"
+    ],
+    "serviceRoleOnly_searchPath_pg_catalog": [
+      "public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamp with time zone)"
+    ],
+    "serviceRoleOnly_searchPath_pg_catalog_public": [
+      "public.get_movie_buff_round_completion(uuid,uuid,timestamp with time zone,integer)",
+      "public.get_movie_buff_round_player_time_left(uuid,uuid,timestamp with time zone,integer)",
+      "public.is_movie_buff_round_player_finished(uuid,uuid,timestamp with time zone,integer)"
+    ],
+    "authenticatedAndServiceRoleExecute": {"authenticated": true, "service_role": true},
+    "serviceRoleOnlyExecute": {"authenticated": false, "service_role": true}
+  },
+  "effectivePersonaBehavior": {
+    "anon": "No direct EXECUTE on critical Movie Buff RPC/helpers; no SELECT on the six protected tables.",
+    "authenticated": "Only explicit browser RPCs, three membership helpers, and is_buff_content_manager are directly executable; six-table reads are constrained by self/active-member RLS; VIP finalizer and three round-completion/time helpers are denied.",
+    "service_role": "Privileged execution retained according to the exact function matrix; service role is not treated as browser authorization.",
+    "mark_movie_buff_round_media_ready": "Authenticated callers must pass movie_buff_phase_require_access(room_id), which requires auth.uid() and active room_players membership with left_at IS NULL; service_role bypasses that membership guard.",
+    "vipFinalizer": "finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz) is authenticated-denied and service_role-executable."
+  },
+  "dependencies": [
+    "auth.uid()/auth.role() request identity",
+    "public.room_players active membership and left_at",
+    "public.game_rooms",
+    "public.matches",
+    "public.match_rounds",
+    "public.match_round_player_hints",
+    "public.match_round_player_playback",
+    "public.movie_buff_boards/categories/tiles/events",
+    "public.movie_buff_phase_require_access(uuid)"
+  ],
+  "securityCriticalSources": [
+    {"path":"supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql","gitBlobSha":"1586e95a9f2c9eeac6be7b7c6ec7976801464bcf","sha256":"01a4c92cf1c860965a820dbb7d65c6a04ad2a4eea088f8604c4899215806c5ae"},
+    {"path":"supabase/migrations/20260805160000_movie_buff_six_table_rls_reconciliation.sql","gitBlobSha":"195014b2fc76c8f2dc2c5d8394ce68a15696a675","sha256":"54abc27751fb3b7ec775cad2d836d3084de48411d52889935a0e7400cd7e957b"},
+    {"path":"supabase/migrations/20260805160500_public_rls_auto_enable_event_trigger_contract.sql","gitBlobSha":"49f083380758e0107148bd2ec5aca6303c1dafd3","sha256":"d51d7fa85c69a938bd488dd23f3d8992443d39b36f8a8b435b3a521611757598"},
+    {"path":"supabase/migrations/20260805161000_public_rls_auto_enable_acl_lockdown.sql","gitBlobSha":"145d9e863e3423d1e2173543c161c3a9a0ee600c","sha256":"bbb27ff3f7646fbae8c39c3d78d22ae647d39ea7846843f825aeab4bf2f5d69c"},
+    {"path":"supabase/migrations/20260806214500_movie_buff_staging_security_independent_clearance.sql","gitBlobSha":"82afe9c28bf8c2ff058bd90a3dfae9ec599b126d","sha256":"5a38169e7d6c6a9d2b837ac30f9630467ae1aebf2dd613714fdfc2b2f5cc393c"},
+    {"path":"supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql","gitBlobSha":"a47e164c1fe5f37e579949bd50dd35b1dfb5d415","sha256":"bb2e16b10fa5f082907fad2c9cf0182706a18c9c6f88573d16f25aa746b18476"},
+    {"path":"supabase/migrations/movie-buff-production-bootstrap.sql","gitBlobSha":"a99974d455a32d865f901ca76db9845e2ab03df6","sha256":"5d9c6be4ca9f1ce556b6a60c461df630360829487fde8d98a73751f3956da379"},
+    {"path":"movie-buff-production-bootstrap.sql","gitBlobSha":"17a93cd432d69bba42700290391b0916236e45c2","sha256":"b4a27c0e314aa603bd86102fa75ed3297f875b2d689435f2acf18e1551ef2121"},
+    {"path":"supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql","gitBlobSha":"977222a91100d37ccbe8ffd2eec49cdd464df42f","sha256":"f43188231ccc0b0bb317381550279693da85968f2aa3a56183e2cd228acde647","sourceCommit":"fca74cf8c125926642720b4d135fb75f3784f6f7"}
+  ],
+  "completeMigrationHashInventory": {
+    "validationPr": 215,
+    "runId": "31239806271",
+    "inventoryJob": "93058772751",
+    "independentInspectionJob": "93058800063",
+    "artifactId": "9016637845",
+    "artifactDigest": "sha256:26870301f1d22939b1ac346cf780c89cf8b225ae666ff16d1884c813d6506451",
+    "candidateSqlBootstrapFileCount": 97,
+    "classification": "PASS"
+  },
+  "liveStagingEvidence": {
+    "originalForwardLedger": {"version":"20260808040816","name":"20260807014500_movie_buff_rls_helper_execute_repair"},
+    "rollbackRehearsalLedger": {"version":"20260808042759","name":"rc1_staging_rollback_rehearsal_20260807014500"},
+    "forwardReapplyLedger": {"version":"20260808042827","name":"rc1_staging_forward_reapply_20260807014500"},
+    "sixTableContract": "PASS",
+    "criticalFunctionContract": "PASS",
+    "safePersonaChecks": "PASS",
+    "securityDefinerAllowlistReconciliation": "PASS",
+    "advisorWarningsRemain": true
+  },
+  "classifications": {
+    "expectedStateIdentity": "PASS",
+    "migrationHashInventory": "PASS",
+    "sixTableRlsForceRls": "PASS",
+    "policiesAndGrants": "PASS",
+    "criticalFunctionOwnerDefinerSearchPathAcl": "PASS",
+    "personaGuardEvidence": "PASS",
+    "stagingRollbackContainmentReapply": "PASS",
+    "securityAdvisorObjectLevelReconciliation": "PASS",
+    "productionSecurity": "UNKNOWN"
+  },
+  "mov19Boundary": "Execution-seat expected state. MOV-19 must independently re-fetch all identities and evidence."
+}
