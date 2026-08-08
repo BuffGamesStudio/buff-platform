@@ -1,0 +1,407 @@
+name: Movie Buff RC-1 three-client Chrome validation v15 redacted
+
+on:
+  pull_request:
+    branches: [validation/movie-buff-rc1-browser-redaction-controller-v15-20260807]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_BRANCH: release-candidate/movie-buff-2026-08-07-rc-1
+  PRODUCT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
+  PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
+  CONTROLLER_BRANCH: validation/movie-buff-rc1-browser-redaction-controller-v15-20260807
+  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-rc1-browser-redaction-trigger-v15-20260807
+  EXPECTED_BRANCH: validation/movie-buff-rc1-browser-redaction-controller-v15-20260807
+  PARENT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
+  CONTROLLER_SHA: ${{ github.event.pull_request.base.sha }}
+  TRIGGER_SHA: ${{ github.event.pull_request.head.sha }}
+  V11_WORKFLOW: .github/workflows/movie-buff-mov18-chrome-three-client-browser-v11.yml
+  V9_WORKFLOW: .github/workflows/movie-buff-mov18-chrome-three-client-browser-v9.yml
+  V12_WORKFLOW: .github/workflows/movie-buff-mov18-chrome-three-client-browser-v12.yml
+  V12_SOURCE_SHA: 2a92fd586dbd787cbe06f1d6edcacfe22b7fa035
+  V12_WORKFLOW_BLOB: d2ba54f4b6a7b9cfdb3894f0ef790c1248fa7190
+  ARCHIVE_SOURCE_SHA: d90a7eb73ef724b4ef5205343e655c7597dcf978
+  ARCHIVE_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
+  ORIGINAL_HARNESS_BLOB: 3b08204937f26af9287f303906509dc057b399dc
+  V14C_CONTROLLER_SHA: bc1fd99c659924423b771a202a20249830ee2cd2
+  V14C_WORKFLOW: .github/workflows/movie-buff-full-three-client-browser-v14c.yml
+  V14C_WORKFLOW_BLOB: aa496c5afa53939b5704dd48b51f8580445378db
+  V15_WORKFLOW: .github/workflows/movie-buff-full-three-client-browser-v15-redacted.yml
+  ARTIFACT_NAME: movie-buff-rc1-three-client-v15-redacted-${{ github.run_id }}-${{ github.run_attempt }}
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Materialize preserved V14C journey without changing RC-1 product bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_EVENT_NAME}" = "pull_request"
+          test "${GITHUB_BASE_REF}" = "${CONTROLLER_BRANCH}"
+          test "${GITHUB_HEAD_REF}" = "${EXPECTED_TRIGGER_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${CONTROLLER_SHA}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test "${PARENT_SHA}" = "${PRODUCT_SHA}"
+          test "$(git rev-parse "${V14C_CONTROLLER_SHA}:${V14C_WORKFLOW}")" = "${V14C_WORKFLOW_BLOB}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+          git show "${V14C_CONTROLLER_SHA}:${V14C_WORKFLOW}" > "${RUNNER_TEMP}/reviewed-v14c.yml"
+          python3 - "${RUNNER_TEMP}/reviewed-v14c.yml" "${RUNNER_TEMP}/materialize-v14c-for-v15.sh" <<'PY'
+          from pathlib import Path
+          import sys
+          source=Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+          marker="- name: Materialize preserved journey and align exact final Buster preview assertion"
+          start=next(i for i,line in enumerate(source) if line.strip()==marker)
+          run_line=next(i for i in range(start+1,len(source)) if source[i].strip()=="run: |")
+          run_indent=len(source[run_line])-len(source[run_line].lstrip())
+          body=[]
+          for line in source[run_line+1:]:
+              if line.strip() and len(line)-len(line.lstrip()) <= run_indent:
+                  break
+              body.append(line[run_indent+2:] if line.strip() else "")
+          script="\n".join(body)+"\n"
+          outer='            ".github/workflows/movie-buff-full-three-client-browser-v14c.yml",\n'
+          outer_new=outer+'            ".github/workflows/movie-buff-full-three-client-browser-v15-redacted.yml",\n'
+          if script.count(outer) != 1:
+              raise SystemExit("unexpected V14C outer allowlist anchor")
+          script=script.replace(outer,outer_new,1)
+          inner='new=\'expected={".github/workflows/movie-buff-mov18-chrome-three-client-browser-v9.yml",".github/workflows/movie-buff-mov18-chrome-three-client-browser-v11.yml",".github/workflows/movie-buff-mov18-chrome-three-client-browser-v12.yml",".github/workflows/movie-buff-full-three-client-browser-v14c.yml"}\''
+          inner_new='new=\'expected={".github/workflows/movie-buff-mov18-chrome-three-client-browser-v9.yml",".github/workflows/movie-buff-mov18-chrome-three-client-browser-v11.yml",".github/workflows/movie-buff-mov18-chrome-three-client-browser-v12.yml",".github/workflows/movie-buff-full-three-client-browser-v14c.yml",".github/workflows/movie-buff-full-three-client-browser-v15-redacted.yml"}\''
+          if script.count(inner) != 1:
+              raise SystemExit("unexpected V14C inner allowlist anchor")
+          script=script.replace(inner,inner_new,1)
+          Path(sys.argv[2]).write_text(script,encoding="utf-8")
+          PY
+          bash -n "${RUNNER_TEMP}/materialize-v14c-for-v15.sh"
+          bash "${RUNNER_TEMP}/materialize-v14c-for-v15.sh"
+
+          python3 - "${RUNNER_TEMP}/harness-correction.json" <<'PY'
+          import json,pathlib,sys
+          path=pathlib.Path(sys.argv[1])
+          data=json.loads(path.read_text())
+          data["v15EvidenceRedactionController"]="fresh evidence-only controller extends the preserved V14C journey; RC-1 product bytes unchanged"
+          data["v15ProductBranch"]="release-candidate/movie-buff-2026-08-07-rc-1"
+          data["v15ProductSha"]="81d3618ce7be28a6ce81363a8bda524cd18ece15"
+          data["v15ProductTree"]="511c3501bd6a73f7556f636bc9e12ef30935d58d"
+          data["v15RedactionScope"]="ANSI-normalized credential-bearing evidence only; no gameplay assertion changed"
+          data["journeyContract"]="V3 substantive requirements preserved"
+          path.write_text(json.dumps(data,indent=2)+"\n")
+          PY
+          node --check "${RUNNER_TEMP}/movie-buff-three-client-full-journey-v9-chrome.mjs"
+          bash -n "${RUNNER_TEMP}/browser-preflight.sh"
+          bash -n "${RUNNER_TEMP}/browser-execute.sh"
+
+      - name: Provision runner prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg postgresql-client
+          command -v google-chrome || command -v google-chrome-stable
+          command -v ffmpeg
+          command -v ffprobe
+          command -v psql
+          command -v supabase
+
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - id: concurrency
+        name: Execute deterministic same-round media concurrency regression
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          node --test tests/movie-buff-round-media-concurrency.test.mjs >"${evidence}/round-media-concurrency.log" 2>&1
+          exit_code=$?
+          echo "${exit_code}" >"${evidence}/round-media-concurrency.exit"
+          cat "${evidence}/round-media-concurrency.log"
+          exit "${exit_code}"
+
+      - id: preflight
+        name: Execute reviewed preflight
+        if: ${{ steps.concurrency.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          bash -x "${RUNNER_TEMP}/browser-preflight.sh" >"${evidence}/reviewed-preflight.log" 2>&1
+          exit_code=$?
+          echo "${exit_code}" >"${evidence}/reviewed-preflight.exit"
+          cat "${evidence}/reviewed-preflight.log"
+          exit "${exit_code}"
+
+      - id: browser
+        name: Execute complete preserved V3 three-client journey in codec-capable Chrome
+        if: ${{ steps.preflight.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: bash "${RUNNER_TEMP}/browser-execute.sh"
+
+      - name: Sanitize credential-bearing evidence and prove the redaction contract
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          cat > "${RUNNER_TEMP}/v15-redact.py" <<'PY'
+          import json,pathlib,re,sys,tempfile
+
+          ANSI=re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+          ROW=re.compile(r'(?im)^(\s*│?\s*(Access Key|Secret Key)\s*│\s*)([^│\r\n]+?)(\s*│\s*)$')
+          ASSIGN=re.compile(r'(?im)^(\s*(?:AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_DB_PASSWORD|POSTGRES_PASSWORD)\s*[:=]\s*)([^\s]+)')
+          JWT=re.compile(r'\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\b')
+          DBURL=re.compile(r'(?i)\b(postgres(?:ql)?://[^:\s/@]+:)([^@\s/]+)(@)')
+          SBSECRET=re.compile(r'\bsb_secret_[A-Za-z0-9_-]{8,}\b')
+          TEXT_SUFFIX={'.txt','.log','.json','.env','.csv','.md','.exit',''}
+
+          def sanitize_text(text, counts):
+              text=ANSI.sub('',text)
+              def row_repl(match):
+                  label=match.group(2).replace(' ','').lower()
+                  counts[label]=counts.get(label,0)+1
+                  return f"{match.group(1)}[REDACTED]{match.group(4)}"
+              text=ROW.sub(row_repl,text)
+              def assign_repl(match):
+                  counts['assignment']=counts.get('assignment',0)+1
+                  return match.group(1)+'[REDACTED]'
+              text=ASSIGN.sub(assign_repl,text)
+              n=len(JWT.findall(text)); counts['jwt']=counts.get('jwt',0)+n; text=JWT.sub('[REDACTED_JWT]',text)
+              n=len(SBSECRET.findall(text)); counts['sb_secret']=counts.get('sb_secret',0)+n; text=SBSECRET.sub('[REDACTED_SUPABASE_SECRET]',text)
+              def db_repl(match):
+                  counts['db_password']=counts.get('db_password',0)+1
+                  return match.group(1)+'[REDACTED]'+match.group(3)
+              text=DBURL.sub(db_repl,text)
+              return text
+
+          def findings(text):
+              text=ANSI.sub('',text)
+              out=[]
+              for match in ROW.finditer(text):
+                  value=match.group(3).strip()
+                  if value not in {'[REDACTED]','[REDACTED_SUPABASE_KEY]'}:
+                      out.append('unredacted_'+match.group(2).replace(' ','').lower())
+              if ASSIGN.search(text): out.append('credential_assignment')
+              if JWT.search(text): out.append('jwt')
+              if DBURL.search(text): out.append('db_password_url')
+              if SBSECRET.search(text): out.append('sb_secret')
+              return out
+
+          def fixture():
+              fake_access='a'*32
+              fake_secret='b'*64
+              fake_hash='c'*64
+              source='\x1b[32m│ Access Key │ '+fake_access+' │\x1b[0m\n\x1b[32m│ Secret Key │ '+fake_secret+' │\x1b[0m\nsha256='+fake_hash+'\nStorage (S3)\n'
+              counts={}
+              result=sanitize_text(source,counts)
+              assert fake_access not in result and fake_secret not in result
+              assert '[REDACTED]' in result
+              assert 'sha256='+fake_hash in result
+              assert 'Storage (S3)' in result
+              assert not findings(result)
+              return counts
+
+          root=pathlib.Path(sys.argv[1])
+          fixture_counts=fixture()
+          counts={}
+          touched=[]
+          for path in sorted(root.rglob('*')):
+              if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIX or path.name.startswith('V15-SHA256SUMS'):
+                  continue
+              try:
+                  text=path.read_text(encoding='utf-8',errors='ignore')
+              except Exception:
+                  continue
+              sanitized=sanitize_text(text,counts)
+              if sanitized != text:
+                  path.write_text(sanitized,encoding='utf-8')
+                  touched.append(str(path.relative_to(root)))
+          remaining=[]
+          for path in sorted(root.rglob('*')):
+              if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIX:
+                  continue
+              text=path.read_text(encoding='utf-8',errors='ignore')
+              for item in findings(text):
+                  remaining.append({'path':str(path.relative_to(root)),'finding':item})
+          report={
+              'classification':'PASS' if not remaining else 'FAIL',
+              'fixtureClassification':'PASS',
+              'fixtureReplacements':fixture_counts,
+              'evidenceReplacements':counts,
+              'filesSanitized':touched,
+              'remainingFindingClasses':remaining,
+              'policy':'ANSI normalize; redact labeled S3 Access/Secret Key cells and common credential assignments/JWT/DB-password/sb_secret shapes before hashing and upload',
+          }
+          (root/'redaction-report.json').write_text(json.dumps(report,indent=2)+"\n",encoding='utf-8')
+          if remaining:
+              raise SystemExit('credential-bearing evidence remains after sanitization')
+          if counts.get('accesskey',0) < 1 or counts.get('secretkey',0) < 1:
+              raise SystemExit('expected Supabase Storage/S3 credential rows were not observed and redacted')
+          PY
+          python3 "${RUNNER_TEMP}/v15-redact.py" "${evidence}"
+
+      - name: Bind and hash V15 sanitized evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          test -s "${RUNNER_TEMP}/harness-correction.json"
+          cp "${RUNNER_TEMP}/harness-correction.json" "${evidence}/harness-correction.json"
+          controller_tree="$(git rev-parse HEAD^{tree})"
+          python3 - "${evidence}/v15-binding.json" "${controller_tree}" <<'PY'
+          import json,os,pathlib,sys
+          pathlib.Path(sys.argv[1]).write_text(json.dumps({
+            'repository':'BuffGamesStudio/buff-platform',
+            'productBranch':os.environ['PRODUCT_BRANCH'],
+            'productSha':os.environ['PRODUCT_SHA'],
+            'productTree':os.environ['PRODUCT_TREE'],
+            'parentSha':os.environ['PARENT_SHA'],
+            'controllerBranch':os.environ['CONTROLLER_BRANCH'],
+            'controllerSha':os.environ['CONTROLLER_SHA'],
+            'controllerTree':sys.argv[2],
+            'triggerSha':os.environ['TRIGGER_SHA'],
+            'runId':os.environ['GITHUB_RUN_ID'],
+            'runAttempt':os.environ['GITHUB_RUN_ATTEMPT'],
+            'target':'disposable-localhost-system-chrome',
+            'validationVersion':'V15-REDACTED',
+            'journeyContract':'V3 substantive requirements preserved',
+            'sourceValidatorControllerSha':os.environ['V14C_CONTROLLER_SHA'],
+            'evidenceHygiene':'credential redaction occurs before V15 hashing/upload and is independently rescanned',
+          },indent=2)+"\n",encoding='utf-8')
+          PY
+          (
+            cd "${evidence}"
+            rm -f V15-SHA256SUMS.txt
+            find . -type f ! -name V15-SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > V15-SHA256SUMS.txt
+            sha256sum -c V15-SHA256SUMS.txt
+          )
+
+      - name: Upload exact sanitized browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/movie-buff-three-client-full-v2
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Enforce V15 exact-RC browser and redaction gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.concurrency.outcome }}" = "success"
+          test "${{ steps.preflight.outcome }}" = "success"
+          test "${{ steps.browser.outcome }}" = "success"
+          test "$(cat "${RUNNER_TEMP}/movie-buff-three-client-full-v2/round-media-concurrency.exit")" = "0"
+          python3 - "${RUNNER_TEMP}/movie-buff-three-client-full-v2" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          correction=json.loads((root/'harness-correction.json').read_text())
+          assert correction['classification']=='PASS'
+          assert correction['productBytesChanged'] is False
+          assert correction['v15ProductSha']=='81d3618ce7be28a6ce81363a8bda524cd18ece15'
+          assert correction['v15ProductTree']=='511c3501bd6a73f7556f636bc9e12ef30935d58d'
+          journey=json.loads((root/'three-client-full-journey-v2.json').read_text())
+          assert journey['classification']=='PASS', journey.get('failure')
+          report=json.loads((root/'redaction-report.json').read_text())
+          assert report['classification']=='PASS'
+          assert report['fixtureClassification']=='PASS'
+          assert report['evidenceReplacements'].get('accesskey',0) >= 1
+          assert report['evidenceReplacements'].get('secretkey',0) >= 1
+          binding=json.loads((root/'v15-binding.json').read_text())
+          assert binding['productSha']=='81d3618ce7be28a6ce81363a8bda524cd18ece15'
+          assert binding['productTree']=='511c3501bd6a73f7556f636bc9e12ef30935d58d'
+          assert binding['validationVersion']=='V15-REDACTED'
+          PY
+
+  independent-artifact-inspection:
+    needs: exact-browser
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: evidence
+
+      - name: Independently verify exact RC binding, hashes, redaction, and full browser PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd evidence
+          sha256sum -c V15-SHA256SUMS.txt
+          test "$(cat round-media-concurrency.exit)" = "0"
+          test -s round-media-concurrency.log
+          test -s three-client-full-journey-v2.json
+          test -s supabase-start.log
+          python3 - <<'PY'
+          import json,pathlib,re
+          root=pathlib.Path('.')
+          binding=json.loads((root/'v15-binding.json').read_text())
+          assert binding['repository']=='BuffGamesStudio/buff-platform'
+          assert binding['productBranch']=='release-candidate/movie-buff-2026-08-07-rc-1'
+          assert binding['productSha']=='81d3618ce7be28a6ce81363a8bda524cd18ece15'
+          assert binding['productTree']=='511c3501bd6a73f7556f636bc9e12ef30935d58d'
+          assert binding['parentSha']==binding['productSha']
+          assert binding['validationVersion']=='V15-REDACTED'
+          correction=json.loads((root/'harness-correction.json').read_text())
+          assert correction['classification']=='PASS'
+          assert correction['productBytesChanged'] is False
+          journey=json.loads((root/'three-client-full-journey-v2.json').read_text())
+          assert journey['classification']=='PASS', journey.get('failure')
+          report=json.loads((root/'redaction-report.json').read_text())
+          assert report['classification']=='PASS'
+          assert report['fixtureClassification']=='PASS'
+          assert report['evidenceReplacements'].get('accesskey',0) >= 1
+          assert report['evidenceReplacements'].get('secretkey',0) >= 1
+          ansi=re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+          row=re.compile(r'(?im)^\s*│?\s*(Access Key|Secret Key)\s*│\s*([^│\r\n]+?)\s*│')
+          jwt=re.compile(r'\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\b')
+          dburl=re.compile(r'(?i)\bpostgres(?:ql)?://[^:\s/@]+:[^@\s/]+@')
+          sbsecret=re.compile(r'\bsb_secret_[A-Za-z0-9_-]{8,}\b')
+          assign=re.compile(r'(?im)^\s*(?:AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_DB_PASSWORD|POSTGRES_PASSWORD)\s*[:=]\s*(?!\[REDACTED\])\S+')
+          text='\n'.join(ansi.sub('',p.read_text(encoding='utf-8',errors='ignore')) for p in root.rglob('*') if p.is_file() and p.suffix.lower() in {'.txt','.log','.json','.env','.csv','.md','.exit',''})
+          for label,value in row.findall(text):
+              assert value.strip() in {'[REDACTED]','[REDACTED_SUPABASE_KEY]'}, label
+          assert jwt.search(text) is None
+          assert dburl.search(text) is None
+          assert sbsecret.search(text) is None
+          assert assign.search(text) is None
+          PY
