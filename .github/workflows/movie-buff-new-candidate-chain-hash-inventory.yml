@@ -1,0 +1,206 @@
+name: Movie Buff new-candidate sealed-chain SHA-256 inventory
+
+on:
+  pull_request:
+    branches: [validation/movie-buff-new-candidate-hash-controller-20260808]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_BRANCH: security/movie-buff-production-baseline-reconciliation-20260808
+  CANDIDATE_SHA: 2e01f0fb3681a7b2b15c19a3f5273af6a2ca8ca4
+  CANDIDATE_TREE: d07e2b5d405396d8ab4a89c130fdcc46a901b124
+  CONTROLLER_BRANCH: validation/movie-buff-new-candidate-hash-controller-20260808
+  TRIGGER_BRANCH: validation/movie-buff-new-candidate-hash-trigger-20260808
+  RECOVERY_SOURCE_SHA: fca74cf8c125926642720b4d135fb75f3784f6f7
+  ARTIFACT_NAME: movie-buff-new-candidate-chain-hashes-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify candidate/controller/trigger topology
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_BASE_REF}" = "${CONTROLLER_BRANCH}"
+          test "${GITHUB_HEAD_REF}" = "${TRIGGER_BRANCH}"
+          test "$(git rev-parse "${CANDIDATE_SHA}^{tree}")" = "${CANDIDATE_TREE}"
+          git merge-base --is-ancestor "${CANDIDATE_SHA}" HEAD
+          python3 - <<'PY'
+          import os, subprocess
+          actual=set(subprocess.check_output(['git','diff','--name-only',f"{os.environ['CANDIDATE_SHA']}..HEAD"],text=True).splitlines())
+          expected={'.github/workflows/movie-buff-new-candidate-chain-hash-inventory.yml'}
+          if actual != expected:
+              raise SystemExit(f'unexpected candidate-to-controller delta: {sorted(actual)}')
+          PY
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Build exact forward and recovery SHA-256 inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-new-candidate-chain-hashes"
+          mkdir -p "${evidence}/bytes"
+
+          cat >"${evidence}/expected-chain.txt" <<'EOF'
+          supabase/migrations/20260804070000_movie_buff_production_baseline_reconciliation.sql
+          supabase/migrations/20260804073000_movie_buff_vip_authority.sql
+          supabase/migrations/20260804073100_movie_buff_vip_null_category_fail_closed.sql
+          supabase/migrations/20260804073200_movie_buff_vip_snapshot_release_hardening.sql
+          supabase/migrations/20260804073300_movie_buff_vip_deadline_finalize.sql
+          supabase/migrations/20260804081500_movie_buff_atomic_three_player_matchmaking.sql
+          supabase/migrations/20260804081600_movie_buff_admission_phase_handoff.sql
+          supabase/migrations/20260804083000_movie_buff_server_phase_machine.sql
+          supabase/migrations/20260804083100_movie_buff_server_phase_machine_hardening.sql
+          supabase/migrations/20260804083200_movie_buff_buster_safe_boundary.sql
+          supabase/migrations/20260804083300_movie_buff_phase_tile_mutation_guard.sql
+          supabase/migrations/20260804083400_movie_buff_phase_contract_alignment.sql
+          supabase/migrations/20260804083500_movie_buff_reconnect_buster_boundary_repair.sql
+          supabase/migrations/20260804083600_movie_buff_match_start_handoff.sql
+          supabase/migrations/20260804083610_movie_buff_phase_digest_schema_repair.sql
+          supabase/migrations/20260804083700_movie_buff_active_leave_and_buster_boundary.sql
+          supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql
+          supabase/migrations/20260805160000_movie_buff_six_table_rls_reconciliation.sql
+          supabase/migrations/20260805160500_public_rls_auto_enable_event_trigger_contract.sql
+          supabase/migrations/20260805161000_public_rls_auto_enable_acl_lockdown.sql
+          supabase/migrations/20260807010000_movie_buff_production_security_manifest_reconciliation.sql
+          supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql
+          EOF
+          sed -i 's/^          //' "${evidence}/expected-chain.txt"
+          test "$(wc -l <"${evidence}/expected-chain.txt")" -eq 22
+
+          : >"${evidence}/forward-chain-sha256.tsv"
+          ordinal=0
+          while IFS= read -r path; do
+            ordinal=$((ordinal+1))
+            test -n "$path"
+            git cat-file -e "${CANDIDATE_SHA}:${path}"
+            out="${evidence}/bytes/forward-${ordinal}.sql"
+            git show "${CANDIDATE_SHA}:${path}" >"${out}"
+            sha="$(sha256sum "${out}" | awk '{print $1}')"
+            blob="$(git rev-parse "${CANDIDATE_SHA}:${path}")"
+            printf '%02d\t%s\t%s\t%s\n' "$ordinal" "$sha" "$blob" "$path" >>"${evidence}/forward-chain-sha256.tsv"
+          done <"${evidence}/expected-chain.txt"
+
+          cat >"${evidence}/expected-recovery-map.tsv" <<'EOF'
+          01	exact_rollback	candidate	supabase/rollbacks/20260804070000_movie_buff_production_baseline_reconciliation.rollback.sql
+          02	exact_rollback	candidate	supabase/rollbacks/20260804073000_movie_buff_vip_authority.rollback.sql
+          03	exact_rollback	candidate	supabase/rollbacks/20260804073100_movie_buff_vip_null_category_fail_closed.rollback.sql
+          04	exact_rollback	candidate	supabase/rollbacks/20260804073200_movie_buff_vip_snapshot_release_hardening.rollback.sql
+          05	exact_rollback	candidate	supabase/rollbacks/20260804073300_movie_buff_vip_deadline_finalize.rollback.sql
+          06	exact_rollback	candidate	supabase/rollbacks/20260804081500_movie_buff_atomic_three_player_matchmaking.rollback.sql
+          07	exact_rollback	candidate	supabase/rollbacks/20260804081600_movie_buff_admission_phase_handoff.rollback.sql
+          08	phase_unit_rollback	candidate	supabase/rollbacks/20260804083000_movie_buff_server_phase_machine.rollback.sql
+          09	phase_unit_containment_via_083000	candidate	supabase/rollbacks/20260804083000_movie_buff_server_phase_machine.rollback.sql
+          10	exact_rollback	candidate	supabase/rollbacks/20260804083200_movie_buff_buster_safe_boundary.rollback.sql
+          11	exact_rollback	candidate	supabase/rollbacks/20260804083300_movie_buff_phase_tile_mutation_guard.rollback.sql
+          12	exact_rollback	candidate	supabase/rollbacks/20260804083400_movie_buff_phase_contract_alignment.rollback.sql
+          13	exact_rollback	candidate	supabase/rollbacks/20260804083500_movie_buff_reconnect_buster_boundary_repair.rollback.sql
+          14	exact_rollback	candidate	supabase/rollbacks/20260804083600_movie_buff_match_start_handoff.rollback.sql
+          15	exact_rollback	candidate	supabase/rollbacks/20260804083610_movie_buff_phase_digest_schema_repair.rollback.sql
+          16	exact_rollback	candidate	supabase/rollbacks/20260804083700_movie_buff_active_leave_and_buster_boundary.rollback.sql
+          17	exact_rollback	candidate	supabase/rollbacks/20260805155000_movie_buff_function_security_finalizer.rollback.sql
+          18	exact_rollback	candidate	supabase/rollbacks/20260805160000_movie_buff_six_table_rls_reconciliation.rollback.sql
+          19	exact_rollback	candidate	supabase/rollbacks/20260805160500_public_rls_auto_enable_event_trigger_contract.rollback.sql
+          20	exact_rollback	candidate	supabase/rollbacks/20260805161000_public_rls_auto_enable_acl_lockdown.rollback.sql
+          21	exact_rollback	candidate	supabase/rollbacks/20260807010000_movie_buff_production_security_manifest_reconciliation.rollback.sql
+          22	exact_rollback	external	supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql
+          EOF
+          sed -i 's/^          //' "${evidence}/expected-recovery-map.tsv"
+          test "$(wc -l <"${evidence}/expected-recovery-map.tsv")" -eq 22
+
+          git fetch --no-tags --depth=1 origin "${RECOVERY_SOURCE_SHA}"
+          : >"${evidence}/recovery-artifact-sha256.tsv"
+          while IFS=$'\t' read -r ordinal mode source path; do
+            if [[ "$source" = candidate ]]; then
+              source_sha="${CANDIDATE_SHA}"
+            elif [[ "$source" = external ]]; then
+              source_sha="${RECOVERY_SOURCE_SHA}"
+            else
+              echo "bad recovery source: $source" >&2; exit 1
+            fi
+            git cat-file -e "${source_sha}:${path}"
+            out="${evidence}/bytes/recovery-${ordinal}.sql"
+            git show "${source_sha}:${path}" >"${out}"
+            sha="$(sha256sum "${out}" | awk '{print $1}')"
+            blob="$(git rev-parse "${source_sha}:${path}")"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ordinal" "$mode" "$source" "$sha" "$blob" "$path" >>"${evidence}/recovery-artifact-sha256.tsv"
+          done <"${evidence}/expected-recovery-map.tsv"
+
+          verifier='supabase/tests/movie_buff_production_chain_manifest_v2_verify.sql'
+          git cat-file -e "${CANDIDATE_SHA}:${verifier}"
+          git show "${CANDIDATE_SHA}:${verifier}" >"${evidence}/bytes/manifest-verifier.sql"
+          verifier_sha="$(sha256sum "${evidence}/bytes/manifest-verifier.sql" | awk '{print $1}')"
+          verifier_blob="$(git rev-parse "${CANDIDATE_SHA}:${verifier}")"
+          printf '%s\t%s\t%s\n' "$verifier_sha" "$verifier_blob" "$verifier" >"${evidence}/manifest-verifier-sha256.tsv"
+
+          python3 - "${evidence}/binding.json" "$verifier_sha" "$verifier_blob" <<'PY'
+          import json, os, pathlib, sys
+          pathlib.Path(sys.argv[1]).write_text(json.dumps({
+            'repository':'BuffGamesStudio/buff-platform',
+            'candidateBranch':os.environ['CANDIDATE_BRANCH'],
+            'candidateSha':os.environ['CANDIDATE_SHA'],
+            'candidateTree':os.environ['CANDIDATE_TREE'],
+            'forwardStepCount':22,
+            'recoveryMapCount':22,
+            'manifestSha256':'a2357ac91b5a00e98d0f0a30bd69b8fe901cbfb97b484885a39577fce3ac0adb',
+            'manifestVerifierSha256':sys.argv[2],
+            'manifestVerifierGitBlobSha':sys.argv[3],
+            'externalRecoverySourceSha':os.environ['RECOVERY_SOURCE_SHA'],
+            'classification':'PASS'
+          },indent=2)+'\n')
+          PY
+
+          (cd "${evidence}" && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
+
+      - name: Upload sealed-chain hash evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/movie-buff-new-candidate-chain-hashes
+          if-no-files-found: error
+          retention-days: 30
+
+  independent-inspection:
+    needs: inventory
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: evidence
+      - name: Verify evidence and binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd evidence
+          sha256sum -c SHA256SUMS.txt
+          test "$(wc -l < forward-chain-sha256.tsv)" -eq 22
+          test "$(wc -l < recovery-artifact-sha256.tsv)" -eq 22
+          python3 - <<'PY'
+          import json
+          b=json.load(open('binding.json'))
+          assert b['classification']=='PASS'
+          assert b['candidateSha']=='2e01f0fb3681a7b2b15c19a3f5273af6a2ca8ca4'
+          assert b['candidateTree']=='d07e2b5d405396d8ab4a89c130fdcc46a901b124'
+          assert b['forwardStepCount']==22
+          assert b['recoveryMapCount']==22
+          assert b['manifestSha256']=='a2357ac91b5a00e98d0f0a30bd69b8fe901cbfb97b484885a39577fce3ac0adb'
+          rows=[line.rstrip('\n').split('\t') for line in open('forward-chain-sha256.tsv')]
+          assert rows[0][3].endswith('20260804070000_movie_buff_production_baseline_reconciliation.sql')
+          assert rows[20][3].endswith('20260807010000_movie_buff_production_security_manifest_reconciliation.sql')
+          assert rows[21][3].endswith('20260807014500_movie_buff_rls_helper_execute_repair.sql')
+          recovery=[line.rstrip('\n').split('\t') for line in open('recovery-artifact-sha256.tsv')]
+          assert recovery[8][1]=='phase_unit_containment_via_083000'
+          assert recovery[21][2]=='external'
+          PY
