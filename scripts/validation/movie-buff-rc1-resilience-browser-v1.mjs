@@ -149,8 +149,6 @@ async function phaseView(index, roomId) {
 
 async function createDisposableMatch(label) {
   const roomId = crypto.randomUUID();
-  const matchId = crypto.randomUUID();
-  const roundId = crypto.randomUUID();
   const now = new Date().toISOString();
   cleanupRoomIds.push(roomId);
 
@@ -159,13 +157,13 @@ async function createDisposableMatch(label) {
     room_code: crypto.randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase(),
     host_id: sessions[0].user.id,
     room_type: "private",
-    status: "active",
+    status: "waiting",
     difficulty: "medium",
     total_rounds: 2,
     max_players: 3,
     current_round: 1,
     is_ranked: false,
-    started_at: now,
+    started_at: null,
   });
   if (roomError) throw roomError;
 
@@ -182,30 +180,15 @@ async function createDisposableMatch(label) {
   );
   if (membersError) throw membersError;
 
-  const { error: matchError } = await admin.from("matches").insert({
-    id: matchId,
-    room_id: roomId,
-    difficulty: "medium",
-    total_rounds: 2,
-    status: "active",
-    started_at: now,
-  });
-  if (matchError) throw matchError;
-
-  const { error: playersError } = await admin.from("match_players").insert(
-    sessions.map((session) => ({ match_id: matchId, player_id: session.user.id })),
+  const { data: startRows, error: startError } = await apiClients[0].rpc(
+    "start_movie_buff_match",
+    { p_room_id: roomId },
   );
-  if (playersError) throw playersError;
-
-  const { error: roundError } = await admin.from("match_rounds").insert({
-    id: roundId,
-    match_id: matchId,
-    clip_id: null,
-    round_number: 1,
-    time_limit_seconds: 5,
-    started_at: null,
-  });
-  if (roundError) throw roundError;
+  if (startError) throw startError;
+  assert.ok(Array.isArray(startRows) && startRows.length === 1, `${label}: expected one authoritative match-start result`);
+  const matchId = startRows[0].created_match_id;
+  const roundId = startRows[0].created_round_id;
+  assert.ok(matchId && roundId, `${label}: authoritative match-start identities are required`);
 
   const initialViews = await Promise.all(apiClients.map((_client, index) => phaseView(index, roomId)));
   assert.ok(initialViews.every((view) => view.phase === "round_intro"), `${label}: expected round_intro bootstrap`);
