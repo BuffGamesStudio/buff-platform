@@ -11,6 +11,12 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 
 import { supabaseAdmin } from "@/lib/server/supabaseAdmin";
+import {
+  consumeAuthoritativeRoundAsset,
+  isMissingFilesystemEntry,
+  promotePoolAssetSafely,
+  shouldPurgeRuntimeAsset,
+} from "@/lib/server/movieRoundMediaFilesystem";
 
 const SEGMENT_DURATION_SECONDS = 5;
 const SEGMENTS_PER_ZONE = 2;
@@ -1105,8 +1111,10 @@ async function purgeExpiredAssets() {
       }
 
       if (
-        isExpiredFile(nextPath) ||
-        entry.name.endsWith(".lock")
+        shouldPurgeRuntimeAsset(
+          entry.name,
+          isExpiredFile(nextPath),
+        )
       ) {
         await fsp.unlink(nextPath).catch(() => {});
       }
@@ -2449,18 +2457,26 @@ async function listPoolAssetPaths(
           poolDirectory,
           entry.name,
         );
-        const stats = await fsp.stat(absolutePath);
 
-        return {
-          absolutePath,
-          mtimeMs: stats.mtimeMs,
-        };
+        try {
+          const stats = await fsp.stat(absolutePath);
+          return {
+            absolutePath,
+            mtimeMs: stats.mtimeMs,
+          };
+        } catch (error) {
+          if (isMissingFilesystemEntry(error)) {
+            return null;
+          }
+          throw error;
+        }
       }),
   );
 
   return files
     .filter(
-      (file) => !isExpiredFile(file.absolutePath),
+      (file): file is { absolutePath: string; mtimeMs: number } =>
+        file !== null && !isExpiredFile(file.absolutePath),
     )
     .sort((left, right) => left.mtimeMs - right.mtimeMs);
 }
@@ -2513,95 +2529,94 @@ async function ensurePoolAssetsForSource(
 async function promoteSecondaryVariantToPrimary(
   source: ClipSourceRecord,
 ) {
-  const reserveAssets = await listPoolAssetPaths(
-    source,
-    "secondary",
-  );
-  const chosenAsset = reserveAssets[0];
-
-  if (!chosenAsset || !source.contentMediaId) {
+  if (!source.contentMediaId) {
     return false;
   }
 
   const labelSegment = slugifyPathSegment(
     source.difficultyLabel ?? "buff",
   );
-  const variantKey = buildPoolVariantKey();
-  const promotedAsset = buildGeneratedAssetPath(
-    "pool",
-    `primary/${labelSegment}/${source.contentMediaId}/${variantKey}`,
-    source.clipType,
-  );
+  const lockHash = createHash("sha1")
+    .update(source.contentMediaId)
+    .digest("hex")
+    .slice(0, 16);
 
-  await fsp.mkdir(
-    path.dirname(promotedAsset.absolutePath),
-    { recursive: true },
-  );
-  await fsp.rename(
-    chosenAsset.absolutePath,
-    promotedAsset.absolutePath,
-  );
-
-  return true;
+  return promotePoolAssetSafely({
+    lockPath: path.join(
+      RUNTIME_PUBLIC_ROOT,
+      "locks",
+      `pool-promote-${lockHash}.lock`,
+    ),
+    listSecondaryAssets: () =>
+      listPoolAssetPaths(source, "secondary"),
+    createPrimaryPath: () => {
+      const variantKey = buildPoolVariantKey();
+      return buildGeneratedAssetPath(
+        "pool",
+        `primary/${labelSegment}/${source.contentMediaId}/${variantKey}`,
+        source.clipType,
+      ).absolutePath;
+    },
+  });
 }
 
 async function tryConsumePooledRoundClip(
   roundId: string,
   source: ClipSourceRecord,
 ) {
-  const readyAssets = await listPoolAssetPaths(
-    source,
-    "primary",
-  );
-  const chosenAsset = readyAssets[0];
-
-  if (!chosenAsset) {
-    return null;
-  }
-
   const roundAsset = buildGeneratedAssetPath(
     "round",
     roundId,
     source.clipType,
   );
+  const lockHash = createHash("sha1")
+    .update(roundId)
+    .digest("hex")
+    .slice(0, 16);
 
-  await fsp.mkdir(
-    path.dirname(roundAsset.absolutePath),
-    {
-      recursive: true,
-    },
-  );
+  const consumption =
+    await consumeAuthoritativeRoundAsset({
+      lockPath: path.join(
+        RUNTIME_PUBLIC_ROOT,
+        "locks",
+        `round-consume-${lockHash}.lock`,
+      ),
+      roundAssetPath: roundAsset.absolutePath,
+      listPrimaryAssets: () =>
+        listPoolAssetPaths(source, "primary"),
+    });
 
-  if (!fs.existsSync(roundAsset.absolutePath)) {
-    await fsp.rename(
-      chosenAsset.absolutePath,
-      roundAsset.absolutePath,
-    );
+  if (!consumption.available) {
+    return null;
   }
 
-  const promoted =
-    await promoteSecondaryVariantToPrimary(
-      source,
-    );
+  const promoted = consumption.consumedPrimary
+    ? await promoteSecondaryVariantToPrimary(source)
+    : false;
 
-  void ensurePoolAssetsForSource(source, 2);
+  if (consumption.consumedPrimary) {
+    void ensurePoolAssetsForSource(source, 2);
+  }
 
   return {
     assetPath: roundAsset.absolutePath,
     assetUrl: roundAsset.publicUrl,
     clipType: source.clipType,
-    durationSeconds:
-      FINAL_CLIP_DURATION_SECONDS,
+    durationSeconds: FINAL_CLIP_DURATION_SECONDS,
     hasAudio: source.clipType === "audio",
     resolvedSourceUrl: "",
     segmentStarts: [],
     sourceDurationSeconds: 0,
     strategyNotes: [
-      "Served a pre-generated primary pooled clip variant.",
+      consumption.consumedPrimary
+        ? "Consumed one pre-generated primary pooled clip under the authoritative round lock."
+        : "Reused the authoritative round asset created by an earlier concurrent caller.",
       promoted
-        ? "Promoted one reserve variant from secondary into primary."
-        : "No secondary reserve variant was available to promote.",
-      "Queued a secondary replacement variant in the background.",
+        ? "Promoted one reserve variant from secondary into primary under a source lock."
+        : "No secondary reserve promotion was required or available.",
+      consumption.consumedPrimary
+        ? "Queued a secondary replacement variant in the background."
+        : "Did not duplicate destructive pool consumption for this round.",
     ],
   } satisfies GeneratedClipSummary;
 }
