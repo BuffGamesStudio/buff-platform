@@ -1,0 +1,95 @@
+name: Movie Buff RC-1 expected-state manifest SHA-256
+
+on:
+  pull_request:
+    branches: [validation/movie-buff-rc1-expected-state-hash-controller-20260808]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
+  PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
+  CONTROLLER_BRANCH: validation/movie-buff-rc1-expected-state-hash-controller-20260808
+  TRIGGER_BRANCH: validation/movie-buff-rc1-expected-state-hash-trigger-20260808
+  SECURITY_EVIDENCE_SHA: ce24b648f08777969267b2f4fb57d80de6b43c84
+  MANIFEST_PATH: docs/security/movie-buff-rc1-expected-state-manifest-v2.json
+  ARTIFACT_NAME: movie-buff-rc1-expected-state-hash-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  hash-manifest:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact RC and hash pinned manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_BASE_REF}" = "${CONTROLLER_BRANCH}"
+          test "${GITHUB_HEAD_REF}" = "${TRIGGER_BRANCH}"
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          python3 - <<'PY'
+          import os,subprocess
+          actual=set(subprocess.check_output(['git','diff','--name-only',f"{os.environ['PRODUCT_SHA']}..HEAD"],text=True).splitlines())
+          expected={'.github/workflows/movie-buff-rc1-expected-state-hash.yml'}
+          if actual != expected:
+              raise SystemExit(f'unexpected controller delta: {sorted(actual)}')
+          PY
+          evidence="${RUNNER_TEMP}/expected-state-hash"
+          mkdir -p "$evidence"
+          git fetch --no-tags --depth=1 origin "${SECURITY_EVIDENCE_SHA}"
+          git show "${SECURITY_EVIDENCE_SHA}:${MANIFEST_PATH}" > "$evidence/expected-state-manifest-v2.json"
+          manifest_blob="$(git rev-parse "${SECURITY_EVIDENCE_SHA}:${MANIFEST_PATH}")"
+          manifest_sha256="$(sha256sum "$evidence/expected-state-manifest-v2.json" | awk '{print $1}')"
+          printf '%s  %s\n' "$manifest_sha256" expected-state-manifest-v2.json > "$evidence/expected-state-manifest-v2.sha256"
+          python3 - "$evidence/binding.json" "$manifest_blob" "$manifest_sha256" <<'PY'
+          import json,os,pathlib,sys
+          pathlib.Path(sys.argv[1]).write_text(json.dumps({
+            'repository':'BuffGamesStudio/buff-platform',
+            'productSha':os.environ['PRODUCT_SHA'],
+            'productTree':os.environ['PRODUCT_TREE'],
+            'securityEvidenceCommit':os.environ['SECURITY_EVIDENCE_SHA'],
+            'manifestPath':os.environ['MANIFEST_PATH'],
+            'manifestGitBlobSha':sys.argv[2],
+            'manifestSha256':sys.argv[3],
+            'runId':os.environ['GITHUB_RUN_ID'],
+            'classification':'PASS'
+          },indent=2)+'\n')
+          PY
+          (cd "$evidence" && sha256sum -c expected-state-manifest-v2.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/expected-state-hash
+          if-no-files-found: error
+          retention-days: 30
+
+  independent-hash-inspection:
+    needs: hash-manifest
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: evidence
+      - name: Independently verify manifest digest and RC binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd evidence
+          sha256sum -c expected-state-manifest-v2.sha256
+          python3 - <<'PY'
+          import json
+          b=json.load(open('binding.json'))
+          assert b['classification']=='PASS'
+          assert b['productSha']=='81d3618ce7be28a6ce81363a8bda524cd18ece15'
+          assert b['productTree']=='511c3501bd6a73f7556f636bc9e12ef30935d58d'
+          assert b['securityEvidenceCommit']=='ce24b648f08777969267b2f4fb57d80de6b43c84'
+          assert len(b['manifestSha256'])==64
+          PY
