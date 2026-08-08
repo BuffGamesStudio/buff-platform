@@ -1,0 +1,248 @@
+name: Movie Buff RC-1 recovery rollback and reapply v1c clean capture
+
+on:
+  pull_request:
+    branches: [operations/movie-buff-rc1-recovery-seat2-v1c-20260808]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
+  PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
+  FORWARD: supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql
+  FORWARD_SHA256: bb2e16b10fa5f082907fad2c9cf0182706a18c9c6f88573d16f25aa746b18476
+  ROLLBACK: supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql
+  ROLLBACK_SHA256: f43188231ccc0b0bb317381550279693da85968f2aa3a56183e2cd228acde647
+  ARTIFACT_NAME: movie-buff-rc1-recovery-v1c-clean-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  recovery-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Verify exact RC ancestry, source hashes, and recovery-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          test "$(sha256sum "${FORWARD}" | cut -d' ' -f1)" = "${FORWARD_SHA256}"
+          test "$(sha256sum "${ROLLBACK}" | cut -d' ' -f1)" = "${ROLLBACK_SHA256}"
+          python3 - <<'PY'
+          import os,subprocess
+          actual=set(subprocess.check_output(['git','diff','--name-only',f"{os.environ['PRODUCT_SHA']}..HEAD"],text=True).splitlines())
+          expected={
+            '.github/workflows/movie-buff-rc1-recovery-v1c.yml',
+            'supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql',
+          }
+          if actual != expected:
+              raise SystemExit(f'unexpected RC-1 recovery delta: {sorted(actual)}')
+          PY
+          git diff --check
+
+      - name: Start disposable Supabase with raw credentials isolated outside evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="${RUNNER_TEMP}/rc1-recovery-private"
+          evidence="${RUNNER_TEMP}/rc1-recovery-evidence"
+          mkdir -p "${raw}" "${evidence}"
+          chmod 700 "${raw}"
+          supabase start >"${raw}/supabase-start.raw.log" 2>&1
+          supabase db reset >"${raw}/db-reset.raw.log" 2>&1
+          supabase status -o env >"${raw}/status.raw.env"
+          python3 - "${raw}/status.raw.env" "${raw}/db-url.private" <<'PY'
+          import pathlib,re,sys
+          text=pathlib.Path(sys.argv[1]).read_text()
+          m=re.search(r'^DB_URL=(?:"([^"]+)"|(\S+))$',text,re.M)
+          if not m:
+              raise SystemExit('DB_URL missing from disposable Supabase status')
+          pathlib.Path(sys.argv[2]).write_text((m.group(1) or m.group(2))+'\n')
+          PY
+
+      - name: Prove forward state, rollback containment, and exact forward reapply
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="${RUNNER_TEMP}/rc1-recovery-private"
+          evidence="${RUNNER_TEMP}/rc1-recovery-evidence"
+          DB_URL="$(cat "${raw}/db-url.private")"
+          cat >"${evidence}/helper-state.sql" <<'SQL'
+          \pset format unaligned
+          \pset tuples_only on
+          \pset fieldsep '|'
+          select p.oid::regprocedure::text,
+                 pg_get_userbyid(p.proowner),
+                 p.prosecdef,
+                 array_to_string(p.proconfig,','),
+                 has_function_privilege('public',p.oid,'execute'),
+                 has_function_privilege('anon',p.oid,'execute'),
+                 has_function_privilege('authenticated',p.oid,'execute'),
+                 has_function_privilege('service_role',p.oid,'execute')
+          from pg_proc p
+          where p.oid in (
+            'public.is_movie_buff_room_member(uuid)'::regprocedure,
+            'public.is_movie_buff_match_member(uuid)'::regprocedure,
+            'public.is_movie_buff_round_member(uuid)'::regprocedure
+          )
+          order by 1;
+          SQL
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -Atc "select version from supabase_migrations.schema_migrations where version='20260807014500';" >"${evidence}/ledger-forward.txt"
+          test "$(cat "${evidence}/ledger-forward.txt")" = "20260807014500"
+
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${evidence}/helper-state.sql" >"${evidence}/forward-before.tsv"
+          test "$(grep -c '|t|search_path=pg_catalog, public|f|f|t|t$' "${evidence}/forward-before.tsv")" = "3"
+
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${ROLLBACK}" >"${evidence}/rollback.log" 2>&1
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${evidence}/helper-state.sql" >"${evidence}/rollback-state.tsv"
+          test "$(grep -c '|t|search_path=pg_catalog, public|f|f|f|t$' "${evidence}/rollback-state.tsv")" = "3"
+
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${FORWARD}" >"${evidence}/forward-reapply.log" 2>&1
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${evidence}/helper-state.sql" >"${evidence}/forward-after.tsv"
+          diff -u "${evidence}/forward-before.tsv" "${evidence}/forward-after.tsv" >"${evidence}/catalog-equivalence.diff"
+          test ! -s "${evidence}/catalog-equivalence.diff"
+
+      - name: Fail closed if the evidence directory contains credential shapes
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/rc1-recovery-evidence"
+          python3 - "${evidence}" <<'PY'
+          import json,pathlib,re,sys
+          root=pathlib.Path(sys.argv[1])
+          ansi=re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+          row=re.compile(r'(?im)^\s*│?\s*(Access Key|Secret Key)\s*│\s*([^│\r\n]+?)\s*│')
+          jwt=re.compile(r'\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\b')
+          dburl=re.compile(r'(?i)\bpostgres(?:ql)?://[^:\s/@]+:[^@\s/]+@')
+          sbsecret=re.compile(r'\bsb_secret_[A-Za-z0-9_-]{8,}\b')
+          assign=re.compile(r'(?im)^\s*(?:AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_DB_PASSWORD|POSTGRES_PASSWORD)\s*[:=]\s*\S+')
+
+          fake='│ Access Key │ '+'a'*32+' │\n│ Secret Key │ '+'b'*64+' │\npostgresql://user:pass@127.0.0.1/db\n'
+          assert row.search(fake) and dburl.search(fake), 'credential scanner positive fixture failed'
+          assert not row.search('sha256='+'c'*64+'\nStorage S3 label only\n'), 'credential scanner negative fixture failed'
+
+          findings=[]
+          for p in sorted(root.rglob('*')):
+              if not p.is_file():
+                  continue
+              text=ansi.sub('',p.read_text(encoding='utf-8',errors='ignore'))
+              for m in row.finditer(text):
+                  findings.append({'path':str(p.relative_to(root)),'type':m.group(1),'valueLength':len(m.group(2).strip())})
+              if jwt.search(text): findings.append({'path':str(p.relative_to(root)),'type':'jwt'})
+              if dburl.search(text): findings.append({'path':str(p.relative_to(root)),'type':'db_password_url'})
+              if sbsecret.search(text): findings.append({'path':str(p.relative_to(root)),'type':'sb_secret'})
+              if assign.search(text): findings.append({'path':str(p.relative_to(root)),'type':'credential_assignment'})
+          report={
+            'classification':'PASS' if not findings else 'FAIL',
+            'positiveFixture':'PASS',
+            'negativeFixture':'PASS',
+            'findingClasses':findings,
+            'capturePolicy':'Supabase start/status credential-bearing raw output is kept outside the uploaded evidence directory and removed after use.'
+          }
+          (root/'redaction-report.json').write_text(json.dumps(report,indent=2)+'\n')
+          if findings:
+              raise SystemExit('credential shapes detected in recovery evidence directory')
+          PY
+
+      - name: Record recovery manifest only after clean evidence scan and hash everything
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/rc1-recovery-evidence"
+          python3 - "${evidence}" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          report=json.loads((root/'redaction-report.json').read_text())
+          assert report['classification']=='PASS'
+          manifest={
+            'classification':'PASS',
+            'logicClassification':'PASS',
+            'evidenceHygiene':'PASS',
+            'repository':'BuffGamesStudio/buff-platform',
+            'productSha':'81d3618ce7be28a6ce81363a8bda524cd18ece15',
+            'productTree':'511c3501bd6a73f7556f636bc9e12ef30935d58d',
+            'scope':'disposable-localhost rollback containment and exact forward reapply',
+            'forwardPath':'supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql',
+            'forwardSha256':'bb2e16b10fa5f082907fad2c9cf0182706a18c9c6f88573d16f25aa746b18476',
+            'rollbackPath':'supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql',
+            'rollbackSha256':'f43188231ccc0b0bb317381550279693da85968f2aa3a56183e2cd228acde647',
+            'dataDeletion':False,
+            'hostedMutation':'NOT APPLICABLE',
+            'productionBackupIdentity':'UNKNOWN'
+          }
+          (root/'recovery-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          PY
+          printf '%s  %s\n' "${FORWARD_SHA256}" "${FORWARD}" >"${evidence}/source-sha256.txt"
+          printf '%s  %s\n' "${ROLLBACK_SHA256}" "${ROLLBACK}" >>"${evidence}/source-sha256.txt"
+          (cd "${evidence}" && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
+
+      - name: Destroy private raw credential-bearing capture before upload
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "${RUNNER_TEMP}/rc1-recovery-private"
+          supabase stop --no-backup || true
+
+      - name: Upload clean recovery evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/rc1-recovery-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  independent-recovery-inspection:
+    needs: recovery-proof
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: evidence
+
+      - name: Independently verify rollback semantics, hashes, exact RC identity, and hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd evidence
+          sha256sum -c SHA256SUMS.txt
+          test ! -s catalog-equivalence.diff
+          test "$(grep -c '|t|search_path=pg_catalog, public|f|f|f|t$' rollback-state.tsv)" = "3"
+          test "$(grep -c '|t|search_path=pg_catalog, public|f|f|t|t$' forward-after.tsv)" = "3"
+          python3 - <<'PY'
+          import json,pathlib,re
+          root=pathlib.Path('.')
+          m=json.loads((root/'recovery-manifest.json').read_text())
+          assert m['classification']=='PASS'
+          assert m['logicClassification']=='PASS'
+          assert m['evidenceHygiene']=='PASS'
+          assert m['productSha']=='81d3618ce7be28a6ce81363a8bda524cd18ece15'
+          assert m['productTree']=='511c3501bd6a73f7556f636bc9e12ef30935d58d'
+          assert m['dataDeletion'] is False
+          r=json.loads((root/'redaction-report.json').read_text())
+          assert r['classification']=='PASS' and r['positiveFixture']=='PASS' and r['negativeFixture']=='PASS'
+          text='\n'.join(p.read_text(encoding='utf-8',errors='ignore') for p in root.rglob('*') if p.is_file())
+          row=re.compile(r'(?im)^\s*│?\s*(Access Key|Secret Key)\s*│\s*([^│\r\n]+?)\s*│')
+          jwt=re.compile(r'\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\b')
+          dburl=re.compile(r'(?i)\bpostgres(?:ql)?://[^:\s/@]+:[^@\s/]+@')
+          sbsecret=re.compile(r'\bsb_secret_[A-Za-z0-9_-]{8,}\b')
+          assign=re.compile(r'(?im)^\s*(?:AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_DB_PASSWORD|POSTGRES_PASSWORD)\s*[:=]\s*\S+')
+          assert row.search(text) is None
+          assert jwt.search(text) is None
+          assert dburl.search(text) is None
+          assert sbsecret.search(text) is None
+          assert assign.search(text) is None
+          PY
