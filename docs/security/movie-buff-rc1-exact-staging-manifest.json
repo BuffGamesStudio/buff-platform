@@ -1,0 +1,88 @@
+{
+  "manifestVersion": 1,
+  "classificationVocabulary": ["PASS", "FAIL", "UNKNOWN", "NOT APPLICABLE"],
+  "repository": "BuffGamesStudio/buff-platform",
+  "seat": 4,
+  "seatAuthority": "security execution and isolated staging proof",
+  "product": {
+    "branch": "release-candidate/movie-buff-2026-08-07-rc-1",
+    "sha": "81d3618ce7be28a6ce81363a8bda524cd18ece15",
+    "tree": "511c3501bd6a73f7556f636bc9e12ef30935d58d"
+  },
+  "stagingTarget": {
+    "organizationId": "tleuzztdjpajaltwcclj",
+    "projectName": "movie-buff-staging",
+    "projectRef": "eddwkxcillhzkvwmavsc",
+    "region": "us-east-1",
+    "status": "ACTIVE_HEALTHY",
+    "databaseHost": "db.eddwkxcillhzkvwmavsc.supabase.co",
+    "postgresMajor": "17",
+    "environmentClassification": "isolated-staging"
+  },
+  "requiredRcDelta": {
+    "path": "supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql",
+    "gitBlobSha": "a47e164c1fe5f37e579949bd50dd35b1dfb5d415",
+    "migrationVersion": "20260807014500",
+    "expectedAfterApply": [
+      {
+        "regprocedure": "public.is_movie_buff_room_member(uuid)",
+        "owner": "postgres",
+        "securityDefiner": true,
+        "searchPath": "pg_catalog, public",
+        "publicExecute": false,
+        "anonExecute": false,
+        "authenticatedExecute": true,
+        "serviceRoleExecute": true
+      },
+      {
+        "regprocedure": "public.is_movie_buff_match_member(uuid)",
+        "owner": "postgres",
+        "securityDefiner": true,
+        "searchPath": "pg_catalog, public",
+        "publicExecute": false,
+        "anonExecute": false,
+        "authenticatedExecute": true,
+        "serviceRoleExecute": true
+      },
+      {
+        "regprocedure": "public.is_movie_buff_round_member(uuid)",
+        "owner": "postgres",
+        "securityDefiner": true,
+        "searchPath": "pg_catalog, public",
+        "publicExecute": false,
+        "anonExecute": false,
+        "authenticatedExecute": true,
+        "serviceRoleExecute": true
+      }
+    ]
+  },
+  "observedReadOnlyState": {
+    "migration070145Present": false,
+    "threeHelpers": {
+      "owner": "postgres",
+      "securityDefiner": true,
+      "searchPath": "pg_catalog, public",
+      "publicExecute": false,
+      "anonExecute": false,
+      "authenticatedExecute": false,
+      "serviceRoleExecute": true
+    },
+    "sixTargetTables": {
+      "rlsEnabled": true,
+      "forceRlsEnabled": true
+    }
+  },
+  "classification": {
+    "sixTableRlsPosture": "PASS",
+    "exactRcMigrationLedgerAlignment": "FAIL",
+    "exactRcHelperAclAlignment": "FAIL",
+    "stagingMutation": "NOT APPLICABLE",
+    "hostedPersonaProofAfterRcAlignment": "UNKNOWN",
+    "overallExactRcStagingSecurity": "FAIL"
+  },
+  "mutationGate": {
+    "authorizedHere": false,
+    "reason": "Do not apply the missing staging migration until the exact rollback/reapply artifact is evidence-clean and the execution envelope records migration SHA-256, operator, reviewer, and execution window. This manifest is read-only evidence, not mutation authority."
+  },
+  "mov19Boundary": "MOV-19 remains outside Seat 4 and may independently judge this manifest and later exact hosted evidence; MOV-19 may not repair Seat 4 work."
+}

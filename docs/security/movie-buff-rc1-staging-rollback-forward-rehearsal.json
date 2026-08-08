@@ -1,0 +1,91 @@
+{
+  "evidenceVersion": 1,
+  "repository": "BuffGamesStudio/buff-platform",
+  "product": {
+    "branch": "release-candidate/movie-buff-2026-08-07-rc-1",
+    "sha": "81d3618ce7be28a6ce81363a8bda524cd18ece15",
+    "tree": "511c3501bd6a73f7556f636bc9e12ef30935d58d"
+  },
+  "target": {
+    "projectName": "movie-buff-staging",
+    "projectRef": "eddwkxcillhzkvwmavsc",
+    "organizationId": "tleuzztdjpajaltwcclj",
+    "region": "us-east-1",
+    "environment": "isolated-staging",
+    "productionExcluded": true
+  },
+  "authority": {
+    "source": "docs/security/movie-buff-rc1-staging-authority-envelope.json",
+    "scope": "isolated-staging-only",
+    "windowTimezone": "America/New_York",
+    "windowExpires": "2026-08-08T00:30:00-04:00"
+  },
+  "sourceArtifacts": {
+    "forwardPath": "supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql",
+    "forwardGitBlobSha": "a47e164c1fe5f37e579949bd50dd35b1dfb5d415",
+    "forwardSha256": "bb2e16b10fa5f082907fad2c9cf0182706a18c9c6f88573d16f25aa746b18476",
+    "rollbackPath": "supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql",
+    "rollbackGitBlobSha": "977222a91100d37ccbe8ffd2eec49cdd464df42f",
+    "rollbackSha256": "f43188231ccc0b0bb317381550279693da85968f2aa3a56183e2cd228acde647"
+  },
+  "liveSequence": [
+    {
+      "step": "pre-rehearsal forward state",
+      "ledgerVersion": "20260808040816",
+      "ledgerName": "20260807014500_movie_buff_rls_helper_execute_repair",
+      "result": "PASS"
+    },
+    {
+      "step": "rollback apply",
+      "ledgerVersion": "20260808042759",
+      "ledgerName": "rc1_staging_rollback_rehearsal_20260807014500",
+      "result": "PASS"
+    },
+    {
+      "step": "rollback containment verification",
+      "expected": "three membership helpers owner=postgres, SECURITY DEFINER, search_path=pg_catalog, public, PUBLIC=false, anon=false, authenticated=false, service_role=true",
+      "result": "PASS"
+    },
+    {
+      "step": "exact forward reapply",
+      "ledgerVersion": "20260808042827",
+      "ledgerName": "rc1_staging_forward_reapply_20260807014500",
+      "result": "PASS"
+    },
+    {
+      "step": "final catalog equality",
+      "expected": "three helpers authenticated=true/service_role=true/PUBLIC=false/anon=false with unchanged owner, SECURITY DEFINER and fixed search_path; six protected tables remain RLS+FORCE RLS",
+      "result": "PASS"
+    }
+  ],
+  "finalState": {
+    "membershipHelpers": "PASS",
+    "sixProtectedTablesRls": "PASS",
+    "sixProtectedTablesForceRls": "PASS",
+    "productionContacted": false
+  },
+  "negativePathExecution": {
+    "wrongProjectRef": "UNKNOWN",
+    "nonLocalTargetDuringLocalLab": "UNKNOWN",
+    "wrongSha": "UNKNOWN",
+    "staleMigrationHash": "UNKNOWN",
+    "missingMigration": "UNKNOWN",
+    "missingRollback": "UNKNOWN",
+    "dirtyCheckout": "UNKNOWN",
+    "failedApply": "UNKNOWN",
+    "failedVerification": "UNKNOWN",
+    "failedRollback": "UNKNOWN",
+    "failedForwardReapply": "UNKNOWN",
+    "secretBearingOutput": "UNKNOWN"
+  },
+  "classification": {
+    "hostedStagingForwardApply": "PASS",
+    "hostedStagingRollback": "PASS",
+    "hostedStagingContainment": "PASS",
+    "hostedStagingForwardReapply": "PASS",
+    "hostedStagingFinalCatalogState": "PASS",
+    "negativePathHarnessCoverage": "UNKNOWN",
+    "production": "NOT APPLICABLE"
+  },
+  "mov19Boundary": "Execution-seat evidence only. Independent reviewers must re-fetch live staging and ledger entries and must not infer production readiness."
+}

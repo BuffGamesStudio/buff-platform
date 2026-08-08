@@ -1,0 +1,18 @@
+{
+  "repository": "BuffGamesStudio/buff-platform",
+  "productSha": "81d3618ce7be28a6ce81363a8bda524cd18ece15",
+  "productTree": "511c3501bd6a73f7556f636bc9e12ef30935d58d",
+  "manifestSourceCommit": "ce24b648f08777969267b2f4fb57d80de6b43c84",
+  "manifestPath": "docs/security/movie-buff-rc1-expected-state-manifest-v2.json",
+  "manifestGitBlobSha": "77f9a1e90c51d268aafa11cab4da772f8c71085d",
+  "manifestSha256": "a2357ac91b5a00e98d0f0a30bd69b8fe901cbfb97b484885a39577fce3ac0adb",
+  "validationPr": 216,
+  "workflowRun": "31240039978",
+  "hashJob": "93059365743",
+  "independentInspectionJob": "93059396439",
+  "artifactId": "9016713172",
+  "artifactDigest": "sha256:4b584570288ca9ee5c106daf6f257ed2bfcc3cbc87eb0eebc0d557f9e4dd4f17",
+  "localArtifactDigestRecomputed": true,
+  "internalManifestHashRecomputed": true,
+  "classification": "PASS"
+}

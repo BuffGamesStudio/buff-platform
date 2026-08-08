@@ -1,0 +1,58 @@
+{
+  "envelopeVersion": 2,
+  "authorizationSource": "Operator instruction in current conversation: fix rejected browser evidence first; finish security/staging/recovery/provenance in parallel; then let MOV-19 judge the complete RC-1 packet; proceed.",
+  "scope": "isolated-staging-only",
+  "productionExcluded": true,
+  "repository": "BuffGamesStudio/buff-platform",
+  "product": {
+    "branch": "release-candidate/movie-buff-2026-08-07-rc-1",
+    "sha": "81d3618ce7be28a6ce81363a8bda524cd18ece15",
+    "tree": "511c3501bd6a73f7556f636bc9e12ef30935d58d"
+  },
+  "target": {
+    "supabaseProjectName": "movie-buff-staging",
+    "supabaseProjectRef": "eddwkxcillhzkvwmavsc",
+    "organizationId": "tleuzztdjpajaltwcclj",
+    "region": "us-east-1",
+    "environment": "isolated-staging"
+  },
+  "authorizedForwardMigration": {
+    "sourceVersion": "20260807014500",
+    "migrationName": "20260807014500_movie_buff_rls_helper_execute_repair",
+    "path": "supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql",
+    "sha256": "bb2e16b10fa5f082907fad2c9cf0182706a18c9c6f88573d16f25aa746b18476"
+  },
+  "rollback": {
+    "path": "supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql",
+    "sha256": "f43188231ccc0b0bb317381550279693da85968f2aa3a56183e2cd228acde647"
+  },
+  "executionRoles": {
+    "operatorSeat": "Seat 4 / iecmail01 / iecmail01-debug / security execution and isolated staging proof",
+    "controlReviewSeat": "Seat 1 / spaynetaxes / spaynetaxes-debug / RC control and target inventory",
+    "independentFinalJudge": "MOV-19 Watchtower, outside all four execution seats"
+  },
+  "executionWindow": {
+    "timezone": "America/New_York",
+    "notBefore": "2026-08-07T23:57:00-04:00",
+    "expires": "2026-08-08T00:30:00-04:00"
+  },
+  "preconditions": [
+    "RC-1 ref still resolves to the exact bound SHA/tree",
+    "read-only staging target identity still matches this envelope",
+    "migration name 20260807014500_movie_buff_rls_helper_execute_repair remains absent immediately before apply",
+    "three target helpers remain in the observed pre-apply ACL state",
+    "sanitized recovery V1C run 31238609096 rollback/reapply evidence and independent inspection PASS",
+    "no unexpected pending migration is included",
+    "no production target or alias is contacted"
+  ],
+  "stopConditions": [
+    "RC SHA/tree moves",
+    "staging target identity changes",
+    "recovery V1C run 31238609096 is not independently PASS",
+    "unexpected migration or schema delta appears",
+    "apply returns nonzero or post-apply contract differs",
+    "persona or service-role continuity fails",
+    "authorization window expires"
+  ],
+  "status": "PREPARED_WAITING_FOR_RECOVERY_V1C"
+}

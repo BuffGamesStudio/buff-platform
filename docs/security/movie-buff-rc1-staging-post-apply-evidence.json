@@ -1,0 +1,134 @@
+{
+  "evidenceVersion": 1,
+  "classificationVocabulary": ["PASS", "FAIL", "UNKNOWN", "NOT APPLICABLE"],
+  "repository": "BuffGamesStudio/buff-platform",
+  "product": {
+    "branch": "release-candidate/movie-buff-2026-08-07-rc-1",
+    "sha": "81d3618ce7be28a6ce81363a8bda524cd18ece15",
+    "tree": "511c3501bd6a73f7556f636bc9e12ef30935d58d"
+  },
+  "target": {
+    "projectName": "movie-buff-staging",
+    "projectRef": "eddwkxcillhzkvwmavsc",
+    "organizationId": "tleuzztdjpajaltwcclj",
+    "region": "us-east-1",
+    "environment": "isolated-staging",
+    "productionExcluded": true
+  },
+  "appliedRcDelta": {
+    "sourcePath": "supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql",
+    "sourceGitBlobSha": "a47e164c1fe5f37e579949bd50dd35b1dfb5d415",
+    "sourceSha256": "bb2e16b10fa5f082907fad2c9cf0182706a18c9c6f88573d16f25aa746b18476",
+    "liveLedgerVersion": "20260808040816",
+    "liveLedgerName": "20260807014500_movie_buff_rls_helper_execute_repair",
+    "rollbackPath": "supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql",
+    "rollbackSha256": "f43188231ccc0b0bb317381550279693da85968f2aa3a56183e2cd228acde647"
+  },
+  "sixTablePosture": [
+    {"table":"match_round_player_hints","rls":true,"forceRls":true,"authenticatedSelect":true,"anonSelect":false,"serviceRoleDml":true,"policy":"match_round_player_hints_select_self"},
+    {"table":"match_round_player_playback","rls":true,"forceRls":true,"authenticatedSelect":true,"anonSelect":false,"serviceRoleDml":true,"policy":"match_round_player_playback_select_self"},
+    {"table":"movie_buff_board_categories","rls":true,"forceRls":true,"authenticatedSelect":true,"anonSelect":false,"serviceRoleDml":true,"policy":"movie_buff_board_categories_select_active_member"},
+    {"table":"movie_buff_board_events","rls":true,"forceRls":true,"authenticatedSelect":false,"anonSelect":false,"serviceRoleDml":true,"policy":"movie_buff_internal_browser_deny"},
+    {"table":"movie_buff_board_tiles","rls":true,"forceRls":true,"authenticatedSelect":true,"anonSelect":false,"serviceRoleDml":true,"policy":"movie_buff_board_tiles_select_active_member"},
+    {"table":"movie_buff_boards","rls":true,"forceRls":true,"authenticatedSelect":true,"anonSelect":false,"serviceRoleDml":true,"policy":"movie_buff_boards_select_active_member"}
+  ],
+  "membershipHelpers": [
+    "public.is_movie_buff_room_member(uuid)",
+    "public.is_movie_buff_match_member(uuid)",
+    "public.is_movie_buff_round_member(uuid)"
+  ],
+  "membershipHelperExpectedAndObserved": {
+    "owner": "postgres",
+    "securityDefiner": true,
+    "searchPath": "pg_catalog, public",
+    "publicExecute": false,
+    "anonExecute": false,
+    "authenticatedExecute": true,
+    "serviceRoleExecute": true
+  },
+  "criticalFunctionProof": {
+    "mark_movie_buff_round_media_ready(uuid)": {
+      "owner": "postgres",
+      "securityDefiner": true,
+      "searchPath": "pg_catalog, public",
+      "publicExecute": false,
+      "anonExecute": false,
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true,
+      "authenticatedNonMemberCall": "DENY: Active Movie Buff room membership required",
+      "serviceRoleFakeRoomCall": "passes membership guard and stops at The current round is unavailable",
+      "classification": "PASS"
+    },
+    "finalize_movie_buff_vip_round_window(uuid,uuid,timestamp with time zone)": {
+      "owner": "postgres",
+      "securityDefiner": true,
+      "searchPath": "pg_catalog",
+      "authenticatedExecute": false,
+      "serviceRoleExecute": true,
+      "authenticatedDirectCall": "DENY: permission denied for function",
+      "classification": "PASS"
+    }
+  },
+  "personaChecks": {
+    "authenticatedNonmemberMembershipHelper": "PASS: callable and returns false",
+    "anonMembershipHelper": "PASS: permission denied",
+    "authenticatedNonmemberMediaReady": "PASS: active-membership guard denies",
+    "serviceRoleMediaReady": "PASS: bypasses membership guard and reaches current-round lookup",
+    "authenticatedVipFinalizer": "PASS: permission denied"
+  },
+  "authenticatedSecurityDefinerAllowlistObserved": [
+    "activate_movie_buff_round_vip(uuid,uuid,text)",
+    "advance_movie_buff_match_phase(uuid,bigint)",
+    "confirm_movie_buff_active_leave(uuid,text,text)",
+    "find_or_create_movie_buff_public_room(uuid,text,integer,integer)",
+    "get_movie_buff_active_leave_quote(uuid)",
+    "get_movie_buff_final_results(uuid)",
+    "get_movie_buff_match_phase_view(uuid)",
+    "get_movie_buff_round(uuid)",
+    "get_movie_buff_round_results(uuid)",
+    "get_movie_buff_round_results(uuid,uuid)",
+    "get_movie_buff_vip_round_view(uuid,uuid)",
+    "is_buff_content_manager()",
+    "is_movie_buff_match_member(uuid)",
+    "is_movie_buff_room_member(uuid)",
+    "is_movie_buff_round_member(uuid)",
+    "join_movie_buff_room(text)",
+    "leave_movie_buff_room(uuid)",
+    "lock_movie_buff_round_vip(uuid,uuid,uuid,text)",
+    "mark_movie_buff_round_media_ready(uuid)",
+    "select_movie_buff_match_tile(uuid,uuid,bigint,text)",
+    "set_movie_buff_player_ready(uuid,boolean)",
+    "submit_movie_buff_answer(uuid,text)",
+    "touch_movie_buff_match_participant(uuid)",
+    "touch_movie_buff_room_presence(uuid)",
+    "use_movie_buff_round_hint(uuid,integer)"
+  ],
+  "securityDefinerReconciliation": {
+    "unexpectedAuthenticatedSecurityDefiner": [],
+    "allowlistedAuthenticatedMissing": [],
+    "publicOrAnonExecutable": [],
+    "badOwner": [],
+    "badFixedSearchPath": [],
+    "advisorWarningsRemain": true,
+    "advisorDisposition": "PASS: every current warning maps to an explicit immutable-RC authenticated boundary; no warning is generically suppressed"
+  },
+  "sourceContracts": [
+    {"path":"supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql","gitBlobSha":"1586e95a9f2c9eeac6be7b7c6ec7976801464bcf"},
+    {"path":"supabase/migrations/20260805160000_movie_buff_six_table_rls_reconciliation.sql","gitBlobSha":"195014b2fc76c8f2dc2c5d8394ce68a15696a675"},
+    {"path":"supabase/migrations/20260806214500_movie_buff_staging_security_independent_clearance.sql","gitBlobSha":"82afe9c28bf8c2ff058bd90a3dfae9ec599b126d"},
+    {"path":"supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql","gitBlobSha":"a47e164c1fe5f37e579949bd50dd35b1dfb5d415"}
+  ],
+  "classification": {
+    "exactRcStagingLedgerAlignment": "PASS",
+    "sixTableRlsAndForceRls": "PASS",
+    "sixTableGrantsAndPolicies": "PASS",
+    "membershipHelperAcl": "PASS",
+    "criticalFunctionOwnerSecurityDefinerSearchPath": "PASS",
+    "safePersonaGuardChecks": "PASS",
+    "securityAdvisorObjectLevelReconciliation": "PASS",
+    "liveStagingRollbackRehearsal": "UNKNOWN",
+    "localRollbackContainmentForwardReapply": "PASS",
+    "productionSecurity": "UNKNOWN"
+  },
+  "mov19Boundary": "This is execution-seat evidence. MOV-19 must independently re-fetch and judge it and must not rely on this document alone."
+}

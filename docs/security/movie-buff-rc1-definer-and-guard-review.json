@@ -1,0 +1,53 @@
+{
+  "reviewVersion": 1,
+  "productSha": "81d3618ce7be28a6ce81363a8bda524cd18ece15",
+  "productTree": "511c3501bd6a73f7556f636bc9e12ef30935d58d",
+  "stagingProjectRef": "eddwkxcillhzkvwmavsc",
+  "functionSecurityFinalizer": {
+    "path": "supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql",
+    "gitBlobSha": "1586e95a9f2c9eeac6be7b7c6ec7976801464bcf",
+    "contract": "Authenticated EXECUTE is intentional only for exact regprocedures in movie_buff_authenticated_rpc_allowlist; PUBLIC/anon remain denied; service_role retains hardened execution; VIP finalizer remains service-only."
+  },
+  "liveAdvisorDisposition": {
+    "movieBuffAuthenticatedSecurityDefinerWarnings": "REQUIRES_EXACT_ALLOWLIST_MATCH_NOT_GENERIC_SUPPRESSION",
+    "observedNonMovieBuffWarning": {
+      "identity": "public.is_buff_content_manager()",
+      "classification": "OUTSIDE_MOVIE_BUFF_FINALIZER_OWNERSHIP_REQUIRES_PLATFORM_OWNER_DISPOSITION"
+    },
+    "advisorOverall": "WARN"
+  },
+  "markRoundMediaReady": {
+    "regprocedure": "public.mark_movie_buff_round_media_ready(uuid)",
+    "owner": "postgres",
+    "securityDefiner": true,
+    "searchPath": "pg_catalog, public",
+    "publicExecute": false,
+    "anonExecute": false,
+    "authenticatedExecute": true,
+    "serviceRoleExecute": true,
+    "callsAccessGuard": "public.movie_buff_phase_require_access(uuid)",
+    "accessGuardContract": {
+      "serviceRole": "ALLOW",
+      "unauthenticated": "DENY Authentication required",
+      "authenticatedWithoutActiveMembership": "DENY Active Movie Buff room membership required",
+      "authenticatedActiveMembership": "ALLOW only when room_players.room_id matches, player_id=auth.uid(), and left_at is null"
+    },
+    "classification": "PASS_STRUCTURAL_GUARD_AND_ACL"
+  },
+  "vipFinalizer": {
+    "regprocedure": "public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamp with time zone)",
+    "owner": "postgres",
+    "securityDefiner": true,
+    "searchPath": "pg_catalog",
+    "authenticatedExecute": false,
+    "serviceRoleExecute": true,
+    "classification": "PASS"
+  },
+  "remainingBeforeExactRcStagingPass": [
+    "sanitized independent recovery V1B PASS",
+    "apply exact 20260807014500 migration under staging authority envelope",
+    "post-apply exact catalog and migration-name capture",
+    "hosted persona and service-role proof",
+    "independent evidence hashing/redaction"
+  ]
+}
