@@ -1,0 +1,311 @@
+name: Movie Buff repaired-product full three-client Chrome validation v14
+
+on:
+  pull_request:
+    branches: [validation/movie-buff-full-three-client-browser-controller-v14-20260807]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_BRANCH: fix/movie-buff-round-media-concurrency-20260807
+  PRODUCT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
+  PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
+  CONTROLLER_BRANCH: validation/movie-buff-full-three-client-browser-controller-v14-20260807
+  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-full-three-client-browser-trigger-v14-20260807
+  EXPECTED_BRANCH: validation/movie-buff-full-three-client-browser-controller-v14-20260807
+  PARENT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
+  CONTROLLER_SHA: ${{ github.event.pull_request.base.sha }}
+  TRIGGER_SHA: ${{ github.event.pull_request.head.sha }}
+  V11_WORKFLOW: .github/workflows/movie-buff-mov18-chrome-three-client-browser-v11.yml
+  V9_WORKFLOW: .github/workflows/movie-buff-mov18-chrome-three-client-browser-v9.yml
+  V12_WORKFLOW: .github/workflows/movie-buff-mov18-chrome-three-client-browser-v12.yml
+  V12_SOURCE_SHA: 2a92fd586dbd787cbe06f1d6edcacfe22b7fa035
+  V12_WORKFLOW_BLOB: d2ba54f4b6a7b9cfdb3894f0ef790c1248fa7190
+  ARCHIVE_SOURCE_SHA: d90a7eb73ef724b4ef5205343e655c7597dcf978
+  ARCHIVE_WORKFLOW_BLOB: d85c32f629de0dbacb9c6d0f00efef79c256867a
+  ORIGINAL_HARNESS_BLOB: 3b08204937f26af9287f303906509dc057b399dc
+  ARTIFACT_NAME: movie-buff-full-three-client-v14-${{ github.run_id }}-${{ github.run_attempt }}
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  exact-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Materialize preserved journey and align one stale Buster copy locator
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_EVENT_NAME}" = "pull_request"
+          test "${GITHUB_BASE_REF}" = "${CONTROLLER_BRANCH}"
+          test "${GITHUB_HEAD_REF}" = "${EXPECTED_TRIGGER_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${CONTROLLER_SHA}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test "${PARENT_SHA}" = "${PRODUCT_SHA}"
+          test "$(git rev-parse HEAD:${V9_WORKFLOW})" = "8fb61dd4d737ca2a166912d8bb875fee0a1b1bc0"
+          test "$(git rev-parse HEAD:${V11_WORKFLOW})" = "8bd2441f786be3d4134b713adb282853d26d1c58"
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+          python3 - <<'PY'
+          import os, subprocess
+          allowed={
+            ".github/workflows/movie-buff-mov18-chrome-three-client-browser-v9.yml",
+            ".github/workflows/movie-buff-mov18-chrome-three-client-browser-v11.yml",
+            ".github/workflows/movie-buff-mov18-chrome-three-client-browser-v12.yml",
+            ".github/workflows/movie-buff-full-three-client-browser-v14.yml",
+          }
+          actual=set(subprocess.check_output(
+              ["git","diff","--name-only",f"{os.environ['PRODUCT_SHA']}..HEAD"], text=True
+          ).splitlines())
+          if actual != allowed:
+              raise SystemExit(f"unexpected repaired-product-to-controller delta: {sorted(actual)}")
+          PY
+
+          git fetch --no-tags --depth=1 origin "${V12_SOURCE_SHA}"
+          test "$(git rev-parse "${V12_SOURCE_SHA}:${V12_WORKFLOW}")" = "${V12_WORKFLOW_BLOB}"
+          git show "${V12_SOURCE_SHA}:${V12_WORKFLOW}" > "${RUNNER_TEMP}/reviewed-v12d.yml"
+
+          python3 - "${RUNNER_TEMP}" "${RUNNER_TEMP}/reviewed-v12d.yml" <<'PY'
+          from pathlib import Path
+          import sys
+          output=Path(sys.argv[1])
+          lines=Path(sys.argv[2]).read_text(encoding="utf-8").splitlines()
+          marker="- name: Reuse corrected V11 materialization and apply reduced-motion strict locator"
+          start=next(i for i,line in enumerate(lines) if line.strip()==marker)
+          run_line=next(i for i in range(start+1,len(lines)) if lines[i].strip()=="run: |")
+          run_indent=len(lines[run_line])-len(lines[run_line].lstrip())
+          body=[]
+          for line in lines[run_line+1:]:
+              if line.strip() and len(line)-len(line.lstrip()) <= run_indent:
+                  break
+              body.append(line[run_indent+2:] if line.strip() else "")
+          if not body:
+              raise SystemExit("empty preserved V12D materialization block")
+          target=output/"materialize-preserved-v12d-for-v14.sh"
+          target.write_text("\n".join(body)+"\n",encoding="utf-8")
+          PY
+          bash -n "${RUNNER_TEMP}/materialize-preserved-v12d-for-v14.sh"
+          bash "${RUNNER_TEMP}/materialize-preserved-v12d-for-v14.sh"
+
+          python3 - "${RUNNER_TEMP}" <<'PY'
+          from pathlib import Path
+          import json,sys
+          root=Path(sys.argv[1])
+          harness=root/"movie-buff-three-client-full-journey-v9-chrome.mjs"
+          source=harness.read_text(encoding="utf-8")
+          stale="Buster slate stamped"
+          shipped="The show goes on"
+          count=source.count(stale)
+          if count != 1:
+              raise SystemExit(f"unexpected stale Buster copy count: {count}")
+          harness.write_text(source.replace(stale,shipped,1),encoding="utf-8")
+          correction_path=root/"harness-correction.json"
+          correction=json.loads(correction_path.read_text())
+          correction["v14BusterPreviewCopyCorrection"]="replace one stale preview text locator 'Buster slate stamped' with shipped product text 'The show goes on'; same page, visibility assertion, first() strictness, and 60s timeout remain unchanged"
+          correction["v14BusterPreviewCopyReplacementCount"]=count
+          correction["v14ShippedBusterSource"]="src/components/movie-buff/visual/MovieBuffBusterReplacement.tsx"
+          correction["v14ProductSha"]="81d3618ce7be28a6ce81363a8bda524cd18ece15"
+          correction["v14ProductTree"]="511c3501bd6a73f7556f636bc9e12ef30935d58d"
+          correction["journeyContract"]="V3 substantive requirements preserved"
+          correction_path.write_text(json.dumps(correction,indent=2)+"\n",encoding="utf-8")
+          PY
+          node --check "${RUNNER_TEMP}/movie-buff-three-client-full-journey-v9-chrome.mjs"
+          bash -n "${RUNNER_TEMP}/browser-preflight.sh"
+          bash -n "${RUNNER_TEMP}/browser-execute.sh"
+
+      - name: Provision runner prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg postgresql-client
+          command -v google-chrome || command -v google-chrome-stable
+          command -v ffmpeg
+          command -v ffprobe
+          command -v psql
+          command -v supabase
+
+      - name: Install exact dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - id: concurrency
+        name: Execute deterministic same-round media concurrency regression
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          node --test tests/movie-buff-round-media-concurrency.test.mjs >"${evidence}/round-media-concurrency.log" 2>&1
+          exit_code=$?
+          echo "${exit_code}" >"${evidence}/round-media-concurrency.exit"
+          cat "${evidence}/round-media-concurrency.log"
+          exit "${exit_code}"
+
+      - id: preflight
+        name: Execute reviewed preflight
+        if: ${{ steps.concurrency.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          bash -x "${RUNNER_TEMP}/browser-preflight.sh" >"${evidence}/reviewed-preflight.log" 2>&1
+          exit_code=$?
+          echo "${exit_code}" >"${evidence}/reviewed-preflight.exit"
+          cat "${evidence}/reviewed-preflight.log"
+          exit "${exit_code}"
+
+      - id: browser
+        name: Execute complete preserved V3 three-client journey in codec-capable Chrome
+        if: ${{ steps.preflight.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: bash "${RUNNER_TEMP}/browser-execute.sh"
+
+      - name: Bind and hash V14 evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
+          mkdir -p "${evidence}"
+          cp "${RUNNER_TEMP}/harness-correction.json" "${evidence}/harness-correction.json"
+          controller_tree="$(git rev-parse HEAD^{tree})"
+          python3 - "${evidence}/v14-binding.json" "${controller_tree}" <<'PY'
+          import json,os,pathlib,sys
+          pathlib.Path(sys.argv[1]).write_text(json.dumps({
+            "repository":"BuffGamesStudio/buff-platform",
+            "productBranch":os.environ["PRODUCT_BRANCH"],
+            "productSha":os.environ["PRODUCT_SHA"],
+            "productTree":os.environ["PRODUCT_TREE"],
+            "parentSha":os.environ["PARENT_SHA"],
+            "controllerBranch":os.environ["CONTROLLER_BRANCH"],
+            "controllerSha":os.environ["CONTROLLER_SHA"],
+            "controllerTree":sys.argv[2],
+            "triggerSha":os.environ["TRIGGER_SHA"],
+            "runId":os.environ["GITHUB_RUN_ID"],
+            "runAttempt":os.environ["GITHUB_RUN_ATTEMPT"],
+            "target":"disposable-localhost-system-chrome",
+            "validationVersion":"V14",
+            "journeyContract":"V3 substantive requirements preserved",
+            "roundMediaConcurrencyRegression":"required prerequisite",
+            "validatorCopyDelta":"one stale Buster preview string only",
+          },indent=2)+"\n",encoding="utf-8")
+          PY
+          (
+            cd "${evidence}"
+            find . -type f ! -name V14-SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > V14-SHA256SUMS.txt
+            sha256sum -c V14-SHA256SUMS.txt
+          )
+
+      - name: Upload exact browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/movie-buff-three-client-full-v2
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify clean postflight
+        if: always()
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Enforce V14 repaired-product browser gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.concurrency.outcome }}" = "success"
+          test "${{ steps.preflight.outcome }}" = "success"
+          test "${{ steps.browser.outcome }}" = "success"
+          test "$(cat "${RUNNER_TEMP}/movie-buff-three-client-full-v2/round-media-concurrency.exit")" = "0"
+          python3 - "${RUNNER_TEMP}/movie-buff-three-client-full-v2" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          correction=json.loads((root/"harness-correction.json").read_text())
+          assert correction["classification"] == "PASS"
+          assert correction["mov18StrictLocatorReplacementCount"] == 1
+          assert correction["reducedMotionStrictLocatorReplacementCount"] == 1
+          assert correction["v14BusterPreviewCopyReplacementCount"] == 1
+          assert correction["productBytesChanged"] is False
+          assert correction["v14ProductSha"] == "81d3618ce7be28a6ce81363a8bda524cd18ece15"
+          assert correction["v14ProductTree"] == "511c3501bd6a73f7556f636bc9e12ef30935d58d"
+          journey=json.loads((root/"three-client-full-journey-v2.json").read_text())
+          assert journey["classification"] == "PASS", journey.get("failure")
+          assert journey["target"]["kind"] == "disposable-localhost"
+          PY
+
+  independent-artifact-inspection:
+    needs: exact-browser
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: evidence
+
+      - name: Verify exact V14 binding, regression, hashes, redaction, and complete browser PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd evidence
+          sha256sum -c V14-SHA256SUMS.txt
+          test "$(cat round-media-concurrency.exit)" = "0"
+          test -s round-media-concurrency.log
+          test -s three-client-full-journey-v2.json
+          python3 - <<'PY'
+          import json,pathlib,re
+          root=pathlib.Path('.')
+          binding=json.loads((root/'v14-binding.json').read_text())
+          assert binding['repository']=='BuffGamesStudio/buff-platform'
+          assert binding['productBranch']=='fix/movie-buff-round-media-concurrency-20260807'
+          assert binding['productSha']=='81d3618ce7be28a6ce81363a8bda524cd18ece15'
+          assert binding['productTree']=='511c3501bd6a73f7556f636bc9e12ef30935d58d'
+          assert binding['parentSha']=='81d3618ce7be28a6ce81363a8bda524cd18ece15'
+          assert binding['target']=='disposable-localhost-system-chrome'
+          assert binding['validationVersion']=='V14'
+          assert binding['journeyContract']=='V3 substantive requirements preserved'
+          correction=json.loads((root/'harness-correction.json').read_text())
+          assert correction['classification']=='PASS'
+          assert correction['mov18StrictLocatorReplacementCount']==1
+          assert correction['reducedMotionStrictLocatorReplacementCount']==1
+          assert correction['v14BusterPreviewCopyReplacementCount']==1
+          assert correction['productBytesChanged'] is False
+          journey=json.loads((root/'three-client-full-journey-v2.json').read_text())
+          assert journey['classification']=='PASS', journey.get('failure')
+          assert journey['target']['kind']=='disposable-localhost'
+          text='\n'.join(p.read_text(encoding='utf-8',errors='ignore') for p in root.rglob('*') if p.is_file() and p.suffix.lower() in {'.txt','.log','.json','.env','.csv','.md'})
+          forbidden=[
+            r'sb_(?:publishable|secret)_[A-Za-z0-9_-]{12,}',
+            r'eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}',
+            r'postgres(?:ql)?://[^\s\"\']+:[^\s\"\']+@[^\s\"\']+',
+          ]
+          for pattern in forbidden:
+              assert re.search(pattern,text) is None, pattern
+          PY
