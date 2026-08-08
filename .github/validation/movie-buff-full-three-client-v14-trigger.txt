@@ -1,0 +1,5 @@
+VALIDATION ONLY — DO NOT MERGE, DEPLOY, OR PROMOTE.
+
+This trigger executes the complete preserved V3 three-client browser journey against repaired product SHA 81d3618ce7be28a6ce81363a8bda524cd18ece15, tree 511c3501bd6a73f7556f636bc9e12ef30935d58d.
+
+Validator delta from failed V13: replace exactly one stale preview string, `Buster slate stamped`, with shipped product text, `The show goes on`. No product bytes or gameplay assertions are removed or weakened.
