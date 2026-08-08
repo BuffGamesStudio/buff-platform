@@ -1,0 +1,65 @@
+{
+  "refreshVersion": 1,
+  "repository": "BuffGamesStudio/buff-platform",
+  "candidate": {
+    "branch": "release-candidate/movie-buff-2026-08-07-rc-1",
+    "pr": 199,
+    "sha": "81d3618ce7be28a6ce81363a8bda524cd18ece15",
+    "tree": "511c3501bd6a73f7556f636bc9e12ef30935d58d",
+    "refreshedUnmoved": true
+  },
+  "vercel": {
+    "teamId": "team_B5DU86UM8Cb77BUCK3rbijw6",
+    "projectId": "prj_u2IlNNHUvEhnAytuuymv9GdN7hJY",
+    "projectName": "movie-buff",
+    "exactRcDeployment": {
+      "id": "dpl_GajkRtHiksA7jNPuMMdC6s1zNY6u",
+      "state": "READY",
+      "target": null,
+      "gitRef": "release-candidate/movie-buff-2026-08-07-rc-1",
+      "gitSha": "81d3618ce7be28a6ce81363a8bda524cd18ece15",
+      "alias": ["movie-buff-git-release-candidate-movie-buff-202-dc28a9-shaheed1.vercel.app"],
+      "classification": "PASS"
+    },
+    "exactRcPreviewOnly": true,
+    "exactRcProductionDeployment": null,
+    "productionAliasBoundToExactRc": null,
+    "productionDeploymentClassification": "UNKNOWN",
+    "productionAliasClassification": "UNKNOWN",
+    "recentDeploymentObservation": "Current and preceding deployment pages around RC-1 contain preview/target-null deployments; no exact-RC production-target deployment was observed."
+  },
+  "supabase": {
+    "connectedProject": {
+      "name": "movie-buff-staging",
+      "ref": "eddwkxcillhzkvwmavsc",
+      "organizationId": "tleuzztdjpajaltwcclj",
+      "region": "us-east-1",
+      "classification": "isolated-staging"
+    },
+    "productionProject": null,
+    "productionProjectClassification": "UNKNOWN"
+  },
+  "recoveryAndOperations": {
+    "localRollbackContainmentForwardReapply": "PASS",
+    "isolatedStagingRollbackContainmentForwardReapply": "PASS",
+    "backupPitrIdentity": "UNKNOWN",
+    "productionRollbackAuthority": "UNKNOWN",
+    "productionOperator": "UNKNOWN",
+    "independentProductionObserver": "UNKNOWN",
+    "productionMaintenanceWindow": "UNKNOWN",
+    "productionMonitoringStopConditions": "UNKNOWN",
+    "productionAuthorizationExpiry": "UNKNOWN"
+  },
+  "classification": {
+    "exactRcPreviewProvenance": "PASS",
+    "isolatedStagingSupabaseIdentity": "PASS",
+    "isolatedStagingSecurityExecution": "PASS",
+    "productionVercelDeploymentProvenance": "UNKNOWN",
+    "productionAliasBinding": "UNKNOWN",
+    "productionSupabaseIdentity": "UNKNOWN",
+    "backupPitrIdentity": "UNKNOWN",
+    "productionControlEnvelope": "UNKNOWN",
+    "productionArm": "NOT APPLICABLE"
+  },
+  "releaseEffect": "This refresh is read-only provenance. Preview and isolated-staging PASS do not establish production readiness."
+}
