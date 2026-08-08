@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "name": "symlink-root-escape",
+  "linkPath": "inside-root-link.log",
+  "targetPath": "../outside-root-target.log",
+  "expectedResult": "FAIL",
+  "requiresHarnessSymlinkSupport": true
+}

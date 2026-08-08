@@ -1,0 +1,6 @@
+{
+  "accessKey": "FAKEACCESS-MOV42-401",
+  "secretKey": "FAKESECRET-MOV42-402",
+  "authorization": "Bearer FAKE_BEARER_MOV42_403",
+  "databaseUrl": "postgres://moviebuff:FAKE_PASSWORD_MOV42_404@db.example.invalid/postgres"
+}

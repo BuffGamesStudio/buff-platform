@@ -1,0 +1,6 @@
+{
+  "accessKey": "[REDACTED]",
+  "secretKey": "[REDACTED]",
+  "authorization": "Bearer [REDACTED]",
+  "databaseUrl": "postgres://moviebuff:[REDACTED]@db.example.invalid/postgres"
+}

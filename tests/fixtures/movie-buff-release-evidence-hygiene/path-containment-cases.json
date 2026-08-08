@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "parent-traversal",
+      "requestedPath": "../outside-evidence.log",
+      "expectedResult": "FAIL"
+    },
+    {
+      "name": "nested-parent-traversal",
+      "requestedPath": "nested/../../outside-evidence.log",
+      "expectedResult": "FAIL"
+    },
+    {
+      "name": "absolute-path",
+      "requestedPath": "C:\\outside-movie-buff-evidence.log",
+      "expectedResult": "FAIL"
+    }
+  ]
+}

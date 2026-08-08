@@ -1,0 +1,306 @@
+{
+    "schemaVersion":  1,
+    "lane":  "MOV-42",
+    "classification":  "FIXTURE_CORPUS",
+    "realCredentialsUsed":  false,
+    "fixtureCount":  18,
+    "fixtures":  [
+                     {
+                         "relativePath":  "ansi-unicode-table.log",
+                         "credentialClasses":  [
+                                                   "access_key",
+                                                   "secret_key",
+                                                   "s3_access_key",
+                                                   "s3_secret_key"
+                                               ],
+                         "expectedReplacementCount":  4,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS",
+                         "inputSha256":  "734f9ef2fcc5f64913deb8a6cb0c470a5b021cb1b24682f72665eb12e2a0e447",
+                         "expectedSanitizedSha256":  "8dc910982cf19eeedc7deb6035610dac31ba8ee851681f7ce3896754d2fc9e52",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "unboxed-assignments.env",
+                         "credentialClasses":  [
+                                                   "access_key",
+                                                   "secret_key",
+                                                   "s3_access_key",
+                                                   "s3_secret_key",
+                                                   "aws_access_key_id",
+                                                   "aws_secret_access_key"
+                                               ],
+                         "expectedReplacementCount":  6,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS",
+                         "inputSha256":  "7f149d81dc2e87b6827a2065ef3694d8a939545eba4e9741c642f7e765e1e6e9",
+                         "expectedSanitizedSha256":  "922209ba609ee7b244be252f6d627e9240d192d5d1783da6a1aa207c03dbb823",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "supabase-assignments.env",
+                         "credentialClasses":  [
+                                                   "supabase_service_role",
+                                                   "supabase_anon",
+                                                   "jwt",
+                                                   "postgres_password_url"
+                                               ],
+                         "expectedReplacementCount":  4,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS",
+                         "inputSha256":  "c538680659051ee9a143ee9805428eccc3aae09df0ac1d0e37377cfbb200d4fc",
+                         "expectedSanitizedSha256":  "9a332dec61b2183ae3d36d8b7bf6908846c12651ae2831921c9fa9e5f925096b",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "auth-session-token.log",
+                         "credentialClasses":  [
+                                                   "authorization_bearer",
+                                                   "cookie",
+                                                   "session",
+                                                   "token"
+                                               ],
+                         "expectedReplacementCount":  4,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS",
+                         "inputSha256":  "aa5f4dd8ce2b2f376d569c0f153eec80ee46edaa87a12ca1d210cfe81b7aa1d0",
+                         "expectedSanitizedSha256":  "52cfbec934f2fbdc142db36714a7fdaea2b1faab799dbf9f9a68b97837f1ca0e",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "structured.json",
+                         "credentialClasses":  [
+                                                   "access_key",
+                                                   "secret_key",
+                                                   "authorization_bearer",
+                                                   "postgres_password_url"
+                                               ],
+                         "expectedReplacementCount":  4,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS",
+                         "inputSha256":  "58590f53a1e1e3f72400954b397f4fc83e75010a5b34a492f6b39dfb349daae4",
+                         "expectedSanitizedSha256":  "6c4f2e0e71e1e92af266cc8df778ecd83210845187ca711b0c44b27e7eee64b8",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "structured.yaml",
+                         "credentialClasses":  [
+                                                   "access_key",
+                                                   "secret_key",
+                                                   "token"
+                                               ],
+                         "expectedReplacementCount":  3,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS",
+                         "inputSha256":  "abf58db2c0b166e4f2249e79e3121e9abbcebe3c1f29e47b6495f85dd40892ea",
+                         "expectedSanitizedSha256":  "1c07b7e8d9d4a83ed1d36c1835cc3d921f7efad8b55cd0b2a6b866ebe9da1207",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "structured.csv",
+                         "credentialClasses":  [
+                                                   "access_key",
+                                                   "secret_key",
+                                                   "token"
+                                               ],
+                         "expectedReplacementCount":  3,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS",
+                         "inputSha256":  "74dbcb7015b8b6dc762c26390143f5b7d6a90da20e0c556d53c23e3fe8e73fe2",
+                         "expectedSanitizedSha256":  "2c1a33e4a4f300b11f50b254a3c2397dbe000178903ca1fe059ac7a2eb73dbe6",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "structured.md",
+                         "credentialClasses":  [
+                                                   "access_key",
+                                                   "secret_key",
+                                                   "authorization_bearer",
+                                                   "postgres_password_url"
+                                               ],
+                         "expectedReplacementCount":  4,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS",
+                         "inputSha256":  "7965c2ed2114d84dfec41d7d92c938cfa48c0eab777655d6dc21a0a51e3b88b1",
+                         "expectedSanitizedSha256":  "22d68b4e97106ceabf46f02e75fa6c839e74f9fa2d367f321c0e3f0b124ba3fa",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "multiple-one-line.log",
+                         "credentialClasses":  [
+                                                   "token",
+                                                   "session",
+                                                   "cookie"
+                                               ],
+                         "expectedReplacementCount":  3,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS",
+                         "inputSha256":  "85b549208bfed04591df72b76975127adc5b01aa2e94f0555b29bff9fedde174",
+                         "expectedSanitizedSha256":  "b36bc8aac28182c71720a96ec4e74ad17345949a53165831d022f43bcc6391ca",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "safe-near-misses.log",
+                         "credentialClasses":  [
+
+                                               ],
+                         "expectedReplacementCount":  0,
+                         "expectedScannerBefore":  "PASS",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS_UNCHANGED",
+                         "inputSha256":  "a5ce4dbac567846afaa588dedb78e02c88a2a535f75f83b2d3db1be58456695e",
+                         "expectedSanitizedSha256":  "a5ce4dbac567846afaa588dedb78e02c88a2a535f75f83b2d3db1be58456695e",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "crlf-credentials.log",
+                         "credentialClasses":  [
+                                                   "access_key",
+                                                   "secret_key"
+                                               ],
+                         "expectedReplacementCount":  2,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS",
+                         "inputSha256":  "b370e6e220f24a0cbba09a64c64c7977ce565c87e8229ee5928a2cfa10ff9ca3",
+                         "expectedSanitizedSha256":  "e986529f756b64c85db1f97533c4b6b2dc3c8cc190b3e7f42b1b5edd323b13a0",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "nested/.env",
+                         "credentialClasses":  [
+                                                   "token"
+                                               ],
+                         "expectedReplacementCount":  1,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS",
+                         "inputSha256":  "74430b5940f2433412ff07455f4c087830ea1219ad71fbca0290132ae1de71be",
+                         "expectedSanitizedSha256":  "6975c2ca81b20ceca66e0ceb3fa3801ce60d75619c32e1d5fc10b8677ea828fa",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "nested/.hidden.env",
+                         "credentialClasses":  [
+                                                   "session"
+                                               ],
+                         "expectedReplacementCount":  1,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS",
+                         "inputSha256":  "c9f438bef7d453d523bc7b88bb3115f6283f0213b0f11d2de72c0fbf53823786",
+                         "expectedSanitizedSha256":  "c49a4cc12851adcacfd0ef3127d38df4961f18497e65e61fcf0c3c23f907c901",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "nested/file with spaces.log",
+                         "credentialClasses":  [
+                                                   "cookie"
+                                               ],
+                         "expectedReplacementCount":  1,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "PASS",
+                         "inputSha256":  "35dbcc0ccea35874535951493da93f9b7448f35dbea99ec14ce08ccc87ea74bb",
+                         "expectedSanitizedSha256":  "8cfe751711b978e04c3f0748aaf2e65c5d259386811863aed2b4e802e137489d",
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "binary-nontext.bin",
+                         "credentialClasses":  [
+
+                                               ],
+                         "expectedReplacementCount":  0,
+                         "expectedScannerBefore":  "PASS",
+                         "expectedScannerAfter":  "PASS",
+                         "expectedSanitizerOutcome":  "DETERMINISTIC_NON_TEXT_POLICY",
+                         "inputSha256":  "d306a53128614c77efed02b8ee1b7d45ae4bb2641b8477b56c8fd676e2c6c2dc",
+                         "expectedSanitizedSha256":  null,
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "malformed-utf8.bin",
+                         "credentialClasses":  [
+                                                   "token"
+                                               ],
+                         "expectedReplacementCount":  1,
+                         "expectedScannerBefore":  "FAIL",
+                         "expectedScannerAfter":  "FAIL_CLOSED_OR_SAFE_REDACTION",
+                         "expectedSanitizerOutcome":  "FAIL_CLOSED_OR_SAFE_REDACTION",
+                         "inputSha256":  "349717ddb4246f1d47c4dfd75c0e248c5b97ede636389cd939c44906346d7f5b",
+                         "expectedSanitizedSha256":  null,
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "path-containment-cases.json",
+                         "credentialClasses":  [
+
+                                               ],
+                         "expectedReplacementCount":  0,
+                         "expectedScannerBefore":  "NOT_APPLICABLE",
+                         "expectedScannerAfter":  "NOT_APPLICABLE",
+                         "expectedSanitizerOutcome":  "HARNESS_NEGATIVE_PATH",
+                         "inputSha256":  "5bca52e1ade0db5fe4344b6e324e279605b20c5f84745d33cbc4f44544b8e229",
+                         "expectedSanitizedSha256":  null,
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     },
+                     {
+                         "relativePath":  "symlink-escape-case.json",
+                         "credentialClasses":  [
+
+                                               ],
+                         "expectedReplacementCount":  0,
+                         "expectedScannerBefore":  "NOT_APPLICABLE",
+                         "expectedScannerAfter":  "NOT_APPLICABLE",
+                         "expectedSanitizerOutcome":  "HARNESS_NEGATIVE_PATH",
+                         "inputSha256":  "2a6f631bd0a0c8194f91aacdf44f452a33cd531226794561b7a6e15549ab8e6f",
+                         "expectedSanitizedSha256":  null,
+                         "targetsSanitizer":  true,
+                         "targetsIndependentScanner":  true,
+                         "diagnosticMayRevealValue":  false
+                     }
+                 ]
+}
