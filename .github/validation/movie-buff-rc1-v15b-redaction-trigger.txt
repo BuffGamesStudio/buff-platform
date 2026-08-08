@@ -1,0 +1,6 @@
+validation-only fresh V15B trigger
+product_sha=81d3618ce7be28a6ce81363a8bda524cd18ece15
+product_tree=511c3501bd6a73f7556f636bc9e12ef30935d58d
+failed_v15_run=31237889562
+controller_fix=structure-aware V14C allowlist materialization only
+no_product_bytes_changed=true
