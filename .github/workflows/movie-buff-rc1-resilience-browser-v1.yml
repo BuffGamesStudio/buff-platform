@@ -206,7 +206,7 @@ jobs:
           raw=pathlib.Path(sys.argv[1]); out=pathlib.Path(sys.argv[2]); out.mkdir(parents=True,exist_ok=True)
           patterns=[
             (r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[REDACTED_JWT]'),
-            (r'postgres(?:ql)?://[^\s]+','postgresql://[REDACTED_LOCAL_DB_URL]'),
+            (r'postgres(?:ql)?://[^\s]+','[REDACTED_LOCAL_DB_URL]'),
             (r'sb_(?:secret|publishable)_[A-Za-z0-9_-]+','[REDACTED_SUPABASE_KEY]'),
             (r'(?i)(authorization:\s*bearer\s+)[A-Za-z0-9._-]+',r'\1[REDACTED]'),
             (r'(?i)((?:password|token|secret|key)\s*[=:]\s*)[^\s,;]+',r'\1[REDACTED]'),
