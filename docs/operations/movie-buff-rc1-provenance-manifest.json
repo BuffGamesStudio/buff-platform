@@ -1,0 +1,84 @@
+{
+  "manifestVersion": 1,
+  "repository": "BuffGamesStudio/buff-platform",
+  "seat": 1,
+  "seatAuthority": "RC control, hosted target inventory, deployment provenance and production-readiness envelope",
+  "rc": {
+    "branch": "release-candidate/movie-buff-2026-08-07-rc-1",
+    "sha": "81d3618ce7be28a6ce81363a8bda524cd18ece15",
+    "tree": "511c3501bd6a73f7556f636bc9e12ef30935d58d",
+    "immutability": "procedural-no-direct-commit-rebase-force-push"
+  },
+  "supabase": {
+    "connectedProjects": [
+      {
+        "name": "movie-buff-staging",
+        "ref": "eddwkxcillhzkvwmavsc",
+        "organizationId": "tleuzztdjpajaltwcclj",
+        "region": "us-east-1",
+        "status": "ACTIVE_HEALTHY",
+        "databaseHost": "db.eddwkxcillhzkvwmavsc.supabase.co",
+        "classification": "isolated-staging"
+      }
+    ],
+    "productionProjectRef": null,
+    "productionTargetClassification": "UNKNOWN",
+    "productionTargetReason": "No production Supabase project is exposed by the connected Supabase account."
+  },
+  "vercel": {
+    "teamId": "team_B5DU86UM8Cb77BUCK3rbijw6",
+    "projects": [
+      {
+        "id": "prj_u2IlNNHUvEhnAytuuymv9GdN7hJY",
+        "name": "movie-buff",
+        "live": false,
+        "domainsObserved": [
+          "movie-buff-sigma.vercel.app",
+          "movie-buff-shaheed1.vercel.app",
+          "movie-buff-git-main-shaheed1.vercel.app"
+        ]
+      },
+      {
+        "id": "prj_qTI4u8AW6ukAJXf6zgGdssM2t1ls",
+        "name": "app",
+        "live": false,
+        "latestDeployment": null,
+        "domainsObserved": []
+      }
+    ],
+    "exactRcPreview": {
+      "deploymentId": "dpl_GajkRtHiksA7jNPuMMdC6s1zNY6u",
+      "state": "READY",
+      "target": null,
+      "gitRef": "release-candidate/movie-buff-2026-08-07-rc-1",
+      "gitSha": "81d3618ce7be28a6ce81363a8bda524cd18ece15",
+      "classification": "PASS_PREVIEW_PROVENANCE_ONLY"
+    },
+    "stagingDeployment": {
+      "projectId": "prj_qTI4u8AW6ukAJXf6zgGdssM2t1ls",
+      "deployment": null,
+      "classification": "FAIL"
+    },
+    "productionDeployment": {
+      "deploymentId": null,
+      "productionAliasBinding": null,
+      "classification": "UNKNOWN"
+    }
+  },
+  "releaseReadiness": {
+    "exactRcPreviewProvenance": "PASS",
+    "exactRcStagingDeploymentProvenance": "FAIL",
+    "productionSupabaseIdentity": "UNKNOWN",
+    "productionVercelDeploymentProvenance": "UNKNOWN",
+    "productionAliasProvenance": "UNKNOWN",
+    "backupPitrIdentity": "UNKNOWN",
+    "productionOperator": "UNKNOWN",
+    "independentObserver": "UNKNOWN",
+    "maintenanceWindow": "UNKNOWN",
+    "monitoringStopConditions": "UNKNOWN",
+    "authorizationExpiry": "UNKNOWN",
+    "productionArm": "NOT AUTHORIZED",
+    "overall": "NO-GO"
+  },
+  "safety": "This document records read-only provenance only. It authorizes no Vercel promotion, production alias change, Supabase mutation, merge, deploy, force-push or production action."
+}
