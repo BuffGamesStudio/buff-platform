@@ -1,0 +1,5 @@
+validation-only trigger
+product_sha=81d3618ce7be28a6ce81363a8bda524cd18ece15
+product_tree=511c3501bd6a73f7556f636bc9e12ef30935d58d
+purpose=fresh full three-client journey with evidence credential redaction
+no_product_bytes_changed=true
