@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 import sys
 
 v1_workflow = Path(sys.argv[1])
@@ -46,3 +47,4 @@ if script.count(redaction_anchor) != 1:
     raise SystemExit("redaction insertion anchor mismatch")
 script = script.replace(redaction_anchor, redaction_call + redaction_anchor, 1)
 out_run.write_text(script, encoding="utf-8")
+shutil.rmtree(Path(__file__).parent / "__pycache__", ignore_errors=True)
