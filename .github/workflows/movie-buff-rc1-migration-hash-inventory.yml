@@ -1,0 +1,128 @@
+name: Movie Buff RC-1 migration SHA-256 inventory
+
+on:
+  pull_request:
+    branches: [validation/movie-buff-rc1-migration-hash-controller-20260808]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_BRANCH: release-candidate/movie-buff-2026-08-07-rc-1
+  PRODUCT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
+  PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
+  CONTROLLER_BRANCH: validation/movie-buff-rc1-migration-hash-controller-20260808
+  TRIGGER_BRANCH: validation/movie-buff-rc1-migration-hash-trigger-20260808
+  RECOVERY_SOURCE_SHA: fca74cf8c125926642720b4d135fb75f3784f6f7
+  ROLLBACK_PATH: supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql
+  ARTIFACT_NAME: movie-buff-rc1-migration-hashes-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact RC binding and evidence-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_BASE_REF}" = "${CONTROLLER_BRANCH}"
+          test "${GITHUB_HEAD_REF}" = "${TRIGGER_BRANCH}"
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" HEAD
+          python3 - <<'PY'
+          import os,subprocess
+          actual=set(subprocess.check_output(['git','diff','--name-only',f"{os.environ['PRODUCT_SHA']}..HEAD"],text=True).splitlines())
+          expected={'.github/workflows/movie-buff-rc1-migration-hash-inventory.yml'}
+          if actual != expected:
+              raise SystemExit(f'unexpected RC-to-controller delta: {sorted(actual)}')
+          PY
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Build exact migration and rollback SHA-256 inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/rc1-migration-hashes"
+          mkdir -p "${evidence}/external"
+          git fetch --no-tags --depth=1 origin "${RECOVERY_SOURCE_SHA}"
+          git show "${RECOVERY_SOURCE_SHA}:${ROLLBACK_PATH}" > "${evidence}/external/$(basename "${ROLLBACK_PATH}")"
+
+          : > "${evidence}/migration-sha256.tsv"
+          while IFS= read -r -d '' path; do
+            sha="$(sha256sum "$path" | awk '{print $1}')"
+            blob="$(git rev-parse "${PRODUCT_SHA}:${path}")"
+            printf '%s\t%s\t%s\n' "$sha" "$blob" "$path" >> "${evidence}/migration-sha256.tsv"
+          done < <(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -print0 | sort -z)
+
+          if test -f movie-buff-production-bootstrap.sql; then
+            path=movie-buff-production-bootstrap.sql
+            sha="$(sha256sum "$path" | awk '{print $1}')"
+            blob="$(git rev-parse "${PRODUCT_SHA}:${path}")"
+            printf '%s\t%s\t%s\n' "$sha" "$blob" "$path" >> "${evidence}/migration-sha256.tsv"
+          fi
+
+          rollback_sha="$(sha256sum "${evidence}/external/$(basename "${ROLLBACK_PATH}")" | awk '{print $1}')"
+          rollback_blob="$(git rev-parse "${RECOVERY_SOURCE_SHA}:${ROLLBACK_PATH}")"
+          printf '%s\t%s\t%s\n' "$rollback_sha" "$rollback_blob" "$ROLLBACK_PATH" > "${evidence}/rollback-sha256.tsv"
+
+          count="$(wc -l < "${evidence}/migration-sha256.tsv")"
+          python3 - "${evidence}/binding.json" "$count" "$rollback_sha" "$rollback_blob" <<'PY'
+          import json,os,pathlib,sys
+          pathlib.Path(sys.argv[1]).write_text(json.dumps({
+            'repository':'BuffGamesStudio/buff-platform',
+            'productBranch':os.environ['PRODUCT_BRANCH'],
+            'productSha':os.environ['PRODUCT_SHA'],
+            'productTree':os.environ['PRODUCT_TREE'],
+            'controllerSha':os.environ['GITHUB_SHA'],
+            'runId':os.environ['GITHUB_RUN_ID'],
+            'runAttempt':os.environ['GITHUB_RUN_ATTEMPT'],
+            'migrationSqlFileCount':int(sys.argv[2]),
+            'rollbackSourceSha':os.environ['RECOVERY_SOURCE_SHA'],
+            'rollbackPath':os.environ['ROLLBACK_PATH'],
+            'rollbackSha256':sys.argv[3],
+            'rollbackGitBlobSha':sys.argv[4],
+            'classification':'PASS'
+          },indent=2)+'\n')
+          PY
+          (cd "${evidence}" && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
+
+      - name: Upload immutable hash inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/rc1-migration-hashes
+          if-no-files-found: error
+          retention-days: 30
+
+  independent-inventory-inspection:
+    needs: inventory
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: evidence
+      - name: Verify hashes and exact RC binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd evidence
+          sha256sum -c SHA256SUMS.txt
+          test -s migration-sha256.tsv
+          test -s rollback-sha256.tsv
+          python3 - <<'PY'
+          import json
+          b=json.load(open('binding.json'))
+          assert b['classification']=='PASS'
+          assert b['productSha']=='81d3618ce7be28a6ce81363a8bda524cd18ece15'
+          assert b['productTree']=='511c3501bd6a73f7556f636bc9e12ef30935d58d'
+          assert b['migrationSqlFileCount'] > 0
+          assert b['rollbackSha256']=='f43188231ccc0b0bb317381550279693da85968f2aa3a56183e2cd228acde647'
+          PY
