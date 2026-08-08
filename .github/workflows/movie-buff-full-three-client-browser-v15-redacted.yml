@@ -1,8 +1,8 @@
-name: Movie Buff RC-1 three-client Chrome validation v15 redacted
+name: Movie Buff RC-1 three-client Chrome validation v15b redacted
 
 on:
   pull_request:
-    branches: [validation/movie-buff-rc1-browser-redaction-controller-v15-20260807]
+    branches: [validation/movie-buff-rc1-browser-redaction-controller-v15b-20260807]
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -12,9 +12,9 @@ env:
   PRODUCT_BRANCH: release-candidate/movie-buff-2026-08-07-rc-1
   PRODUCT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
   PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
-  CONTROLLER_BRANCH: validation/movie-buff-rc1-browser-redaction-controller-v15-20260807
-  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-rc1-browser-redaction-trigger-v15-20260807
-  EXPECTED_BRANCH: validation/movie-buff-rc1-browser-redaction-controller-v15-20260807
+  CONTROLLER_BRANCH: validation/movie-buff-rc1-browser-redaction-controller-v15b-20260807
+  EXPECTED_TRIGGER_BRANCH: validation/movie-buff-rc1-browser-redaction-trigger-v15b-20260807
+  EXPECTED_BRANCH: validation/movie-buff-rc1-browser-redaction-controller-v15b-20260807
   PARENT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
   CONTROLLER_SHA: ${{ github.event.pull_request.base.sha }}
   TRIGGER_SHA: ${{ github.event.pull_request.head.sha }}
@@ -30,7 +30,7 @@ env:
   V14C_WORKFLOW: .github/workflows/movie-buff-full-three-client-browser-v14c.yml
   V14C_WORKFLOW_BLOB: aa496c5afa53939b5704dd48b51f8580445378db
   V15_WORKFLOW: .github/workflows/movie-buff-full-three-client-browser-v15-redacted.yml
-  ARTIFACT_NAME: movie-buff-rc1-three-client-v15-redacted-${{ github.run_id }}-${{ github.run_attempt }}
+  ARTIFACT_NAME: movie-buff-rc1-three-client-v15b-redacted-${{ github.run_id }}-${{ github.run_attempt }}
   SUPABASE_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
 
@@ -69,9 +69,9 @@ jobs:
           test -z "$(git status --porcelain --untracked-files=all)"
 
           git show "${V14C_CONTROLLER_SHA}:${V14C_WORKFLOW}" > "${RUNNER_TEMP}/reviewed-v14c.yml"
-          python3 - "${RUNNER_TEMP}/reviewed-v14c.yml" "${RUNNER_TEMP}/materialize-v14c-for-v15.sh" <<'PY'
+          python3 - "${RUNNER_TEMP}/reviewed-v14c.yml" "${RUNNER_TEMP}/materialize-v14c-for-v15b.sh" <<'PY'
           from pathlib import Path
-          import sys
+          import re,sys
           source=Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
           marker="- name: Materialize preserved journey and align exact final Buster preview assertion"
           start=next(i for i,line in enumerate(source) if line.strip()==marker)
@@ -83,26 +83,28 @@ jobs:
                   break
               body.append(line[run_indent+2:] if line.strip() else "")
           script="\n".join(body)+"\n"
-          outer='            ".github/workflows/movie-buff-full-three-client-browser-v14c.yml",\n'
-          outer_new=outer+'            ".github/workflows/movie-buff-full-three-client-browser-v15-redacted.yml",\n'
-          if script.count(outer) != 1:
-              raise SystemExit("unexpected V14C outer allowlist anchor")
-          script=script.replace(outer,outer_new,1)
+          outer=re.compile(r'(?m)^(\s*)"\.github/workflows/movie-buff-full-three-client-browser-v14c\.yml",\s*$')
+          matches=list(outer.finditer(script))
+          if len(matches) != 1:
+              raise SystemExit(f"unexpected V14C outer allowlist anchor count: {len(matches)}")
+          script=outer.sub(lambda m: m.group(0)+"\n"+m.group(1)+'".github/workflows/movie-buff-full-three-client-browser-v15-redacted.yml",',script,count=1)
           inner='new=\'expected={".github/workflows/movie-buff-mov18-chrome-three-client-browser-v9.yml",".github/workflows/movie-buff-mov18-chrome-three-client-browser-v11.yml",".github/workflows/movie-buff-mov18-chrome-three-client-browser-v12.yml",".github/workflows/movie-buff-full-three-client-browser-v14c.yml"}\''
           inner_new='new=\'expected={".github/workflows/movie-buff-mov18-chrome-three-client-browser-v9.yml",".github/workflows/movie-buff-mov18-chrome-three-client-browser-v11.yml",".github/workflows/movie-buff-mov18-chrome-three-client-browser-v12.yml",".github/workflows/movie-buff-full-three-client-browser-v14c.yml",".github/workflows/movie-buff-full-three-client-browser-v15-redacted.yml"}\''
-          if script.count(inner) != 1:
-              raise SystemExit("unexpected V14C inner allowlist anchor")
+          count=script.count(inner)
+          if count != 1:
+              raise SystemExit(f"unexpected V14C inner allowlist anchor count: {count}")
           script=script.replace(inner,inner_new,1)
           Path(sys.argv[2]).write_text(script,encoding="utf-8")
           PY
-          bash -n "${RUNNER_TEMP}/materialize-v14c-for-v15.sh"
-          bash "${RUNNER_TEMP}/materialize-v14c-for-v15.sh"
+          bash -n "${RUNNER_TEMP}/materialize-v14c-for-v15b.sh"
+          bash "${RUNNER_TEMP}/materialize-v14c-for-v15b.sh"
 
           python3 - "${RUNNER_TEMP}/harness-correction.json" <<'PY'
           import json,pathlib,sys
           path=pathlib.Path(sys.argv[1])
           data=json.loads(path.read_text())
           data["v15EvidenceRedactionController"]="fresh evidence-only controller extends the preserved V14C journey; RC-1 product bytes unchanged"
+          data["v15bMaterializerCorrection"]="structure-aware V14C outer allowlist insertion; failed V15 remains immutable"
           data["v15ProductBranch"]="release-candidate/movie-buff-2026-08-07-rc-1"
           data["v15ProductSha"]="81d3618ce7be28a6ce81363a8bda524cd18ece15"
           data["v15ProductTree"]="511c3501bd6a73f7556f636bc9e12ef30935d58d"
@@ -173,7 +175,7 @@ jobs:
           evidence="${RUNNER_TEMP}/movie-buff-three-client-full-v2"
           mkdir -p "${evidence}"
           cat > "${RUNNER_TEMP}/v15-redact.py" <<'PY'
-          import json,pathlib,re,sys,tempfile
+          import json,pathlib,re,sys
 
           ANSI=re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
           ROW=re.compile(r'(?im)^(\s*│?\s*(Access Key|Secret Key)\s*│\s*)([^│\r\n]+?)(\s*│\s*)$')
@@ -236,10 +238,7 @@ jobs:
           for path in sorted(root.rglob('*')):
               if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIX or path.name.startswith('V15-SHA256SUMS'):
                   continue
-              try:
-                  text=path.read_text(encoding='utf-8',errors='ignore')
-              except Exception:
-                  continue
+              text=path.read_text(encoding='utf-8',errors='ignore')
               sanitized=sanitize_text(text,counts)
               if sanitized != text:
                   path.write_text(sanitized,encoding='utf-8')
@@ -258,7 +257,7 @@ jobs:
               'evidenceReplacements':counts,
               'filesSanitized':touched,
               'remainingFindingClasses':remaining,
-              'policy':'ANSI normalize; redact labeled S3 Access/Secret Key cells and common credential assignments/JWT/DB-password/sb_secret shapes before hashing and upload',
+              'policy':'ANSI normalize; redact labeled S3 Access/Secret Key cells and common credential assignments/JWT/DB-password/sb_secret shapes before hashing and upload'
           }
           (root/'redaction-report.json').write_text(json.dumps(report,indent=2)+"\n",encoding='utf-8')
           if remaining:
@@ -268,7 +267,7 @@ jobs:
           PY
           python3 "${RUNNER_TEMP}/v15-redact.py" "${evidence}"
 
-      - name: Bind and hash V15 sanitized evidence
+      - name: Bind and hash V15B sanitized evidence
         if: always()
         shell: bash
         run: |
@@ -292,10 +291,10 @@ jobs:
             'runId':os.environ['GITHUB_RUN_ID'],
             'runAttempt':os.environ['GITHUB_RUN_ATTEMPT'],
             'target':'disposable-localhost-system-chrome',
-            'validationVersion':'V15-REDACTED',
+            'validationVersion':'V15B-REDACTED',
             'journeyContract':'V3 substantive requirements preserved',
             'sourceValidatorControllerSha':os.environ['V14C_CONTROLLER_SHA'],
-            'evidenceHygiene':'credential redaction occurs before V15 hashing/upload and is independently rescanned',
+            'evidenceHygiene':'credential redaction occurs before V15B hashing/upload and is independently rescanned'
           },indent=2)+"\n",encoding='utf-8')
           PY
           (
@@ -321,7 +320,7 @@ jobs:
           git diff --check
           test -z "$(git status --porcelain --untracked-files=all)"
 
-      - name: Enforce V15 exact-RC browser and redaction gate
+      - name: Enforce V15B exact-RC browser and redaction gate
         if: always()
         shell: bash
         run: |
@@ -348,7 +347,7 @@ jobs:
           binding=json.loads((root/'v15-binding.json').read_text())
           assert binding['productSha']=='81d3618ce7be28a6ce81363a8bda524cd18ece15'
           assert binding['productTree']=='511c3501bd6a73f7556f636bc9e12ef30935d58d'
-          assert binding['validationVersion']=='V15-REDACTED'
+          assert binding['validationVersion']=='V15B-REDACTED'
           PY
 
   independent-artifact-inspection:
@@ -380,7 +379,7 @@ jobs:
           assert binding['productSha']=='81d3618ce7be28a6ce81363a8bda524cd18ece15'
           assert binding['productTree']=='511c3501bd6a73f7556f636bc9e12ef30935d58d'
           assert binding['parentSha']==binding['productSha']
-          assert binding['validationVersion']=='V15-REDACTED'
+          assert binding['validationVersion']=='V15B-REDACTED'
           correction=json.loads((root/'harness-correction.json').read_text())
           assert correction['classification']=='PASS'
           assert correction['productBytesChanged'] is False
