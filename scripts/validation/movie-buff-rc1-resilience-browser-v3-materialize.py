@@ -37,14 +37,19 @@ for line in source[run_line + 1:]:
     body.append(line[run_indent + 2:] if line.strip() else "")
 script = "\n".join(body) + "\n"
 old_run = 'node scripts/validation/movie-buff-rc1-resilience-browser-v1.mjs >"${raw}/resilience-browser.log" 2>&1'
-new_run = 'node "${RUNNER_TEMP}/resilience-v3.mjs" >"${raw}/resilience-browser.log" 2>&1'
+runtime_rel = "scripts/validation/.movie-buff-rc1-resilience-v3-runtime.mjs"
+new_run = f'node "{runtime_rel}" >"${{raw}}/resilience-browser.log" 2>&1'
 if script.count(old_run) != 1:
     raise SystemExit("harness invocation anchor mismatch")
 script = script.replace(old_run, new_run, 1)
 redaction_anchor = 'cp "${RUNNER_TEMP}/composition-paths.txt" "${evidence}/composition-paths.txt"'
-redaction_call = 'python3 scripts/validation/movie-buff-rc1-resilience-browser-v3-redact.py "${evidence}"\n'
+pre_hash = (
+    f'rm -f "{runtime_rel}"\n'
+    'test -z "$(git status --porcelain)"\n'
+    'python3 scripts/validation/movie-buff-rc1-resilience-browser-v3-redact.py "${evidence}"\n'
+)
 if script.count(redaction_anchor) != 1:
     raise SystemExit("redaction insertion anchor mismatch")
-script = script.replace(redaction_anchor, redaction_call + redaction_anchor, 1)
+script = script.replace(redaction_anchor, pre_hash + redaction_anchor, 1)
 out_run.write_text(script, encoding="utf-8")
 shutil.rmtree(Path(__file__).parent / "__pycache__", ignore_errors=True)
