@@ -19,7 +19,7 @@ for path in root.rglob("*"):
     text = ASSIGN.sub(lambda m: m.group(1) + "[REDACTED]", text)
     text = JWT.sub("[REDACTED_JWT]", text)
     text = SB.sub("[REDACTED_SUPABASE_KEY]", text)
-    text = FULL_DB_URL.sub("postgresql://[REDACTED_LOCAL_DB_URL]", text)
+    text = FULL_DB_URL.sub("[REDACTED_LOCAL_DB_URL]", text)
     path.write_text(text, encoding="utf-8")
 
 hits = []
