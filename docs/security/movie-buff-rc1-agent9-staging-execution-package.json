@@ -1,0 +1,100 @@
+{
+  "packageVersion": 1,
+  "lane": "Agent 9 / MOV-28 / GitHub #201",
+  "repository": "BuffGamesStudio/buff-platform",
+  "candidate": {
+    "branch": "release-candidate/movie-buff-2026-08-07-rc-1",
+    "sha": "81d3618ce7be28a6ce81363a8bda524cd18ece15",
+    "tree": "511c3501bd6a73f7556f636bc9e12ef30935d58d"
+  },
+  "target": {
+    "expectedProjectName": "movie-buff-staging",
+    "expectedProjectRef": "eddwkxcillhzkvwmavsc",
+    "organizationId": "tleuzztdjpajaltwcclj",
+    "region": "us-east-1",
+    "environment": "isolated-staging",
+    "refusalRule": "refuse every project ref other than eddwkxcillhzkvwmavsc",
+    "productionExcluded": true
+  },
+  "inputs": {
+    "agent4ExpectedState": "docs/security/movie-buff-rc1-staging-post-apply-evidence.json on security/movie-buff-rc1-exact-staging-seat4-20260807",
+    "agent4HostedRehearsal": "docs/security/movie-buff-rc1-staging-rollback-forward-rehearsal.json on security/movie-buff-rc1-exact-staging-seat4-20260807",
+    "agent2RecoveryRun": "31238609096",
+    "agent2RecoveryArtifact": "9016293212",
+    "agent2RecoveryArtifactDigest": "sha256:1e025e18643702179ecb16bd17b2a233b955fc3a003ed035ef0655cfe0e12a78"
+  },
+  "migrationAllowlist": [
+    {
+      "path": "supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql",
+      "gitBlobSha": "a47e164c1fe5f37e579949bd50dd35b1dfb5d415",
+      "sha256": "bb2e16b10fa5f082907fad2c9cf0182706a18c9c6f88573d16f25aa746b18476"
+    }
+  ],
+  "rollbackAllowlist": [
+    {
+      "path": "supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql",
+      "gitBlobSha": "977222a91100d37ccbe8ffd2eec49cdd464df42f",
+      "sha256": "f43188231ccc0b0bb317381550279693da85968f2aa3a56183e2cd228acde647"
+    }
+  ],
+  "preflightContract": [
+    "exact repository",
+    "exact RC SHA/tree",
+    "clean worktree for any shell execution",
+    "exact staging project ref",
+    "migration and rollback SHA-256",
+    "required tool/version presence",
+    "required environment variables present without echoing values",
+    "no production target or alias",
+    "redact credential-bearing output before persistence"
+  ],
+  "requiredVerification": [
+    "migration-ledger precheck",
+    "post-apply six-table RLS and FORCE RLS",
+    "direct/effective table grants",
+    "function owner, SECURITY DEFINER, fixed search_path",
+    "anon/authenticated/service-role persona matrix",
+    "VIP finalizer service-only boundary",
+    "membership helper authenticated EXECUTE with PUBLIC/anon denial",
+    "negative unauthorized calls",
+    "rollback containment",
+    "forward reapply",
+    "final catalog/ACL equality",
+    "evidence hashing and credential scan"
+  ],
+  "observedHostedExecution": {
+    "forwardLedger": {"version":"20260808040816","name":"20260807014500_movie_buff_rls_helper_execute_repair","classification":"PASS"},
+    "rollbackLedger": {"version":"20260808042759","name":"rc1_staging_rollback_rehearsal_20260807014500","classification":"PASS"},
+    "forwardReapplyLedger": {"version":"20260808042827","name":"rc1_staging_forward_reapply_20260807014500","classification":"PASS"},
+    "rollbackContainment": "PASS",
+    "finalHelperAclEquality": "PASS",
+    "finalSixTableRlsForceRls": "PASS",
+    "safePersonaChecks": "PASS",
+    "securityDefinerAllowlistReconciliation": "PASS"
+  },
+  "negativePathMatrix": {
+    "wrongProjectRef": "UNKNOWN",
+    "nonLocalTargetDuringLocalLab": "UNKNOWN",
+    "wrongSha": "UNKNOWN",
+    "staleMigrationHash": "UNKNOWN",
+    "missingMigration": "UNKNOWN",
+    "missingRollback": "UNKNOWN",
+    "dirtyCheckout": "UNKNOWN",
+    "failedApply": "UNKNOWN",
+    "failedVerification": "UNKNOWN",
+    "failedRollback": "UNKNOWN",
+    "failedForwardReapply": "UNKNOWN",
+    "secretBearingOutput": "UNKNOWN"
+  },
+  "classification": {
+    "STAGING_PACKAGE": "PASS",
+    "STAGING_FORWARD_APPLY": "PASS",
+    "STAGING_ROLLBACK": "PASS",
+    "STAGING_CONTAINMENT": "PASS",
+    "STAGING_FORWARD_REAPPLY": "PASS",
+    "STAGING_FINAL_STATE": "PASS",
+    "STAGING_NEGATIVE_PATH_HARNESS": "UNKNOWN",
+    "PRODUCTION": "NOT APPLICABLE"
+  },
+  "safety": "No production project, Vercel production deployment, alias, or production ARM is authorized by this package."
+}
