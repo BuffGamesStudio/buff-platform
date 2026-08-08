@@ -82,9 +82,32 @@ function redact(value) {
   return String(value)
     .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[REDACTED_JWT]")
     .replace(/sb_(?:secret|publishable)_[A-Za-z0-9_-]+/g, "[REDACTED_SUPABASE_KEY]")
-    .replace(/postgres(?:ql)?:\/\/[^\s"']+/gi, "postgresql://[REDACTED_LOCAL_DB_URL]")
+    .replace(/postgres(?:ql)?:\/\/[^\s"']+/gi, "[REDACTED_LOCAL_DB_URL]")
     .replace(/(password|token|secret|key)\s*[=:]\s*[^\s,;]+/gi, "$1=[REDACTED]")
     .slice(0, 3000);
+}
+
+function serializeError(error) {
+  if (error instanceof Error) {
+    return {
+      name: redact(error.name),
+      message: redact(error.message),
+      stack: redact(error.stack ?? ""),
+    };
+  }
+  if (error && typeof error === "object") {
+    const record = {};
+    for (const key of ["name", "message", "details", "hint", "code", "status", "statusCode"]) {
+      if (key in error && error[key] != null) record[key] = redact(error[key]);
+    }
+    if (Object.keys(record).length > 0) return record;
+    try {
+      return { value: redact(JSON.stringify(error)) };
+    } catch {
+      return { value: redact(String(error)) };
+    }
+  }
+  return { value: redact(error) };
 }
 
 const evidence = {
@@ -358,17 +381,14 @@ try {
   evidence.classification = "PASS";
 } catch (error) {
   evidence.classification = "FAIL";
-  evidence.failures.push({
-    message: redact(error instanceof Error ? error.message : error),
-    stack: redact(error instanceof Error ? error.stack ?? "" : ""),
-  });
+  evidence.failures.push(serializeError(error));
   process.exitCode = 1;
 } finally {
   for (const roomId of cleanupRoomIds.reverse()) {
     try {
       await admin.from("game_rooms").delete().eq("id", roomId);
     } catch (error) {
-      evidence.failures.push({ cleanup: roomId, message: redact(error) });
+      evidence.failures.push({ cleanup: roomId, ...serializeError(error) });
       evidence.classification = "FAIL";
       process.exitCode = 1;
     }
