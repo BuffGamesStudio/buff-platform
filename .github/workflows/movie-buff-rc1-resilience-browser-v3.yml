@@ -71,14 +71,15 @@ jobs:
           docker --version
           psql --version
           python3 -m py_compile scripts/validation/movie-buff-rc1-resilience-browser-v3-materialize.py scripts/validation/movie-buff-rc1-resilience-browser-v3-redact.py
+          rm -rf scripts/validation/__pycache__
+          test -z "$(git status --porcelain)"
           python3 scripts/validation/movie-buff-rc1-resilience-browser-v3-materialize.py \
             .github/workflows/movie-buff-rc1-resilience-browser-v1.yml \
             scripts/validation/movie-buff-rc1-resilience-browser-v1.mjs \
-            "${RUNNER_TEMP}/resilience-v3.mjs" \
+            scripts/validation/.movie-buff-rc1-resilience-v3-runtime.mjs \
             "${RUNNER_TEMP}/run-v3.sh"
-          node --check "${RUNNER_TEMP}/resilience-v3.mjs"
+          node --check scripts/validation/.movie-buff-rc1-resilience-v3-runtime.mjs
           bash -n "${RUNNER_TEMP}/run-v3.sh"
-          test -z "$(git status --porcelain)"
 
       - name: Install committed dependency graph
         run: npm ci --ignore-scripts --no-audit --no-fund
@@ -142,7 +143,6 @@ jobs:
           if((j.failures||[]).length) throw new Error(`unexpected failures ${JSON.stringify(j.failures)}`);
           if(j.product?.sha!==process.env.PRODUCT_SHA || j.product?.tree!==process.env.PRODUCT_TREE) throw new Error('product binding mismatch');
           NODE
-          python3 scripts_check.py 2>/dev/null || true
           python3 - <<'PY'
           import pathlib,re
           root=pathlib.Path('evidence')
