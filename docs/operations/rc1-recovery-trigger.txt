@@ -1,0 +1,2 @@
+validation-only trigger for RC-1 recovery rollback/reapply proof
+product_sha=81d3618ce7be28a6ce81363a8bda524cd18ece15
