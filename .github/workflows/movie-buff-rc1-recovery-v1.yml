@@ -1,8 +1,8 @@
-name: Movie Buff RC-1 recovery rollback and reapply v1
+name: Movie Buff RC-1 recovery rollback and reapply v1b redacted
 
 on:
   pull_request:
-    branches: [operations/movie-buff-rc1-recovery-seat2-20260807]
+    branches: [operations/movie-buff-rc1-recovery-seat2-v1b-20260807]
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -13,7 +13,7 @@ env:
   PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
   FORWARD: supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql
   ROLLBACK: supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql
-  ARTIFACT_NAME: movie-buff-rc1-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+  ARTIFACT_NAME: movie-buff-rc1-recovery-v1b-redacted-${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
   recovery-proof:
@@ -104,17 +104,65 @@ jobs:
           diff -u "${evidence}/forward-before.tsv" "${evidence}/forward-after.tsv" >"${evidence}/catalog-equivalence.diff"
           test ! -s "${evidence}/catalog-equivalence.diff"
 
-      - name: Record recovery manifest and hashes
+      - name: Sanitize recovery evidence before hashing
         if: always()
         shell: bash
         run: |
           set -euo pipefail
           evidence="${RUNNER_TEMP}/rc1-recovery"
           rm -f "${evidence}/status.env" "${evidence}/db-url.txt"
+          python3 - "${evidence}" <<'PY'
+          import json,pathlib,re,sys
+          root=pathlib.Path(sys.argv[1])
+          ansi=re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+          row=re.compile(r'(?im)^(\s*│?\s*(Access Key|Secret Key)\s*│\s*)([^│\r\n]+?)(\s*│\s*)$')
+          dburl=re.compile(r'(?i)\b(postgres(?:ql)?://[^:\s/@]+:)([^@\s/]+)(@)')
+          jwt=re.compile(r'\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\b')
+          secret=re.compile(r'\bsb_secret_[A-Za-z0-9_-]{8,}\b')
+          counts={}
+          touched=[]
+          for p in root.rglob('*'):
+              if not p.is_file(): continue
+              text=p.read_text(encoding='utf-8',errors='ignore')
+              text=ansi.sub('',text)
+              def rr(m):
+                  k=m.group(2).replace(' ','').lower(); counts[k]=counts.get(k,0)+1
+                  return m.group(1)+'[REDACTED]'+m.group(4)
+              text=row.sub(rr,text)
+              def dr(m):
+                  counts['db_password']=counts.get('db_password',0)+1
+                  return m.group(1)+'[REDACTED]'+m.group(3)
+              text=dburl.sub(dr,text)
+              n=len(jwt.findall(text)); counts['jwt']=counts.get('jwt',0)+n; text=jwt.sub('[REDACTED_JWT]',text)
+              n=len(secret.findall(text)); counts['sb_secret']=counts.get('sb_secret',0)+n; text=secret.sub('[REDACTED_SUPABASE_SECRET]',text)
+              p.write_text(text,encoding='utf-8'); touched.append(str(p.relative_to(root)))
+          remaining=[]
+          for p in root.rglob('*'):
+              if not p.is_file(): continue
+              text=p.read_text(encoding='utf-8',errors='ignore')
+              for label,value in row.findall(text):
+                  if value.strip()!='[REDACTED]': remaining.append([str(p.relative_to(root)),label])
+              if dburl.search(text): remaining.append([str(p.relative_to(root)),'db_url_password'])
+              if jwt.search(text): remaining.append([str(p.relative_to(root)),'jwt'])
+              if secret.search(text): remaining.append([str(p.relative_to(root)),'sb_secret'])
+          report={'classification':'PASS' if not remaining else 'FAIL','replacements':counts,'remaining':remaining,'filesNormalized':touched}
+          (root/'redaction-report.json').write_text(json.dumps(report,indent=2)+'\n')
+          if remaining: raise SystemExit('recovery evidence still contains credential shapes')
+          if counts.get('accesskey',0)<1 or counts.get('secretkey',0)<1 or counts.get('db_password',0)<1:
+              raise SystemExit('expected local credential shapes were not observed/redacted')
+          PY
+
+      - name: Record recovery manifest and hashes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/rc1-recovery"
           python3 - "${evidence}/recovery-manifest.json" <<'PY'
-          import json,pathlib
-          pathlib.Path(__import__('sys').argv[1]).write_text(json.dumps({
+          import json,pathlib,sys
+          pathlib.Path(sys.argv[1]).write_text(json.dumps({
             'classification':'PASS',
+            'evidenceHygiene':'PASS',
             'repository':'BuffGamesStudio/buff-platform',
             'productSha':'81d3618ce7be28a6ce81363a8bda524cd18ece15',
             'productTree':'511c3501bd6a73f7556f636bc9e12ef30935d58d',
@@ -124,7 +172,7 @@ jobs:
             'dataDeletion':False,
             'pitrInvocation':'NOT APPLICABLE',
             'hostedMutation':'NOT APPLICABLE',
-            'productionBackupIdentity':'UNKNOWN',
+            'productionBackupIdentity':'UNKNOWN'
           },indent=2)+'\n')
           PY
           sha256sum "${FORWARD}" "${ROLLBACK}" >"${evidence}/source-sha256.txt"
@@ -153,7 +201,7 @@ jobs:
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: evidence
-      - name: Verify recovery artifact
+      - name: Verify recovery artifact and credential hygiene
         shell: bash
         run: |
           set -euo pipefail
@@ -162,10 +210,19 @@ jobs:
           test ! -s catalog-equivalence.diff
           test "$(grep -c '|t|search_path=pg_catalog, public|f|f|f|t$' rollback-state.tsv)" = "3"
           python3 - <<'PY'
-          import json
+          import json,pathlib,re
           m=json.load(open('recovery-manifest.json'))
-          assert m['classification']=='PASS'
+          assert m['classification']=='PASS' and m['evidenceHygiene']=='PASS'
           assert m['productSha']=='81d3618ce7be28a6ce81363a8bda524cd18ece15'
           assert m['productTree']=='511c3501bd6a73f7556f636bc9e12ef30935d58d'
           assert m['dataDeletion'] is False
+          r=json.load(open('redaction-report.json'))
+          assert r['classification']=='PASS'
+          assert r['replacements'].get('accesskey',0)>=1
+          assert r['replacements'].get('secretkey',0)>=1
+          assert r['replacements'].get('db_password',0)>=1
+          text='\n'.join(p.read_text(encoding='utf-8',errors='ignore') for p in pathlib.Path('.').rglob('*') if p.is_file())
+          assert re.search(r'(?i)\bpostgres(?:ql)?://[^:\s/@]+:[^@\s/]+@',text) is None
+          for label,value in re.findall(r'(?im)^\s*│?\s*(Access Key|Secret Key)\s*│\s*([^│\r\n]+?)\s*│',text):
+              assert value.strip()=='[REDACTED]', label
           PY
