@@ -191,8 +191,8 @@
                          "expectedScannerBefore":  "FAIL",
                          "expectedScannerAfter":  "PASS",
                          "expectedSanitizerOutcome":  "PASS",
-                         "inputSha256":  "b370e6e220f24a0cbba09a64c64c7977ce565c87e8229ee5928a2cfa10ff9ca3",
-                         "expectedSanitizedSha256":  "e986529f756b64c85db1f97533c4b6b2dc3c8cc190b3e7f42b1b5edd323b13a0",
+                         "inputSha256":  "d5e42f4feac7f2bc292246192a4d2b330714b61990e10ceb165e2331f149fa12",
+                         "expectedSanitizedSha256":  "79251a3e2cac82a81c9e779b041f9831d5062a1d65f09d6e035c6f42eb19127e",
                          "targetsSanitizer":  true,
                          "targetsIndependentScanner":  true,
                          "diagnosticMayRevealValue":  false
