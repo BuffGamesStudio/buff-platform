@@ -329,6 +329,10 @@ jobs:
           run_sql bootstrap-14 "${manual}/20260804083600_movie_buff_match_start_handoff.sql"
           run_sql bootstrap-15 "${manual}/20260804083610_movie_buff_phase_digest_schema_repair.sql"
           run_sql bootstrap-16 "${manual}/20260804083700_movie_buff_active_leave_and_buster_boundary.sql"
+          cat >"${scratch}/bootstrap-16b-join-search-path.sql" <<'SQL'
+          alter function public.join_movie_buff_room(text) set search_path = pg_catalog;
+          SQL
+          run_sql bootstrap-16b-join-search-path "${scratch}/bootstrap-16b-join-search-path.sql"
           run_sql bootstrap-17 "${manual}/20260805155000_movie_buff_function_security_finalizer.sql"
           run_sql bootstrap-18 "${manual}/20260805160000_movie_buff_six_table_rls_reconciliation.sql"
           run_sql bootstrap-19 "${manual}/20260805160500_public_rls_auto_enable_event_trigger_contract.sql"
@@ -456,7 +460,7 @@ jobs:
             'verifierPath':'supabase/tests/movie_buff_production_chain_successor_manifest_v3_verify.sql',
             'verifierSha256':'fb35a1821db1eba5c5fa2c4839664c109683b65e640b47876006300c1f3f36ee',
             'scope':'disposable-localhost successor rollback containment and exact forward reapply',
-            'bootstrapBasis':'pre-20260804070000 local migration replay, local 20260804070000 helper normalization bootstrap, then exact 20260804073000-20260807014500 forward application',
+            'bootstrapBasis':'pre-20260804070000 local migration replay, local 20260804070000 helper normalization bootstrap, local join_movie_buff_room search_path priming, then exact 20260804073000-20260807014500 forward application',
             'hostedMutation':'NOT APPLICABLE',
             'productionLikeBaseline':'NOT PROVEN BY THIS ARTIFACT',
             'externalRecoverySourceSha':'fca74cf8c125926642720b4d135fb75f3784f6f7'
