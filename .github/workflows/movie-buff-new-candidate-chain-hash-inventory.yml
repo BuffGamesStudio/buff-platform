@@ -10,8 +10,8 @@ permissions:
 
 env:
   CANDIDATE_BRANCH: security/movie-buff-production-baseline-reconciliation-20260808
-  CANDIDATE_SHA: 2e01f0fb3681a7b2b15c19a3f5273af6a2ca8ca4
-  CANDIDATE_TREE: d07e2b5d405396d8ab4a89c130fdcc46a901b124
+  CANDIDATE_SHA: a90219841cbc033185b08930049e6063e5b79e5a
+  CANDIDATE_TREE: c5c1fa5f2d91d04515a1feabb986851008aeca5e
   CONTROLLER_BRANCH: validation/movie-buff-new-candidate-hash-controller-20260808
   TRIGGER_BRANCH: validation/movie-buff-new-candidate-hash-trigger-20260808
   RECOVERY_SOURCE_SHA: fca74cf8c125926642720b4d135fb75f3784f6f7
@@ -137,7 +137,7 @@ jobs:
             printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ordinal" "$mode" "$source" "$sha" "$blob" "$path" >>"${evidence}/recovery-artifact-sha256.tsv"
           done <"${evidence}/expected-recovery-map.tsv"
 
-          verifier='supabase/tests/movie_buff_production_chain_manifest_v2_verify.sql'
+          verifier='supabase/tests/movie_buff_production_chain_successor_manifest_v3_verify.sql'
           git cat-file -e "${CANDIDATE_SHA}:${verifier}"
           git show "${CANDIDATE_SHA}:${verifier}" >"${evidence}/bytes/manifest-verifier.sql"
           verifier_sha="$(sha256sum "${evidence}/bytes/manifest-verifier.sql" | awk '{print $1}')"
@@ -153,7 +153,7 @@ jobs:
             'candidateTree':os.environ['CANDIDATE_TREE'],
             'forwardStepCount':22,
             'recoveryMapCount':22,
-            'manifestSha256':'a2357ac91b5a00e98d0f0a30bd69b8fe901cbfb97b484885a39577fce3ac0adb',
+            'manifestSha256':'1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf',
             'manifestVerifierSha256':sys.argv[2],
             'manifestVerifierGitBlobSha':sys.argv[3],
             'externalRecoverySourceSha':os.environ['RECOVERY_SOURCE_SHA'],
@@ -191,11 +191,11 @@ jobs:
           import json
           b=json.load(open('binding.json'))
           assert b['classification']=='PASS'
-          assert b['candidateSha']=='2e01f0fb3681a7b2b15c19a3f5273af6a2ca8ca4'
-          assert b['candidateTree']=='d07e2b5d405396d8ab4a89c130fdcc46a901b124'
+          assert b['candidateSha']=='a90219841cbc033185b08930049e6063e5b79e5a'
+          assert b['candidateTree']=='c5c1fa5f2d91d04515a1feabb986851008aeca5e'
           assert b['forwardStepCount']==22
           assert b['recoveryMapCount']==22
-          assert b['manifestSha256']=='a2357ac91b5a00e98d0f0a30bd69b8fe901cbfb97b484885a39577fce3ac0adb'
+          assert b['manifestSha256']=='1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf'
           rows=[line.rstrip('\n').split('\t') for line in open('forward-chain-sha256.tsv')]
           assert rows[0][3].endswith('20260804070000_movie_buff_production_baseline_reconciliation.sql')
           assert rows[20][3].endswith('20260807010000_movie_buff_production_security_manifest_reconciliation.sql')
