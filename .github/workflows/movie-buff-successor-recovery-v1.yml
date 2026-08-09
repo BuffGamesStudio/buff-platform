@@ -1,0 +1,369 @@
+name: Movie Buff successor recovery rollback and reapply v1
+
+on:
+  pull_request:
+    branches: [operations/movie-buff-successor-recovery-seat2-20260809]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
+  PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
+  CANDIDATE_SHA: a90219841cbc033185b08930049e6063e5b79e5a
+  CANDIDATE_TREE: c5c1fa5f2d91d04515a1feabb986851008aeca5e
+  CONTROLLER_BRANCH: operations/movie-buff-successor-recovery-seat2-20260809
+  TRIGGER_BRANCH: operations/movie-buff-successor-recovery-trigger-seat2-20260809
+  MANIFEST_PATH: docs/security/movie-buff-successor-expected-state-manifest-v3.json
+  MANIFEST_SHA256: 1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf
+  VERIFIER_PATH: supabase/tests/movie_buff_production_chain_successor_manifest_v3_verify.sql
+  VERIFIER_SHA256: fb35a1821db1eba5c5fa2c4839664c109683b65e640b47876006300c1f3f36ee
+  EXTERNAL_RECOVERY_SOURCE_SHA: fca74cf8c125926642720b4d135fb75f3784f6f7
+  ARTIFACT_NAME: movie-buff-successor-recovery-v1-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  recovery-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Verify exact successor ancestry and recovery-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_BASE_REF}" = "${CONTROLLER_BRANCH}"
+          test "${GITHUB_HEAD_REF}" = "${TRIGGER_BRANCH}"
+          test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
+          test "$(git rev-parse "${CANDIDATE_SHA}^{tree}")" = "${CANDIDATE_TREE}"
+          git merge-base --is-ancestor "${PRODUCT_SHA}" "${CANDIDATE_SHA}"
+          git merge-base --is-ancestor "${CANDIDATE_SHA}" HEAD
+          test "$(sha256sum "${MANIFEST_PATH}" | cut -d' ' -f1)" = "${MANIFEST_SHA256}"
+          test "$(sha256sum "${VERIFIER_PATH}" | cut -d' ' -f1)" = "${VERIFIER_SHA256}"
+          python3 - <<'PY'
+          import os, subprocess
+          actual=set(subprocess.check_output(['git','diff','--name-only',f"{os.environ['CANDIDATE_SHA']}..HEAD"],text=True).splitlines())
+          expected={'.github/workflows/movie-buff-successor-recovery-v1.yml'}
+          if actual != expected:
+              raise SystemExit(f'unexpected successor-recovery delta: {sorted(actual)}')
+          PY
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Start disposable Supabase with private raw capture outside uploaded evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="${RUNNER_TEMP}/successor-recovery-private"
+          evidence="${RUNNER_TEMP}/successor-recovery-evidence"
+          mkdir -p "${raw}" "${evidence}"
+          chmod 700 "${raw}"
+          supabase start >"${raw}/supabase-start.raw.log" 2>&1
+          supabase db reset >"${raw}/db-reset.raw.log" 2>&1
+          supabase status -o env >"${raw}/status.raw.env"
+          python3 - "${raw}/status.raw.env" "${raw}/db-url.private" <<'PY'
+          import pathlib,re,sys
+          text=pathlib.Path(sys.argv[1]).read_text()
+          m=re.search(r'^DB_URL=(?:"([^"]+)"|(\S+))$',text,re.M)
+          if not m:
+              raise SystemExit('DB_URL missing from disposable Supabase status')
+          pathlib.Path(sys.argv[2]).write_text((m.group(1) or m.group(2))+'\n')
+          PY
+
+      - name: Prove successor forward state, containment rollback, and exact forward reapply
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="${RUNNER_TEMP}/successor-recovery-private"
+          evidence="${RUNNER_TEMP}/successor-recovery-evidence"
+          DB_URL="$(cat "${raw}/db-url.private")"
+          work="${RUNNER_TEMP}/successor-recovery-work"
+          mkdir -p "${work}"
+
+          git fetch --no-tags --depth=1 origin "${EXTERNAL_RECOVERY_SOURCE_SHA}"
+          git show "${EXTERNAL_RECOVERY_SOURCE_SHA}:supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql" \
+            > "${work}/rollback-20260807014500.sql"
+
+          cat >"${evidence}/successor-catalog.sql" <<'SQL'
+          \pset format unaligned
+          \pset tuples_only on
+          select jsonb_build_object(
+            'functions',(
+              select jsonb_agg(jsonb_build_object(
+                'identity',p.oid::regprocedure::text,
+                'owner',pg_get_userbyid(p.proowner),
+                'securityDefiner',p.prosecdef,
+                'config',p.proconfig,
+                'acl',p.proacl
+              ) order by p.oid::regprocedure::text)
+              from pg_proc p
+              join pg_namespace n on n.oid=p.pronamespace
+              where (
+                n.nspname='public'
+                and (p.proname like '%movie_buff%' or p.proname in ('rls_auto_enable','is_buff_content_manager'))
+              ) or n.nspname='movie_buff_security'
+            ),
+            'tables',(
+              select jsonb_agg(jsonb_build_object(
+                'table',c.relname,
+                'owner',pg_get_userbyid(c.relowner),
+                'rls',c.relrowsecurity,
+                'forceRls',c.relforcerowsecurity,
+                'acl',c.relacl
+              ) order by c.relname)
+              from pg_class c
+              join pg_namespace n on n.oid=c.relnamespace
+              where n.nspname='public'
+                and (c.relname like 'movie_buff_%' or c.relname in ('match_round_player_hints','match_round_player_playback'))
+            ),
+            'eventTriggers',(
+              select jsonb_agg(jsonb_build_object(
+                'name',e.evtname,
+                'event',e.evtevent,
+                'enabled',e.evtenabled,
+                'owner',pg_get_userbyid(e.evtowner),
+                'function',e.evtfoid::regprocedure::text
+              ) order by e.evtname)
+              from pg_event_trigger e
+            )
+          )::text;
+          SQL
+
+          cat >"${evidence}/containment-check.sql" <<'SQL'
+          \pset format unaligned
+          \pset tuples_only on
+          select jsonb_build_object(
+            'helperFunctionsAbsent',
+              (to_regprocedure('public.is_movie_buff_room_member(uuid)') is null
+               and to_regprocedure('public.is_movie_buff_match_member(uuid)') is null
+               and to_regprocedure('public.is_movie_buff_round_member(uuid)') is null
+               and to_regprocedure('public.is_buff_content_manager()') is null),
+            'vipTablesAbsent',
+              (to_regclass('public.movie_buff_vip_definitions') is null
+               and to_regclass('public.movie_buff_vip_inventory') is null
+               and to_regclass('public.movie_buff_vip_round_windows') is null
+               and to_regclass('public.movie_buff_vip_round_required_players') is null
+               and to_regclass('public.movie_buff_vip_round_locks') is null
+               and to_regclass('public.movie_buff_vip_consumptions') is null),
+            'phaseTablesAbsent',
+              (to_regclass('public.movie_buff_match_phase_state') is null
+               and to_regclass('public.movie_buff_match_participant_seats') is null
+               and to_regclass('public.movie_buff_match_phase_actions') is null
+               and to_regclass('public.movie_buff_match_phase_events') is null),
+            'startMatchContained',
+              (not has_function_privilege('authenticated','public.start_movie_buff_match(uuid)','EXECUTE')
+               and has_function_privilege('service_role','public.start_movie_buff_match(uuid)','EXECUTE')),
+            'sixTablesStillFailClosed',(
+              select bool_and(c.relrowsecurity and not has_table_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE,DELETE') and has_table_privilege('service_role',c.oid,'SELECT,INSERT,UPDATE,DELETE'))
+              from pg_class c
+              join pg_namespace n on n.oid=c.relnamespace
+              where n.nspname='public'
+                and c.relname in (
+                  'match_round_player_hints','match_round_player_playback',
+                  'movie_buff_boards','movie_buff_board_categories',
+                  'movie_buff_board_tiles','movie_buff_board_events'
+                )
+            )
+          )::text;
+          SQL
+
+          run_sql() {
+            local name="$1" file="$2" options="${3:-}"
+            if [[ -n "${options}" ]]; then
+              env "PGOPTIONS=${options}" psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${file}" >"${evidence}/${name}.log" 2>&1
+            else
+              psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${file}" >"${evidence}/${name}.log" 2>&1
+            fi
+          }
+
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${VERIFIER_PATH}" >"${evidence}/successor-forward-before.json"
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${evidence}/successor-catalog.sql" >"${evidence}/successor-catalog-before.json"
+
+          run_sql rollback-22 "${work}/rollback-20260807014500.sql"
+          run_sql rollback-21 "supabase/rollbacks/20260807010000_movie_buff_production_security_manifest_reconciliation.rollback.sql"
+          run_sql rollback-20 "supabase/rollbacks/20260805161000_public_rls_auto_enable_acl_lockdown.rollback.sql"
+          run_sql rollback-19 "supabase/rollbacks/20260805160500_public_rls_auto_enable_event_trigger_contract.rollback.sql"
+          run_sql rollback-18 "supabase/rollbacks/20260805160000_movie_buff_six_table_rls_reconciliation.rollback.sql"
+          run_sql rollback-17 "supabase/rollbacks/20260805155000_movie_buff_function_security_finalizer.rollback.sql"
+          run_sql rollback-16 "supabase/rollbacks/20260804083700_movie_buff_active_leave_and_buster_boundary.rollback.sql"
+          run_sql rollback-15 "supabase/rollbacks/20260804083610_movie_buff_phase_digest_schema_repair.rollback.sql"
+          run_sql rollback-14 "supabase/rollbacks/20260804083600_movie_buff_match_start_handoff.rollback.sql" "-c movie_buff.allow_match_start_containment=on"
+          run_sql rollback-13 "supabase/rollbacks/20260804083500_movie_buff_reconnect_buster_boundary_repair.rollback.sql"
+          run_sql rollback-12 "supabase/rollbacks/20260804083400_movie_buff_phase_contract_alignment.rollback.sql"
+          run_sql rollback-11 "supabase/rollbacks/20260804083300_movie_buff_phase_tile_mutation_guard.rollback.sql"
+          run_sql rollback-10 "supabase/rollbacks/20260804083200_movie_buff_buster_safe_boundary.rollback.sql"
+          run_sql rollback-09-08-phase-unit "supabase/rollbacks/20260804083000_movie_buff_server_phase_machine.rollback.sql" "-c movie_buff.allow_destructive_phase_rollback=on"
+          run_sql rollback-07 "supabase/rollbacks/20260804081600_movie_buff_admission_phase_handoff.rollback.sql" "-c movie_buff.allow_admission_handoff_containment=on"
+          run_sql rollback-06 "supabase/rollbacks/20260804081500_movie_buff_atomic_three_player_matchmaking.rollback.sql" "-c movie_buff.allow_matchmaking_containment=on"
+          run_sql rollback-05 "supabase/rollbacks/20260804073300_movie_buff_vip_deadline_finalize.rollback.sql"
+          run_sql rollback-04 "supabase/rollbacks/20260804073200_movie_buff_vip_snapshot_release_hardening.rollback.sql"
+          run_sql rollback-03 "supabase/rollbacks/20260804073100_movie_buff_vip_null_category_fail_closed.rollback.sql"
+          run_sql rollback-02 "supabase/rollbacks/20260804073000_movie_buff_vip_authority.rollback.sql" "-c movie_buff.allow_destructive_vip_rollback=on"
+          run_sql rollback-01 "supabase/rollbacks/20260804070000_movie_buff_production_baseline_reconciliation.rollback.sql"
+
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${evidence}/containment-check.sql" >"${evidence}/containment-check.json"
+          python3 - "${evidence}/containment-check.json" <<'PY'
+          import json, pathlib, sys
+          data=json.loads(pathlib.Path(sys.argv[1]).read_text())
+          required=['helperFunctionsAbsent','vipTablesAbsent','phaseTablesAbsent','startMatchContained','sixTablesStillFailClosed']
+          missing=[key for key in required if not data.get(key)]
+          if missing:
+              raise SystemExit(f'containment check failed: {missing}')
+          PY
+
+          run_sql reapply-01 "supabase/migrations/20260804070000_movie_buff_production_baseline_reconciliation.sql"
+          run_sql reapply-02 "supabase/migrations/20260804073000_movie_buff_vip_authority.sql"
+          run_sql reapply-03 "supabase/migrations/20260804073100_movie_buff_vip_null_category_fail_closed.sql"
+          run_sql reapply-04 "supabase/migrations/20260804073200_movie_buff_vip_snapshot_release_hardening.sql"
+          run_sql reapply-05 "supabase/migrations/20260804073300_movie_buff_vip_deadline_finalize.sql"
+          run_sql reapply-06 "supabase/migrations/20260804081500_movie_buff_atomic_three_player_matchmaking.sql"
+          run_sql reapply-07 "supabase/migrations/20260804081600_movie_buff_admission_phase_handoff.sql"
+          run_sql reapply-08 "supabase/migrations/20260804083000_movie_buff_server_phase_machine.sql"
+          run_sql reapply-09 "supabase/migrations/20260804083100_movie_buff_server_phase_machine_hardening.sql"
+          run_sql reapply-10 "supabase/migrations/20260804083200_movie_buff_buster_safe_boundary.sql"
+          run_sql reapply-11 "supabase/migrations/20260804083300_movie_buff_phase_tile_mutation_guard.sql"
+          run_sql reapply-12 "supabase/migrations/20260804083400_movie_buff_phase_contract_alignment.sql"
+          run_sql reapply-13 "supabase/migrations/20260804083500_movie_buff_reconnect_buster_boundary_repair.sql"
+          run_sql reapply-14 "supabase/migrations/20260804083600_movie_buff_match_start_handoff.sql"
+          run_sql reapply-15 "supabase/migrations/20260804083610_movie_buff_phase_digest_schema_repair.sql"
+          run_sql reapply-16 "supabase/migrations/20260804083700_movie_buff_active_leave_and_buster_boundary.sql"
+          run_sql reapply-17 "supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql"
+          run_sql reapply-18 "supabase/migrations/20260805160000_movie_buff_six_table_rls_reconciliation.sql"
+          run_sql reapply-19 "supabase/migrations/20260805160500_public_rls_auto_enable_event_trigger_contract.sql"
+          run_sql reapply-20 "supabase/migrations/20260805161000_public_rls_auto_enable_acl_lockdown.sql"
+          run_sql reapply-21 "supabase/migrations/20260807010000_movie_buff_production_security_manifest_reconciliation.sql"
+          run_sql reapply-22 "supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql"
+
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${VERIFIER_PATH}" >"${evidence}/successor-forward-after.json"
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${evidence}/successor-catalog.sql" >"${evidence}/successor-catalog-after.json"
+          diff -u "${evidence}/successor-catalog-before.json" "${evidence}/successor-catalog-after.json" >"${evidence}/catalog-equivalence.diff"
+          test ! -s "${evidence}/catalog-equivalence.diff"
+
+      - name: Fail closed if the evidence directory contains credential shapes
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/successor-recovery-evidence"
+          python3 - "${evidence}" <<'PY'
+          import json,pathlib,re,sys
+          root=pathlib.Path(sys.argv[1])
+          ansi=re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+          row=re.compile(r'(?im)^\s*│?\s*(Access Key|Secret Key)\s*│\s*([^│\r\n]+?)\s*│')
+          jwt=re.compile(r'\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\b')
+          dburl=re.compile(r'(?i)\bpostgres(?:ql)?://[^:\s/@]+:[^@\s/]+@')
+          sbsecret=re.compile(r'\bsb_secret_[A-Za-z0-9_-]{8,}\b')
+          assign=re.compile(r'(?im)^\s*(?:AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_DB_PASSWORD|POSTGRES_PASSWORD)\s*[:=]\s*\S+')
+
+          findings=[]
+          for p in sorted(root.rglob('*')):
+              if not p.is_file():
+                  continue
+              text=ansi.sub('',p.read_text(encoding='utf-8',errors='ignore'))
+              if row.search(text): findings.append({'path':str(p.relative_to(root)),'type':'table_credential'})
+              if jwt.search(text): findings.append({'path':str(p.relative_to(root)),'type':'jwt'})
+              if dburl.search(text): findings.append({'path':str(p.relative_to(root)),'type':'db_password_url'})
+              if sbsecret.search(text): findings.append({'path':str(p.relative_to(root)),'type':'sb_secret'})
+              if assign.search(text): findings.append({'path':str(p.relative_to(root)),'type':'credential_assignment'})
+          report={
+            'classification':'PASS' if not findings else 'FAIL',
+            'findingClasses':findings,
+            'capturePolicy':'Supabase start/status credential-bearing raw output is isolated outside the uploaded evidence directory and deleted before upload.'
+          }
+          (root/'redaction-report.json').write_text(json.dumps(report,indent=2)+'\n')
+          if findings:
+              raise SystemExit('credential shapes detected in successor recovery evidence directory')
+          PY
+
+      - name: Record recovery manifest and hash evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/successor-recovery-evidence"
+          python3 - "${evidence}" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          manifest={
+            'classification':'PASS',
+            'logicClassification':'PASS',
+            'evidenceHygiene':'PASS',
+            'repository':'BuffGamesStudio/buff-platform',
+            'productSha':'81d3618ce7be28a6ce81363a8bda524cd18ece15',
+            'productTree':'511c3501bd6a73f7556f636bc9e12ef30935d58d',
+            'candidateSha':'a90219841cbc033185b08930049e6063e5b79e5a',
+            'candidateTree':'c5c1fa5f2d91d04515a1feabb986851008aeca5e',
+            'manifestPath':'docs/security/movie-buff-successor-expected-state-manifest-v3.json',
+            'manifestSha256':'1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf',
+            'verifierPath':'supabase/tests/movie_buff_production_chain_successor_manifest_v3_verify.sql',
+            'verifierSha256':'fb35a1821db1eba5c5fa2c4839664c109683b65e640b47876006300c1f3f36ee',
+            'scope':'disposable-localhost successor rollback containment and exact forward reapply',
+            'hostedMutation':'NOT APPLICABLE',
+            'productionLikeBaseline':'NOT PROVEN BY THIS ARTIFACT',
+            'externalRecoverySourceSha':'fca74cf8c125926642720b4d135fb75f3784f6f7'
+          }
+          (root/'successor-recovery-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          PY
+          (cd "${evidence}" && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
+
+      - name: Destroy private raw credential-bearing capture before upload
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "${RUNNER_TEMP}/successor-recovery-private"
+          supabase stop --no-backup || true
+
+      - name: Upload clean successor recovery evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/successor-recovery-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  independent-recovery-inspection:
+    needs: recovery-proof
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: evidence
+
+      - name: Independently verify successor recovery artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd evidence
+          sha256sum -c SHA256SUMS.txt
+          test ! -s catalog-equivalence.diff
+          python3 - <<'PY'
+          import json, pathlib
+          root=pathlib.Path('.')
+          manifest=json.loads((root/'successor-recovery-manifest.json').read_text())
+          assert manifest['classification']=='PASS'
+          assert manifest['logicClassification']=='PASS'
+          assert manifest['evidenceHygiene']=='PASS'
+          assert manifest['candidateSha']=='a90219841cbc033185b08930049e6063e5b79e5a'
+          assert manifest['candidateTree']=='c5c1fa5f2d91d04515a1feabb986851008aeca5e'
+          assert manifest['manifestSha256']=='1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf'
+          before=json.loads((root/'successor-forward-before.json').read_text())
+          after=json.loads((root/'successor-forward-after.json').read_text())
+          assert before['classification']=='PASS'
+          assert after['classification']=='PASS'
+          containment=json.loads((root/'containment-check.json').read_text())
+          required=['helperFunctionsAbsent','vipTablesAbsent','phaseTablesAbsent','startMatchContained','sixTablesStillFailClosed']
+          assert all(containment.get(k) for k in required)
+          redaction=json.loads((root/'redaction-report.json').read_text())
+          assert redaction['classification']=='PASS'
+          text='\n'.join(p.read_text(encoding='utf-8',errors='ignore') for p in root.rglob('*') if p.is_file())
+          assert 'postgresql://' not in text.lower() or '[REDACTED_LOCAL_DB_URL]' in text
+          PY
