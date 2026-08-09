@@ -214,7 +214,7 @@ It is:
 
 - a fresh production-like baseline restore or equivalent new rehearsal target
   for the exact successor rerun on head
-  `a90219841cbc033185b08930049e6063e5b79e5a`
+  `8e63d87af755b3829d4a0f1782d9c850d835e25b`
 - any hosted mutation needed to run that exact successor rehearsal
 - final merge/promotion decisions after that fresh rehearsal exists
 
@@ -223,7 +223,7 @@ Supporting status:
 - authenticated Seat-4 successor head control is complete
 - successor hash rebinding is complete
 - disposable localhost successor rollback/reapply proof is complete on PR
-  `#227` run `31306587627`
+  `#227` run `31307664441`
 - production content-engine parity is still absent on the live August 1
   deployment
 

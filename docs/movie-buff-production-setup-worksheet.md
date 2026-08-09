@@ -130,6 +130,6 @@ As of Sunday, August 9, 2026:
 - authenticated Seat-4 successor head control is complete
 - successor hash rebinding is complete
 - disposable localhost successor rollback/reapply proof is complete on PR
-  `#227` run `31306587627`
+  `#227` run `31307664441`
 - the remaining blocker is a fresh production-like baseline restore or
   equivalent new rehearsal target for the exact successor rerun

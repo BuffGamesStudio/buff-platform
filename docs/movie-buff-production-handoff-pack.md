@@ -41,7 +41,7 @@ As of Friday, July 31, 2026, the following are already proven locally:
 
 The top unresolved blocker is now the absence of a fresh production-like
 baseline target for the exact successor rerun on head
-`a90219841cbc033185b08930049e6063e5b79e5a`; the current live-state audit also
+`8e63d87af755b3829d4a0f1782d9c850d835e25b`; the current live-state audit also
 records that successor hash rebinding and disposable localhost rollback/reapply
 proof are already complete.
 

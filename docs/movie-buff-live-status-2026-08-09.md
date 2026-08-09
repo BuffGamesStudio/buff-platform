@@ -99,7 +99,7 @@ GitHub currently shows:
 - merged: `false`
 - mergeable: `true`
 - head SHA:
-  - `a90219841cbc033185b08930049e6063e5b79e5a`
+  - `8e63d87af755b3829d4a0f1782d9c850d835e25b`
 
 ### 3. Authenticated Seat-4 head control and successor hash rebinding are complete
 
@@ -107,21 +107,22 @@ Latest PR `#224` / issue `#200` comments now converge on this updated state:
 
 - authenticated GitHub identity `iecmail01-debug` has now committed and pushed
   the successor manifest/verifier correction on PR `#224`
-- existing `2e01f0fb...` evidence remains diagnostic only because the exact
-  branch identity has changed to `a90219841cbc033185b08930049e6063e5b79e5a`
-- successor hash rebinding now passes on PR `#225` run `31298920591`, artifact
-  `9033871433`, digest
-  `sha256:1338dcda2a7142f2d34378c613c1ba840a2ceb3165fa5cf91aa92caa7c97da51`
+- earlier `2e01f0fb...` and `a902198...` evidence remains diagnostic only
+  because the exact branch identity has changed again to
+  `8e63d87af755b3829d4a0f1782d9c850d835e25b`
+- successor hash rebinding now passes on PR `#225` run `31307563085`, artifact
+  `9036405770`, digest
+  `sha256:91ab1dfe48c26c84fb8e559ba3768c414d8f84430a28d2f55994035e16b5f766`
 - read-only successor manifest v3 verification passes on the current
   production-like rehearsal final state at project `gvzjpxtbuecgrsdtxrax`
 - the remaining missing proof is a fresh exact rerun from the frozen
   production-like baseline on exact head
-  `a90219841cbc033185b08930049e6063e5b79e5a` / tree
-  `c5c1fa5f2d91d04515a1feabb986851008aeca5e`
+  `8e63d87af755b3829d4a0f1782d9c850d835e25b` / tree
+  `ae38aba5f96b5f18c775066852ceb80c6175770f`
 - successor local rollback/reapply proof now passes on disposable localhost:
   - PR `#227`
-  - run `31306587627`
-  - jobs `93227829968` + `93228059415`
+  - run `31307664441`
+  - jobs `93230445230` + `93230684259`
   - both `recovery-proof` and `independent-recovery-inspection` passed on
     Sunday, August 9, 2026
 
@@ -153,10 +154,10 @@ As of Sunday, August 9, 2026:
 - production content-engine tables are still absent
 - PR `#224` remains draft/unmerged
 - authenticated Seat-4 adoption of the successor manifest/verifier correction
-  is complete on head `a90219841cbc033185b08930049e6063e5b79e5a`
-- successor hash rebinding is complete on PR `#225` run `31298920591`
+  is complete on head `8e63d87af755b3829d4a0f1782d9c850d835e25b`
+- successor hash rebinding is complete on PR `#225` run `31307563085`
 - successor local rollback/reapply proof is complete on PR `#227` run
-  `31306587627`
+  `31307664441`
 - the current rehearsal final catalog passes the successor manifest v3
   read-only verifier
 - the available rehearsal target is no longer the frozen baseline because it
