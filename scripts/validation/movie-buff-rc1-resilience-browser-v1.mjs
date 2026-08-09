@@ -147,7 +147,15 @@ async function phaseView(index, roomId) {
   return data;
 }
 
+async function cleanupPriorDisposableRooms() {
+  for (const roomId of cleanupRoomIds.splice(0)) {
+    const { error } = await admin.from("game_rooms").delete().eq("id", roomId);
+    if (error) throw error;
+  }
+}
+
 async function createDisposableMatch(label) {
+  await cleanupPriorDisposableRooms();
   const roomId = crypto.randomUUID();
   const now = new Date().toISOString();
   cleanupRoomIds.push(roomId);
