@@ -213,6 +213,35 @@ async function browserVisit(index, roomId) {
   return { url: page.url(), text: (await page.locator("body").innerText()).slice(0, 600) };
 }
 
+async function wait(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function randomCode(prefix) {
+  return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
+async function routePost(index, pathname, body, expectedStatus = 200) {
+  const token = sessions[index]?.access_token;
+  assert.ok(token, `missing access token for player ${index + 1}`);
+  const response = await fetch(`${appOrigin}${pathname}`, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => null);
+  assert.equal(
+    response.status,
+    expectedStatus,
+    `${pathname} returned ${response.status}: ${JSON.stringify(payload)}`,
+  );
+  return payload;
+}
+
 async function setReconnectGrace(matchId, playerId, deadlineAt, replacementReadyAt = null) {
   const { error } = await admin
     .from("movie_buff_match_participant_seats")
@@ -316,17 +345,7 @@ try {
   pass("duplicate-expiry-workers-converge", { workerCount: 3, finalState: raceSeat.participant_state });
 
   const buster = await createDisposableMatch("buster-vip-boundary");
-  const busterSeatInitial = await seatFor(buster.matchId, subjectId);
-  const { error: vipUpdateError } = await admin
-    .from("movie_buff_match_phase_state")
-    .update({
-      phase: "vip_lock",
-      phase_version: buster.initialViews[1].phaseVersion + 1,
-      phase_started_at: new Date().toISOString(),
-      phase_ends_at: new Date(Date.now() + 30_000).toISOString(),
-    })
-    .eq("match_id", buster.matchId);
-  if (vipUpdateError) throw vipUpdateError;
+  await wait(4_250);
   const vipView = await phaseView(1, buster.roomId);
   assert.equal(vipView.phase, "vip_lock");
   const readyAt = new Date(Date.now() - 1_000).toISOString();
@@ -337,26 +356,29 @@ try {
   assert.equal(vipSeat.controller_type, "human", "Buster must remain inactive throughout vip_lock");
   pass("buster-inactive-during-private-vip", { phase: "vip_lock", controllerType: vipSeat.controller_type });
 
-  const { error: boardUpdateError } = await admin
-    .from("movie_buff_match_phase_state")
-    .update({
-      phase: "board_select",
-      phase_version: vipView.phaseVersion + 1,
-      phase_started_at: new Date().toISOString(),
-      phase_ends_at: new Date(Date.now() + 20_000).toISOString(),
-      selector_seat_index: busterSeatInitial.seat_index,
-      selector_deadline_at: new Date(Date.now() + 20_000).toISOString(),
-    })
-    .eq("match_id", buster.matchId);
-  if (boardUpdateError) throw boardUpdateError;
-  await Promise.allSettled([browserVisit(1, buster.roomId), browserVisit(2, buster.roomId)]);
+  await Promise.all([
+    routePost(1, "/api/movie-buff/vip/lock", {
+      roomId: buster.roomId,
+      roundId: vipView.roundId,
+      vipId: null,
+      idempotencyKey: randomCode("buster_no_vip_1"),
+    }),
+    routePost(2, "/api/movie-buff/vip/lock", {
+      roomId: buster.roomId,
+      roundId: vipView.roundId,
+      vipId: null,
+      idempotencyKey: randomCode("buster_no_vip_2"),
+    }),
+  ]);
+  const boardView = await phaseView(1, buster.roomId);
+  assert.equal(boardView.phase, "board_select");
   const boardSeat = await seatFor(buster.matchId, subjectId);
   assert.equal(boardSeat.controller_type, "buster");
   assert.equal(boardSeat.controller_player_id, null);
   pass("buster-activates-at-authoritative-safe-boundary", {
-    phase: "board_select",
+    phase: boardView.phase,
     controllerType: boardSeat.controller_type,
-    fixtureNote: "phase transition was test-fixture controlled; exact RC trigger performed Buster activation",
+    trigger: "authoritative vip locks plus authoritative phase advancement",
   });
 
   for (let index = 0; index < pages.length; index += 1) {
