@@ -65,18 +65,57 @@ jobs:
           set -euo pipefail
           raw="${RUNNER_TEMP}/successor-recovery-private"
           evidence="${RUNNER_TEMP}/successor-recovery-evidence"
-          mkdir -p "${raw}" "${evidence}"
+          stack="${RUNNER_TEMP}/successor-recovery-stack"
+          manual="${RUNNER_TEMP}/successor-recovery-manual-chain"
+          mkdir -p "${raw}" "${evidence}" "${stack}" "${manual}"
           chmod 700 "${raw}"
           failure_step=""
 
-          if ! supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor >"${raw}/supabase-start.raw.log" 2>&1; then
+          if ! cp -a supabase "${stack}/supabase" >"${raw}/stack-copy.raw.log" 2>&1; then
+            failure_step="stack-copy"
+          fi
+          if [[ -z "${failure_step}" ]] && ! python3 - "${stack}/supabase/config.toml" "${manual}" "successor-recovery-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >"${raw}/config-prune.raw.log" 2>&1 <<'PY'
+          import pathlib, re, shutil, sys
+
+          config=pathlib.Path(sys.argv[1])
+          manual=pathlib.Path(sys.argv[2])
+          project=sys.argv[3]
+          text=config.read_text(encoding='utf-8')
+          text,n=re.subn(r'(?m)^project_id\s*=\s*"[^"]+"\s*$',f'project_id = "{project}"',text,count=1)
+          text,m=re.subn(r'(?ms)(^\[db\.seed\]\s*.*?^enabled\s*=\s*)true(\s*$)',r'\1false\2',text,count=1)
+          if n != 1 or m != 1:
+              raise SystemExit('ephemeral config rewrite failed')
+          config.write_text(text,encoding='utf-8')
+
+          migrations=config.parent/'migrations'
+          moved=[]
+          for path in sorted(migrations.glob('*.sql')):
+              if path.name == 'movie-buff-production-bootstrap.sql':
+                  continue
+              if re.match(r'^\d{14}_', path.name) and path.name >= '20260804070000':
+                  destination=manual/path.name
+                  shutil.move(str(path), destination)
+                  moved.append(path.name)
+          required={
+              '20260804070000_movie_buff_production_baseline_reconciliation.sql',
+              '20260804073000_movie_buff_vip_authority.sql',
+              '20260807010000_movie_buff_production_security_manifest_reconciliation.sql',
+              '20260807014500_movie_buff_rls_helper_execute_repair.sql',
+          }
+          if not required.issubset(set(moved)):
+              raise SystemExit(f'manual successor chain pruning incomplete: {sorted(required-set(moved))}')
+          PY
+          then
+            failure_step="config-prune"
+          fi
+          if [[ -z "${failure_step}" ]] && ! (cd "${stack}" && supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor) >"${raw}/supabase-start.raw.log" 2>&1; then
             failure_step="supabase-start"
           fi
-          if [[ -z "${failure_step}" ]] && ! supabase db reset --local >"${raw}/db-reset.raw.log" 2>&1; then
+          if [[ -z "${failure_step}" ]] && ! (cd "${stack}" && supabase db reset --local) >"${raw}/db-reset.raw.log" 2>&1; then
             failure_step="database-reset"
           fi
           if [[ -z "${failure_step}" ]]; then
-            if ! status_env="$(supabase status -o env 2>"${raw}/status.stderr.log")"; then
+            if ! status_env="$(cd "${stack}" && supabase status -o env 2>"${raw}/status.stderr.log")"; then
               failure_step="supabase-status"
             else
               printf '%s\n' "${status_env}" >"${raw}/status.raw.env"
@@ -118,6 +157,8 @@ jobs:
               return text
 
           sources={
+              'stack-copy.sanitized.log':'stack-copy.raw.log',
+              'config-prune.sanitized.log':'config-prune.raw.log',
               'supabase-start.sanitized.log':'supabase-start.raw.log',
               'db-reset.sanitized.log':'db-reset.raw.log',
               'status.sanitized.env':'status.raw.env',
@@ -149,13 +190,15 @@ jobs:
           set -euo pipefail
           raw="${RUNNER_TEMP}/successor-recovery-private"
           evidence="${RUNNER_TEMP}/successor-recovery-evidence"
+          stack="${RUNNER_TEMP}/successor-recovery-stack"
+          manual="${RUNNER_TEMP}/successor-recovery-manual-chain"
           DB_URL="$(cat "${raw}/db-url.private")"
-          work="${RUNNER_TEMP}/successor-recovery-work"
-          mkdir -p "${work}"
+          scratch="${RUNNER_TEMP}/successor-recovery-work"
+          mkdir -p "${scratch}"
 
           git fetch --no-tags --depth=1 origin "${EXTERNAL_RECOVERY_SOURCE_SHA}"
           git show "${EXTERNAL_RECOVERY_SOURCE_SHA}:supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql" \
-            > "${work}/rollback-20260807014500.sql"
+            > "${scratch}/rollback-20260807014500.sql"
 
           cat >"${evidence}/successor-catalog.sql" <<'SQL'
           \pset format unaligned
@@ -249,10 +292,54 @@ jobs:
             fi
           }
 
+          python3 - "${manual}/20260804070000_movie_buff_production_baseline_reconciliation.sql" "${scratch}/bootstrap-01-normalize.sql" <<'PY'
+          import pathlib, re, sys
+
+          source=pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+          target=pathlib.Path(sys.argv[2])
+          source,count=re.subn(r'\ndo \$preflight\$.*?\n\$preflight\$;\n', '\n', source, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit('failed to remove 20260804070000 preflight block for local normalization bootstrap')
+          replacements={
+              'create function public.is_movie_buff_room_member(':'create or replace function public.is_movie_buff_room_member(',
+              'create function public.is_movie_buff_match_member(':'create or replace function public.is_movie_buff_match_member(',
+              'create function public.is_movie_buff_round_member(':'create or replace function public.is_movie_buff_round_member(',
+              'create function public.is_buff_content_manager()':'create or replace function public.is_buff_content_manager()',
+          }
+          for old, new in replacements.items():
+              if old not in source:
+                  raise SystemExit(f'missing normalization target: {old}')
+              source=source.replace(old, new, 1)
+          target.write_text(source, encoding='utf-8')
+          PY
+
+          run_sql bootstrap-01-normalize "${scratch}/bootstrap-01-normalize.sql"
+          run_sql bootstrap-02 "${manual}/20260804073000_movie_buff_vip_authority.sql"
+          run_sql bootstrap-03 "${manual}/20260804073100_movie_buff_vip_null_category_fail_closed.sql"
+          run_sql bootstrap-04 "${manual}/20260804073200_movie_buff_vip_snapshot_release_hardening.sql"
+          run_sql bootstrap-05 "${manual}/20260804073300_movie_buff_vip_deadline_finalize.sql"
+          run_sql bootstrap-06 "${manual}/20260804081500_movie_buff_atomic_three_player_matchmaking.sql"
+          run_sql bootstrap-07 "${manual}/20260804081600_movie_buff_admission_phase_handoff.sql"
+          run_sql bootstrap-08 "${manual}/20260804083000_movie_buff_server_phase_machine.sql"
+          run_sql bootstrap-09 "${manual}/20260804083100_movie_buff_server_phase_machine_hardening.sql"
+          run_sql bootstrap-10 "${manual}/20260804083200_movie_buff_buster_safe_boundary.sql"
+          run_sql bootstrap-11 "${manual}/20260804083300_movie_buff_phase_tile_mutation_guard.sql"
+          run_sql bootstrap-12 "${manual}/20260804083400_movie_buff_phase_contract_alignment.sql"
+          run_sql bootstrap-13 "${manual}/20260804083500_movie_buff_reconnect_buster_boundary_repair.sql"
+          run_sql bootstrap-14 "${manual}/20260804083600_movie_buff_match_start_handoff.sql"
+          run_sql bootstrap-15 "${manual}/20260804083610_movie_buff_phase_digest_schema_repair.sql"
+          run_sql bootstrap-16 "${manual}/20260804083700_movie_buff_active_leave_and_buster_boundary.sql"
+          run_sql bootstrap-17 "${manual}/20260805155000_movie_buff_function_security_finalizer.sql"
+          run_sql bootstrap-18 "${manual}/20260805160000_movie_buff_six_table_rls_reconciliation.sql"
+          run_sql bootstrap-19 "${manual}/20260805160500_public_rls_auto_enable_event_trigger_contract.sql"
+          run_sql bootstrap-20 "${manual}/20260805161000_public_rls_auto_enable_acl_lockdown.sql"
+          run_sql bootstrap-21 "${manual}/20260807010000_movie_buff_production_security_manifest_reconciliation.sql"
+          run_sql bootstrap-22 "${manual}/20260807014500_movie_buff_rls_helper_execute_repair.sql"
+
           psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${VERIFIER_PATH}" >"${evidence}/successor-forward-before.json"
           psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${evidence}/successor-catalog.sql" >"${evidence}/successor-catalog-before.json"
 
-          run_sql rollback-22 "${work}/rollback-20260807014500.sql"
+          run_sql rollback-22 "${scratch}/rollback-20260807014500.sql"
           run_sql rollback-21 "supabase/rollbacks/20260807010000_movie_buff_production_security_manifest_reconciliation.rollback.sql"
           run_sql rollback-20 "supabase/rollbacks/20260805161000_public_rls_auto_enable_acl_lockdown.rollback.sql"
           run_sql rollback-19 "supabase/rollbacks/20260805160500_public_rls_auto_enable_event_trigger_contract.rollback.sql"
@@ -284,28 +371,28 @@ jobs:
               raise SystemExit(f'containment check failed: {missing}')
           PY
 
-          run_sql reapply-01 "supabase/migrations/20260804070000_movie_buff_production_baseline_reconciliation.sql"
-          run_sql reapply-02 "supabase/migrations/20260804073000_movie_buff_vip_authority.sql"
-          run_sql reapply-03 "supabase/migrations/20260804073100_movie_buff_vip_null_category_fail_closed.sql"
-          run_sql reapply-04 "supabase/migrations/20260804073200_movie_buff_vip_snapshot_release_hardening.sql"
-          run_sql reapply-05 "supabase/migrations/20260804073300_movie_buff_vip_deadline_finalize.sql"
-          run_sql reapply-06 "supabase/migrations/20260804081500_movie_buff_atomic_three_player_matchmaking.sql"
-          run_sql reapply-07 "supabase/migrations/20260804081600_movie_buff_admission_phase_handoff.sql"
-          run_sql reapply-08 "supabase/migrations/20260804083000_movie_buff_server_phase_machine.sql"
-          run_sql reapply-09 "supabase/migrations/20260804083100_movie_buff_server_phase_machine_hardening.sql"
-          run_sql reapply-10 "supabase/migrations/20260804083200_movie_buff_buster_safe_boundary.sql"
-          run_sql reapply-11 "supabase/migrations/20260804083300_movie_buff_phase_tile_mutation_guard.sql"
-          run_sql reapply-12 "supabase/migrations/20260804083400_movie_buff_phase_contract_alignment.sql"
-          run_sql reapply-13 "supabase/migrations/20260804083500_movie_buff_reconnect_buster_boundary_repair.sql"
-          run_sql reapply-14 "supabase/migrations/20260804083600_movie_buff_match_start_handoff.sql"
-          run_sql reapply-15 "supabase/migrations/20260804083610_movie_buff_phase_digest_schema_repair.sql"
-          run_sql reapply-16 "supabase/migrations/20260804083700_movie_buff_active_leave_and_buster_boundary.sql"
-          run_sql reapply-17 "supabase/migrations/20260805155000_movie_buff_function_security_finalizer.sql"
-          run_sql reapply-18 "supabase/migrations/20260805160000_movie_buff_six_table_rls_reconciliation.sql"
-          run_sql reapply-19 "supabase/migrations/20260805160500_public_rls_auto_enable_event_trigger_contract.sql"
-          run_sql reapply-20 "supabase/migrations/20260805161000_public_rls_auto_enable_acl_lockdown.sql"
-          run_sql reapply-21 "supabase/migrations/20260807010000_movie_buff_production_security_manifest_reconciliation.sql"
-          run_sql reapply-22 "supabase/migrations/20260807014500_movie_buff_rls_helper_execute_repair.sql"
+          run_sql reapply-01 "${manual}/20260804070000_movie_buff_production_baseline_reconciliation.sql"
+          run_sql reapply-02 "${manual}/20260804073000_movie_buff_vip_authority.sql"
+          run_sql reapply-03 "${manual}/20260804073100_movie_buff_vip_null_category_fail_closed.sql"
+          run_sql reapply-04 "${manual}/20260804073200_movie_buff_vip_snapshot_release_hardening.sql"
+          run_sql reapply-05 "${manual}/20260804073300_movie_buff_vip_deadline_finalize.sql"
+          run_sql reapply-06 "${manual}/20260804081500_movie_buff_atomic_three_player_matchmaking.sql"
+          run_sql reapply-07 "${manual}/20260804081600_movie_buff_admission_phase_handoff.sql"
+          run_sql reapply-08 "${manual}/20260804083000_movie_buff_server_phase_machine.sql"
+          run_sql reapply-09 "${manual}/20260804083100_movie_buff_server_phase_machine_hardening.sql"
+          run_sql reapply-10 "${manual}/20260804083200_movie_buff_buster_safe_boundary.sql"
+          run_sql reapply-11 "${manual}/20260804083300_movie_buff_phase_tile_mutation_guard.sql"
+          run_sql reapply-12 "${manual}/20260804083400_movie_buff_phase_contract_alignment.sql"
+          run_sql reapply-13 "${manual}/20260804083500_movie_buff_reconnect_buster_boundary_repair.sql"
+          run_sql reapply-14 "${manual}/20260804083600_movie_buff_match_start_handoff.sql"
+          run_sql reapply-15 "${manual}/20260804083610_movie_buff_phase_digest_schema_repair.sql"
+          run_sql reapply-16 "${manual}/20260804083700_movie_buff_active_leave_and_buster_boundary.sql"
+          run_sql reapply-17 "${manual}/20260805155000_movie_buff_function_security_finalizer.sql"
+          run_sql reapply-18 "${manual}/20260805160000_movie_buff_six_table_rls_reconciliation.sql"
+          run_sql reapply-19 "${manual}/20260805160500_public_rls_auto_enable_event_trigger_contract.sql"
+          run_sql reapply-20 "${manual}/20260805161000_public_rls_auto_enable_acl_lockdown.sql"
+          run_sql reapply-21 "${manual}/20260807010000_movie_buff_production_security_manifest_reconciliation.sql"
+          run_sql reapply-22 "${manual}/20260807014500_movie_buff_rls_helper_execute_repair.sql"
 
           psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${VERIFIER_PATH}" >"${evidence}/successor-forward-after.json"
           psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${evidence}/successor-catalog.sql" >"${evidence}/successor-catalog-after.json"
@@ -369,6 +456,7 @@ jobs:
             'verifierPath':'supabase/tests/movie_buff_production_chain_successor_manifest_v3_verify.sql',
             'verifierSha256':'fb35a1821db1eba5c5fa2c4839664c109683b65e640b47876006300c1f3f36ee',
             'scope':'disposable-localhost successor rollback containment and exact forward reapply',
+            'bootstrapBasis':'pre-20260804070000 local migration replay, local 20260804070000 helper normalization bootstrap, then exact 20260804073000-20260807014500 forward application',
             'hostedMutation':'NOT APPLICABLE',
             'productionLikeBaseline':'NOT PROVEN BY THIS ARTIFACT',
             'externalRecoverySourceSha':'fca74cf8c125926642720b4d135fb75f3784f6f7'
