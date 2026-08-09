@@ -67,10 +67,22 @@ jobs:
           evidence="${RUNNER_TEMP}/successor-recovery-evidence"
           mkdir -p "${raw}" "${evidence}"
           chmod 700 "${raw}"
-          supabase start >"${raw}/supabase-start.raw.log" 2>&1
-          supabase db reset >"${raw}/db-reset.raw.log" 2>&1
-          supabase status -o env >"${raw}/status.raw.env"
-          python3 - "${raw}/status.raw.env" "${raw}/db-url.private" <<'PY'
+          failure_step=""
+
+          if ! supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor >"${raw}/supabase-start.raw.log" 2>&1; then
+            failure_step="supabase-start"
+          fi
+          if [[ -z "${failure_step}" ]] && ! supabase db reset --local >"${raw}/db-reset.raw.log" 2>&1; then
+            failure_step="database-reset"
+          fi
+          if [[ -z "${failure_step}" ]]; then
+            if ! status_env="$(supabase status -o env 2>"${raw}/status.stderr.log")"; then
+              failure_step="supabase-status"
+            else
+              printf '%s\n' "${status_env}" >"${raw}/status.raw.env"
+            fi
+          fi
+          if [[ -z "${failure_step}" ]] && ! python3 - "${raw}/status.raw.env" "${raw}/db-url.private" <<'PY'
           import pathlib,re,sys
           text=pathlib.Path(sys.argv[1]).read_text()
           m=re.search(r'^DB_URL=(?:"([^"]+)"|(\S+))$',text,re.M)
@@ -78,6 +90,58 @@ jobs:
               raise SystemExit('DB_URL missing from disposable Supabase status')
           pathlib.Path(sys.argv[2]).write_text((m.group(1) or m.group(2))+'\n')
           PY
+          then
+            failure_step="status-env-contract"
+          fi
+
+          if [[ -n "${failure_step}" ]]; then
+            python3 - "${raw}" "${evidence}" "${failure_step}" <<'PY'
+          import json, pathlib, re, sys
+
+          raw=pathlib.Path(sys.argv[1])
+          evidence=pathlib.Path(sys.argv[2])
+          failure_step=sys.argv[3]
+          evidence.mkdir(parents=True, exist_ok=True)
+
+          ansi=re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+          dburl=re.compile(r'(?i)\bpostgres(?:ql)?://[^:\s/@]+:[^@\s/]+@[^\s]+')
+          jwt=re.compile(r'\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\b')
+          sbsecret=re.compile(r'\bsb_secret_[A-Za-z0-9_-]{8,}\b')
+          env_assign=re.compile(r'(?im)^\s*(DB_URL|API_URL|ANON_KEY|PUBLISHABLE_KEY|SERVICE_ROLE_KEY|SECRET_KEY|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_DB_PASSWORD|POSTGRES_PASSWORD)\s*([:=]).*$')
+
+          def sanitize(text: str) -> str:
+              text=ansi.sub('', text)
+              text=env_assign.sub(lambda m: f"{m.group(1)}{m.group(2)}[REDACTED]", text)
+              text=dburl.sub('[REDACTED_LOCAL_DB_URL]', text)
+              text=jwt.sub('[REDACTED_JWT]', text)
+              text=sbsecret.sub('[REDACTED_SB_SECRET]', text)
+              return text
+
+          sources={
+              'supabase-start.sanitized.log':'supabase-start.raw.log',
+              'db-reset.sanitized.log':'db-reset.raw.log',
+              'status.sanitized.env':'status.raw.env',
+              'status.stderr.sanitized.log':'status.stderr.log',
+          }
+          written=[]
+          for target_name, source_name in sources.items():
+              source=raw/source_name
+              if not source.exists():
+                  continue
+              target=evidence/target_name
+              target.write_text(sanitize(source.read_text(encoding='utf-8',errors='ignore')), encoding='utf-8')
+              written.append(target_name)
+
+          (evidence/'bootstrap-diagnostics.json').write_text(json.dumps({
+              'classification':'FAIL',
+              'failureStep':failure_step,
+              'sanitizedFiles':written,
+              'capturePolicy':'Raw Supabase bootstrap output remained outside the uploaded evidence directory; only sanitized derivatives were written into evidence on failure.'
+          }, indent=2)+'\n', encoding='utf-8')
+          PY
+            echo "disposable Supabase bootstrap failed at ${failure_step}" >&2
+            exit 1
+          fi
 
       - name: Prove successor forward state, containment rollback, and exact forward reapply
         shell: bash
@@ -321,16 +385,17 @@ jobs:
           supabase stop --no-backup || true
 
       - name: Upload clean successor recovery evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ runner.temp }}/successor-recovery-evidence
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 30
 
   independent-recovery-inspection:
     needs: recovery-proof
-    if: always()
+    if: needs.recovery-proof.result == 'success'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
