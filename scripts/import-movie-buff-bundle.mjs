@@ -641,11 +641,12 @@ async function main() {
   const supabaseUrl =
     envValues.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey =
+    envValues.SUPABASE_SECRET_KEY ??
     envValues.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error(
-      "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local.",
+      "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY in .env.local.",
     );
   }
 

@@ -58,7 +58,9 @@ const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ??
   localEnv.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey =
+  process.env.SUPABASE_SECRET_KEY ??
   process.env.SUPABASE_SERVICE_ROLE_KEY ??
+  localEnv.SUPABASE_SECRET_KEY ??
   localEnv.SUPABASE_SERVICE_ROLE_KEY;
 
 const adminSupabase =
@@ -413,7 +415,7 @@ function isLocalBaseUrl(url) {
 async function verifyHostedLeaveState(roomId) {
   assert(
     adminSupabase,
-    "Hosted leave verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+    "Hosted leave verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY.",
   );
 
   const [

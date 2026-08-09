@@ -58,7 +58,9 @@ const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ??
   localEnv.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey =
+  process.env.SUPABASE_SECRET_KEY ??
   process.env.SUPABASE_SERVICE_ROLE_KEY ??
+  localEnv.SUPABASE_SECRET_KEY ??
   localEnv.SUPABASE_SERVICE_ROLE_KEY;
 
 const adminSupabase =
@@ -446,7 +448,7 @@ async function waitForHostedReadyState(
 ) {
   assert(
     adminSupabase,
-    "Hosted public leave verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+    "Hosted public leave verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY.",
   );
 
   const deadline = Date.now() + 45000;

@@ -53,7 +53,7 @@ At minimum, the hosted app will need real values for:
 - `NEXT_PUBLIC_APP_URL`
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`
 
 Do not copy local values from `.env.local` into production.
 
@@ -85,7 +85,7 @@ Fresh gate result from Friday, July 31, 2026:
   - `NEXT_PUBLIC_APP_URL`
   - `NEXT_PUBLIC_SUPABASE_URL`
   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-  - `SUPABASE_SERVICE_ROLE_KEY`
+  - `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`
 
 ## Minimum production migration set
 

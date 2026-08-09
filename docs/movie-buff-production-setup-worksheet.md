@@ -10,6 +10,9 @@ state to a real hosted soft-launch verification run.
 Use it to collect the exact production values and decisions that are still
 blocking hosted parity.
 
+For the latest live blocker snapshot, see
+[movie-buff-live-status-2026-08-09.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-live-status-2026-08-09.md).
+
 ## 1. Required production values
 
 Fill every line before hosted verification.
@@ -19,7 +22,7 @@ Fill every line before hosted verification.
 | `NEXT_PUBLIC_APP_URL` | production app host URL | | |
 | `NEXT_PUBLIC_SUPABASE_URL` | hosted Supabase project settings | | |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | hosted Supabase API settings | | |
-| `SUPABASE_SERVICE_ROLE_KEY` | hosted Supabase API settings | | |
+| `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` | hosted Supabase API settings | | |
 
 Rules:
 
@@ -33,7 +36,7 @@ Quick source map:
 - `NEXT_PUBLIC_APP_URL`: Vercel production URL or final custom domain
 - `NEXT_PUBLIC_SUPABASE_URL`: Supabase project API/settings area -> project URL
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`: Supabase project API/settings area -> publishable or anon client key
-- `SUPABASE_SERVICE_ROLE_KEY`: Supabase project API/settings area -> service role key
+- `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`: Supabase project API/settings area -> secret key (preferred) or legacy service role key
 
 ## 2. Deployment decisions
 

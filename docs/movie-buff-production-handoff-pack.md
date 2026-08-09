@@ -18,6 +18,10 @@ Vendor-specific companion:
 
 - [movie-buff-vercel-supabase-production-setup.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-vercel-supabase-production-setup.md)
 
+Current live-state companion:
+
+- [movie-buff-live-status-2026-08-09.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-live-status-2026-08-09.md)
+
 ## Current proven baseline
 
 As of Friday, July 31, 2026, the following are already proven locally:
@@ -65,7 +69,7 @@ Fill these with the real values before the hosted verification run.
 | `NEXT_PUBLIC_APP_URL` | yes | `https://moviebuff.example.com` | |
 | `NEXT_PUBLIC_SUPABASE_URL` | yes | `https://<project-ref>.supabase.co` | |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | yes | Supabase anon/publishable key | |
-| `SUPABASE_SERVICE_ROLE_KEY` | yes | Supabase service role key | |
+| `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` | yes | Supabase secret key (preferred) or legacy service role key | |
 
 Rules:
 

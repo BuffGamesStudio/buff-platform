@@ -5,6 +5,9 @@ const requiredEnv = [
   "NEXT_PUBLIC_APP_URL",
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+];
+const adminKeyEnv = [
+  "SUPABASE_SECRET_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
 ];
 
@@ -143,6 +146,41 @@ for (const name of requiredEnv) {
   if (hasPlaceholderMarker(value)) {
     result.ok = false;
     result.placeholderValues.push(name);
+  }
+}
+
+result.checked.push(...adminKeyEnv);
+
+const resolvedAdminKeyName = adminKeyEnv.find(
+  (name) =>
+    !isMissing(
+      sourcedEnv[name] ?? process.env[name] ?? "",
+    ),
+);
+
+if (!resolvedAdminKeyName) {
+  result.ok = false;
+  result.missing.push(
+    "SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY",
+  );
+} else {
+  const resolvedAdminKeyValue =
+    sourcedEnv[resolvedAdminKeyName] ??
+    process.env[resolvedAdminKeyName] ??
+    "";
+
+  if (hasLocalMarker(resolvedAdminKeyName, resolvedAdminKeyValue)) {
+    result.ok = false;
+    result.localOnlyValues.push(
+      resolvedAdminKeyName,
+    );
+  }
+
+  if (hasPlaceholderMarker(resolvedAdminKeyValue)) {
+    result.ok = false;
+    result.placeholderValues.push(
+      resolvedAdminKeyName,
+    );
   }
 }
 
