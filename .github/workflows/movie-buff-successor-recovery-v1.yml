@@ -19,6 +19,7 @@ env:
   MANIFEST_SHA256: 1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf
   VERIFIER_PATH: supabase/tests/movie_buff_production_chain_successor_manifest_v3_verify.sql
   VERIFIER_SHA256: fb35a1821db1eba5c5fa2c4839664c109683b65e640b47876006300c1f3f36ee
+  EXTERNAL_BASELINE_ROLLBACK_FIX_SHA: d4216982ac3cb407e6a7e5223e94e7f5057271cc
   EXTERNAL_RECOVERY_SOURCE_SHA: fca74cf8c125926642720b4d135fb75f3784f6f7
   ARTIFACT_NAME: movie-buff-successor-recovery-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
@@ -196,9 +197,11 @@ jobs:
           scratch="${RUNNER_TEMP}/successor-recovery-work"
           mkdir -p "${scratch}"
 
-          git fetch --no-tags --depth=1 origin "${EXTERNAL_RECOVERY_SOURCE_SHA}"
+          git fetch --no-tags --depth=1 origin "${EXTERNAL_RECOVERY_SOURCE_SHA}" "${EXTERNAL_BASELINE_ROLLBACK_FIX_SHA}"
           git show "${EXTERNAL_RECOVERY_SOURCE_SHA}:supabase/rollbacks/20260807014500_movie_buff_rls_helper_execute_repair.rollback.sql" \
             > "${scratch}/rollback-20260807014500.sql"
+          git show "${EXTERNAL_BASELINE_ROLLBACK_FIX_SHA}:supabase/rollbacks/20260804070000_movie_buff_production_baseline_reconciliation.rollback.sql" \
+            > "${scratch}/rollback-20260804070000.sql"
 
           cat >"${evidence}/successor-catalog.sql" <<'SQL'
           \pset format unaligned
@@ -363,7 +366,7 @@ jobs:
           run_sql rollback-04 "supabase/rollbacks/20260804073200_movie_buff_vip_snapshot_release_hardening.rollback.sql"
           run_sql rollback-03 "supabase/rollbacks/20260804073100_movie_buff_vip_null_category_fail_closed.rollback.sql"
           run_sql rollback-02 "supabase/rollbacks/20260804073000_movie_buff_vip_authority.rollback.sql" "-c movie_buff.allow_destructive_vip_rollback=on"
-          run_sql rollback-01 "supabase/rollbacks/20260804070000_movie_buff_production_baseline_reconciliation.rollback.sql"
+          run_sql rollback-01 "${scratch}/rollback-20260804070000.sql"
 
           psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${evidence}/containment-check.sql" >"${evidence}/containment-check.json"
           python3 - "${evidence}/containment-check.json" <<'PY'
