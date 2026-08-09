@@ -180,7 +180,7 @@ async function createDisposableMatch(label) {
   );
   if (membersError) throw membersError;
 
-  const { data: startRows, error: startError } = await apiClients[0].rpc(
+  const { data: startRows, error: startError } = await admin.rpc(
     "start_movie_buff_match",
     { p_room_id: roomId },
   );
