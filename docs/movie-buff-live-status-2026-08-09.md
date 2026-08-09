@@ -118,6 +118,12 @@ Latest PR `#224` / issue `#200` comments now converge on this updated state:
   production-like baseline on exact head
   `a90219841cbc033185b08930049e6063e5b79e5a` / tree
   `c5c1fa5f2d91d04515a1feabb986851008aeca5e`
+- successor local rollback/reapply proof now passes on disposable localhost:
+  - PR `#227`
+  - run `31306587627`
+  - jobs `93227829968` + `93228059415`
+  - both `recovery-proof` and `independent-recovery-inspection` passed on
+    Sunday, August 9, 2026
 
 Interpretation:
 
@@ -125,6 +131,7 @@ Interpretation:
 - the authenticated release-control and provenance step on the successor
   security branch is now complete
 - successor cryptographic binding is now complete
+- disposable localhost successor rollback/reapply evidence is now complete
 - the next blocker is not hashing; it is the absence of a fresh
   production-like baseline target for the exact successor rerun
 
@@ -148,6 +155,8 @@ As of Sunday, August 9, 2026:
 - authenticated Seat-4 adoption of the successor manifest/verifier correction
   is complete on head `a90219841cbc033185b08930049e6063e5b79e5a`
 - successor hash rebinding is complete on PR `#225` run `31298920591`
+- successor local rollback/reapply proof is complete on PR `#227` run
+  `31306587627`
 - the current rehearsal final catalog passes the successor manifest v3
   read-only verifier
 - the available rehearsal target is no longer the frozen baseline because it
@@ -161,7 +170,7 @@ As of Sunday, August 9, 2026:
 - keep launch and handoff docs aligned with the August 9 live blocker story
 - continue read-only verification and evidence reconciliation on current state
 - preserve the successor hash seal and verifier artifacts already published on
-  PR `#224`, PR `#225`, and issue `#202`
+  PR `#224`, PR `#225`, PR `#227`, and issue `#202`
 
 ## Actions that still need human direction or authenticated human presence
 

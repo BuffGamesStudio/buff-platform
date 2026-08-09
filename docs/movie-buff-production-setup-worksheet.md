@@ -122,9 +122,14 @@ Do not call Movie Buff hosted-launch-ready until every line is complete.
 
 ## 6. Current honest status
 
-As of Friday, July 31, 2026:
+As of Sunday, August 9, 2026:
 
 - local gameplay flow is strongly verified
 - local admin proof is now verified
 - local build is passing
-- hosted parity is still blocked by missing real production values
+- authenticated Seat-4 successor head control is complete
+- successor hash rebinding is complete
+- disposable localhost successor rollback/reapply proof is complete on PR
+  `#227` run `31306587627`
+- the remaining blocker is a fresh production-like baseline restore or
+  equivalent new rehearsal target for the exact successor rerun

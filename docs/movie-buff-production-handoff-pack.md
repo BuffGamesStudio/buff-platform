@@ -39,7 +39,11 @@ As of Friday, July 31, 2026, the following are already proven locally:
   - primary: `fan 10 / buff 13 / buffster 19`
   - secondary: `fan 23 / buff 49 / buffster 33`
 
-The top unresolved blocker is hosted deployment parity.
+The top unresolved blocker is now the absence of a fresh production-like
+baseline target for the exact successor rerun on head
+`a90219841cbc033185b08930049e6063e5b79e5a`; the current live-state audit also
+records that successor hash rebinding and disposable localhost rollback/reapply
+proof are already complete.
 
 Fresh evidence update from Friday, July 31, 2026:
 
