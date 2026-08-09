@@ -317,13 +317,6 @@ try {
 
   const buster = await createDisposableMatch("buster-vip-boundary");
   const busterSeatInitial = await seatFor(buster.matchId, subjectId);
-  const readyAt = new Date(Date.now() - 1_000).toISOString();
-  await setReconnectGrace(buster.matchId, subjectId, new Date(Date.now() - 500).toISOString(), readyAt);
-  await Promise.allSettled([browserVisit(1, buster.roomId), browserVisit(2, buster.roomId)]);
-  const staged = await seatFor(buster.matchId, subjectId);
-  assert.equal(staged.participant_state, "abandoned");
-  assert.equal(staged.controller_type, "human");
-
   const { error: vipUpdateError } = await admin
     .from("movie_buff_match_phase_state")
     .update({
@@ -334,8 +327,13 @@ try {
     })
     .eq("match_id", buster.matchId);
   if (vipUpdateError) throw vipUpdateError;
+  const vipView = await phaseView(1, buster.roomId);
+  assert.equal(vipView.phase, "vip_lock");
+  const readyAt = new Date(Date.now() - 1_000).toISOString();
+  await setReconnectGrace(buster.matchId, subjectId, new Date(Date.now() - 500).toISOString(), readyAt);
   await Promise.allSettled([browserVisit(1, buster.roomId), browserVisit(2, buster.roomId)]);
   const vipSeat = await seatFor(buster.matchId, subjectId);
+  assert.equal(vipSeat.participant_state, "abandoned");
   assert.equal(vipSeat.controller_type, "human", "Buster must remain inactive throughout vip_lock");
   pass("buster-inactive-during-private-vip", { phase: "vip_lock", controllerType: vipSeat.controller_type });
 
@@ -343,7 +341,7 @@ try {
     .from("movie_buff_match_phase_state")
     .update({
       phase: "board_select",
-      phase_version: buster.initialViews[1].phaseVersion + 2,
+      phase_version: vipView.phaseVersion + 1,
       phase_started_at: new Date().toISOString(),
       phase_ends_at: new Date(Date.now() + 20_000).toISOString(),
       selector_seat_index: busterSeatInitial.seat_index,
