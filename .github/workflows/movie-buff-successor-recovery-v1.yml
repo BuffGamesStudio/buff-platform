@@ -295,6 +295,22 @@ jobs:
             fi
           }
 
+          capture_json() {
+            local file="$1" output="$2"
+            local raw_output="${output}.raw"
+            psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${file}" >"${raw_output}"
+            python3 - "${raw_output}" "${output}" <<'PY'
+          import pathlib, sys
+          source=pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+          lines=[line.strip() for line in source.splitlines() if line.strip()]
+          for line in reversed(lines):
+              if line.startswith('{') and line.endswith('}'):
+                  pathlib.Path(sys.argv[2]).write_text(line + '\n', encoding='utf-8')
+                  raise SystemExit(0)
+          raise SystemExit(f'JSON payload not found in {sys.argv[1]}')
+          PY
+          }
+
           python3 - "${manual}/20260804070000_movie_buff_production_baseline_reconciliation.sql" "${scratch}/bootstrap-01-normalize.sql" <<'PY'
           import pathlib, re, sys
 
@@ -343,8 +359,8 @@ jobs:
           run_sql bootstrap-21 "${manual}/20260807010000_movie_buff_production_security_manifest_reconciliation.sql"
           run_sql bootstrap-22 "${manual}/20260807014500_movie_buff_rls_helper_execute_repair.sql"
 
-          psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${VERIFIER_PATH}" >"${evidence}/successor-forward-before.json"
-          psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${evidence}/successor-catalog.sql" >"${evidence}/successor-catalog-before.json"
+          capture_json "${VERIFIER_PATH}" "${evidence}/successor-forward-before.json"
+          capture_json "${evidence}/successor-catalog.sql" "${evidence}/successor-catalog-before.json"
 
           run_sql rollback-22 "${scratch}/rollback-20260807014500.sql"
           run_sql rollback-21 "supabase/rollbacks/20260807010000_movie_buff_production_security_manifest_reconciliation.rollback.sql"
@@ -368,7 +384,7 @@ jobs:
           run_sql rollback-02 "supabase/rollbacks/20260804073000_movie_buff_vip_authority.rollback.sql" "-c movie_buff.allow_destructive_vip_rollback=on"
           run_sql rollback-01 "${scratch}/rollback-20260804070000.sql"
 
-          psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${evidence}/containment-check.sql" >"${evidence}/containment-check.json"
+          capture_json "${evidence}/containment-check.sql" "${evidence}/containment-check.json"
           python3 - "${evidence}/containment-check.json" <<'PY'
           import json, pathlib, sys
           data=json.loads(pathlib.Path(sys.argv[1]).read_text())
@@ -401,8 +417,8 @@ jobs:
           run_sql reapply-21 "${manual}/20260807010000_movie_buff_production_security_manifest_reconciliation.sql"
           run_sql reapply-22 "${manual}/20260807014500_movie_buff_rls_helper_execute_repair.sql"
 
-          psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${VERIFIER_PATH}" >"${evidence}/successor-forward-after.json"
-          psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f "${evidence}/successor-catalog.sql" >"${evidence}/successor-catalog-after.json"
+          capture_json "${VERIFIER_PATH}" "${evidence}/successor-forward-after.json"
+          capture_json "${evidence}/successor-catalog.sql" "${evidence}/successor-catalog-after.json"
           diff -u "${evidence}/successor-catalog-before.json" "${evidence}/successor-catalog-after.json" >"${evidence}/catalog-equivalence.diff"
           test ! -s "${evidence}/catalog-equivalence.diff"
 
