@@ -502,9 +502,13 @@ const args = parseArgs(process.argv.slice(2));
 const envPath = path.join(repoRoot, ".env.local");
 const envValues = readEnvFile(envPath);
 
+const supabaseAdminKey =
+  envValues.SUPABASE_SECRET_KEY ??
+  envValues.SUPABASE_SERVICE_ROLE_KEY;
+
 const supabase = createClient(
   envValues.NEXT_PUBLIC_SUPABASE_URL,
-  envValues.SUPABASE_SERVICE_ROLE_KEY,
+  supabaseAdminKey,
   {
     auth: {
       autoRefreshToken: false,

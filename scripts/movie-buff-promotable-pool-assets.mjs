@@ -103,10 +103,13 @@ function collectPoolDirectories() {
 const envValues = readEnvFile(
   path.join(repoRoot, ".env.local"),
 );
+const supabaseAdminKey =
+  envValues.SUPABASE_SECRET_KEY ??
+  envValues.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(
   envValues.NEXT_PUBLIC_SUPABASE_URL,
-  envValues.SUPABASE_SERVICE_ROLE_KEY,
+  supabaseAdminKey,
   {
     auth: {
       autoRefreshToken: false,

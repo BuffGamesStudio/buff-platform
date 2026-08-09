@@ -50,7 +50,9 @@ if (!supabaseUrl || !supabaseKey) {
 }
 
 const serviceRoleKey =
+  process.env.SUPABASE_SECRET_KEY ??
   process.env.SUPABASE_SERVICE_ROLE_KEY ??
+  localEnv.SUPABASE_SECRET_KEY ??
   localEnv.SUPABASE_SERVICE_ROLE_KEY;
 const smokeEmailDomain =
   process.env.MOVIE_BUFF_SMOKE_EMAIL_DOMAIN ??
@@ -86,7 +88,7 @@ const usableServiceRoleKey =
   resolveUsableServiceRoleKey();
 
 const adminSupabase = usableServiceRoleKey
-  ? createClient(supabaseUrl, serviceRoleKey, {
+  ? createClient(supabaseUrl, usableServiceRoleKey, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
@@ -116,7 +118,7 @@ export async function provisionLocalSmokeAccount(label) {
     if (!adminSupabase) {
       return {
         error: new Error(
-          "No usable service role key available for admin smoke-account provisioning.",
+          "No usable Supabase admin key available for admin smoke-account provisioning.",
         ),
       };
     }

@@ -33,6 +33,10 @@ Fresh evidence update for Friday, July 31, 2026:
 - `npm run movie-buff:check-deploy-env`: fail because production values are still undefined
 - `node .\scripts\movie-buff-hosted-preflight.mjs --env-file .env.production.example --base-url http://127.0.0.1:3001`: fail because the example env file still contains placeholder values
 
+Current live-state companion:
+
+- [movie-buff-live-status-2026-08-09.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-live-status-2026-08-09.md)
+
 Additional hosted recovery artifact now present:
 
 - `scripts/generated/movie-buff-hosted-source-registry-patch.sql`
@@ -375,7 +379,7 @@ As of Thursday, July 30, 2026:
   - `NEXT_PUBLIC_APP_URL`
   - `NEXT_PUBLIC_SUPABASE_URL`
   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-  - `SUPABASE_SERVICE_ROLE_KEY`
+  - `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`
 - the real hosted deployment target and real production values are still not defined in repo
 
 That means hosted deployment parity is still an explicit launch task.
