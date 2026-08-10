@@ -1,1 +1,1 @@
-Trigger exact new-candidate sealed-chain SHA-256 inventory for candidate 8e63d87af755b3829d4a0f1782d9c850d835e25b / tree ae38aba5f96b5f18c775066852ceb80c6175770f.
+Trigger exact new-candidate sealed-chain SHA-256 inventory for candidate 7c5380cc6cd78045e88a89af809d8d4a51aa1099 / tree acb24083c8731f608bc3b4291447fa5e0d5035d2.
