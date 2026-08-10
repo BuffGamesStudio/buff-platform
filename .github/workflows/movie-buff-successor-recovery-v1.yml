@@ -16,9 +16,9 @@ env:
   CONTROLLER_BRANCH: operations/movie-buff-successor-recovery-seat2-20260809
   TRIGGER_BRANCH: operations/movie-buff-successor-recovery-trigger-seat2-20260809
   MANIFEST_PATH: docs/security/movie-buff-successor-expected-state-manifest-v3.json
-  MANIFEST_SHA256: 1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf
+  MANIFEST_SHA256: a77ed93556d338075d8f941e8570f77621551dda47fec5bc1f53a1ad054063bf
   VERIFIER_PATH: supabase/tests/movie_buff_production_chain_successor_manifest_v3_verify.sql
-  VERIFIER_SHA256: fb35a1821db1eba5c5fa2c4839664c109683b65e640b47876006300c1f3f36ee
+  VERIFIER_SHA256: 6db4743140c577a69d3d76eff4a7211d81f3db874462750f30429f953c578d7a
   EXTERNAL_RECOVERY_SOURCE_SHA: fca74cf8c125926642720b4d135fb75f3784f6f7
   ARTIFACT_NAME: movie-buff-successor-recovery-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
@@ -474,9 +474,9 @@ jobs:
             'candidateSha':'7c5380cc6cd78045e88a89af809d8d4a51aa1099',
             'candidateTree':'acb24083c8731f608bc3b4291447fa5e0d5035d2',
             'manifestPath':'docs/security/movie-buff-successor-expected-state-manifest-v3.json',
-            'manifestSha256':'1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf',
+            'manifestSha256':'a77ed93556d338075d8f941e8570f77621551dda47fec5bc1f53a1ad054063bf',
             'verifierPath':'supabase/tests/movie_buff_production_chain_successor_manifest_v3_verify.sql',
-            'verifierSha256':'fb35a1821db1eba5c5fa2c4839664c109683b65e640b47876006300c1f3f36ee',
+            'verifierSha256':'6db4743140c577a69d3d76eff4a7211d81f3db874462750f30429f953c578d7a',
             'scope':'disposable-localhost successor rollback containment and exact forward reapply',
             'bootstrapBasis':'pre-20260804070000 local migration replay, local 20260804070000 helper normalization bootstrap, local join_movie_buff_room search_path priming, then exact 20260804073000-20260807014500 forward application',
             'hostedMutation':'NOT APPLICABLE',
@@ -529,7 +529,7 @@ jobs:
           assert manifest['evidenceHygiene']=='PASS'
           assert manifest['candidateSha']=='7c5380cc6cd78045e88a89af809d8d4a51aa1099'
           assert manifest['candidateTree']=='acb24083c8731f608bc3b4291447fa5e0d5035d2'
-          assert manifest['manifestSha256']=='1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf'
+          assert manifest['manifestSha256']=='a77ed93556d338075d8f941e8570f77621551dda47fec5bc1f53a1ad054063bf'
           before=json.loads((root/'successor-forward-before.json').read_text())
           after=json.loads((root/'successor-forward-after.json').read_text())
           assert before['classification']=='PASS'
