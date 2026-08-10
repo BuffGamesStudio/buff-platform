@@ -344,7 +344,8 @@ try {
   evidence.browserContextCount = contexts.length;
   pass("three-authenticated-browser-processes", { count: browsers.length });
 
-  const subjectId = sessions[0].user.id;
+  const subjectIndex = 0;
+  const subjectId = sessions[subjectIndex].user.id;
   const nonSubjectIndex = 1;
   const otherIndex = 2;
 
@@ -387,13 +388,13 @@ try {
       seat: afterReconnectSeat,
     },
   });
-  pass("browser-reconnect-immediately-before-expiry", { deadlineAt: beforeDeadline, finalState: afterSeat.participant_state });
+  pass("browser-reconnect-immediately-before-expiry", { deadlineAt: beforeDeadline, finalState: afterReconnectSeat.participant_state });
 
   const after = await createDisposableMatch("post-deadline");
   const afterAnchor = await touchParticipant(nonSubjectIndex, after.roomId);
   const expired = new Date(Date.parse(afterAnchor.serverNow) - 250).toISOString();
+  const afterBeforePhase = await phaseView(nonSubjectIndex, after.roomId);
   await armSubjectSeat(after.matchId, subjectId, expired, afterAnchor.serverNow);
-  const afterPhase = await phaseView(nonSubjectIndex, after.roomId);
   const afterSeatBefore = await seatFor(after.matchId, subjectId);
   assert.equal(afterSeatBefore.participant_state, "reconnect_grace");
 
@@ -416,8 +417,8 @@ try {
     deadlineAt: expired,
     before: {
       serverNow: afterAnchor.serverNow,
-      phase: afterPhase.phase,
-      phaseVersion: afterPhase.phaseVersion,
+      phase: afterBeforePhase.phase,
+      phaseVersion: afterBeforePhase.phaseVersion,
       seat: afterSeatBefore,
     },
     operation: {
@@ -440,8 +441,8 @@ try {
   const race = await createDisposableMatch("concurrent-expiry-race");
   const raceAnchor = await touchParticipant(nonSubjectIndex, race.roomId);
   const raceExpired = new Date(Date.parse(raceAnchor.serverNow) - 250).toISOString();
-  await armSubjectSeat(race.matchId, subjectId, raceExpired, raceAnchor.serverNow);
   const raceBeforePhase = await phaseView(nonSubjectIndex, race.roomId);
+  await armSubjectSeat(race.matchId, subjectId, raceExpired, raceAnchor.serverNow);
   const raceBeforeSeat = await seatFor(race.matchId, subjectId);
   assert.equal(raceBeforeSeat.participant_state, "reconnect_grace");
 
@@ -493,14 +494,14 @@ try {
   const duplicate = await createDisposableMatch("duplicate-expiry-workers");
   const duplicateAnchor = await touchParticipant(nonSubjectIndex, duplicate.roomId);
   const duplicateExpired = new Date(Date.parse(duplicateAnchor.serverNow) - 250).toISOString();
-  await armSubjectSeat(duplicate.matchId, subjectId, duplicateExpired, duplicateAnchor.serverNow);
   const duplicateBeforePhase = await phaseView(nonSubjectIndex, duplicate.roomId);
+  await armSubjectSeat(duplicate.matchId, subjectId, duplicateExpired, duplicateAnchor.serverNow);
   const duplicateBeforeSeat = await seatFor(duplicate.matchId, subjectId);
   assert.equal(duplicateBeforeSeat.participant_state, "reconnect_grace");
 
   const duplicateWorkerOutcomes = await Promise.allSettled([
-    advancePhase(subjectIndex, duplicate.roomId, duplicateBeforePhase.phaseVersion),
     advancePhase(nonSubjectIndex, duplicate.roomId, duplicateBeforePhase.phaseVersion),
+    advancePhase(otherIndex, duplicate.roomId, duplicateBeforePhase.phaseVersion),
     advancePhase(otherIndex, duplicate.roomId, duplicateBeforePhase.phaseVersion),
   ]);
   const duplicateFinalPhase = await phaseView(nonSubjectIndex, duplicate.roomId);
