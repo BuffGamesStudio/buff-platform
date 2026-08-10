@@ -189,9 +189,23 @@ alter table public.match_rounds
   add column if not exists hint_used_at timestamptz,
   add column if not exists hint_penalty_seconds integer not null default 0;
 
-alter table public.match_rounds
-  add constraint if not exists match_rounds_hint_penalty_seconds_check
-  check (hint_penalty_seconds >= 0 and hint_penalty_seconds <= 10);
+do $match_rounds_hint_penalty_constraint$
+begin
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_class t on t.oid = c.conrelid
+    join pg_catalog.pg_namespace n on n.oid = t.relnamespace
+    where n.nspname = 'public'
+      and t.relname = 'match_rounds'
+      and c.conname = 'match_rounds_hint_penalty_seconds_check'
+  ) then
+    alter table public.match_rounds
+      add constraint match_rounds_hint_penalty_seconds_check
+      check (hint_penalty_seconds >= 0 and hint_penalty_seconds <= 10);
+  end if;
+end;
+$match_rounds_hint_penalty_constraint$;
 
 create function public.is_movie_buff_room_member(
   p_room_id uuid
