@@ -86,6 +86,62 @@ begin
     raise exception 'Required public.match_rounds columns are missing.';
   end if;
 
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'match_rounds'
+      and column_name = 'playback_started_at'
+      and (data_type <> 'timestamp with time zone' or is_nullable <> 'YES')
+  ) then
+    raise exception 'Baseline mismatch: public.match_rounds.playback_started_at is incompatible.';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'match_rounds'
+      and column_name = 'hint_used_at'
+      and (data_type <> 'timestamp with time zone' or is_nullable <> 'YES')
+  ) then
+    raise exception 'Baseline mismatch: public.match_rounds.hint_used_at is incompatible.';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'match_rounds'
+      and column_name = 'hint_penalty_seconds'
+      and (data_type <> 'integer' or is_nullable <> 'NO')
+  ) then
+    raise exception 'Baseline mismatch: public.match_rounds.hint_penalty_seconds is incompatible.';
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid
+    left join pg_catalog.pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+    where c.relname = 'match_rounds'
+      and a.attname = 'hint_penalty_seconds'
+      and coalesce(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '') not in ('0','0'::integer)
+  ) then
+    raise exception 'Baseline mismatch: public.match_rounds.hint_penalty_seconds default is incompatible.';
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_class t on t.oid = c.conrelid
+    where t.relname = 'match_rounds'
+      and c.conname = 'match_rounds_hint_penalty_seconds_check'
+      and pg_catalog.pg_get_constraintdef(c.oid) <> 'CHECK (hint_penalty_seconds >= 0 AND hint_penalty_seconds <= 10)'
+  ) then
+    raise exception 'Baseline mismatch: public.match_rounds.hint_penalty_seconds_check is incompatible.';
+  end if;
+
   if not exists (
     select 1
     from information_schema.columns
@@ -127,6 +183,15 @@ begin
   end if;
 end;
 $preflight$;
+
+alter table public.match_rounds
+  add column if not exists playback_started_at timestamptz,
+  add column if not exists hint_used_at timestamptz,
+  add column if not exists hint_penalty_seconds integer not null default 0;
+
+alter table public.match_rounds
+  add constraint if not exists match_rounds_hint_penalty_seconds_check
+  check (hint_penalty_seconds >= 0 and hint_penalty_seconds <= 10);
 
 create function public.is_movie_buff_room_member(
   p_room_id uuid
@@ -291,6 +356,59 @@ begin
 
     v_bad := null;
   end loop;
+
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'match_rounds'
+      and column_name = 'playback_started_at'
+      and data_type = 'timestamp with time zone'
+      and is_nullable = 'YES'
+  ) then
+    raise exception 'Reconciliation verification failed: public.match_rounds.playback_started_at is missing or incompatible.';
+  end if;
+
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'match_rounds'
+      and column_name = 'hint_used_at'
+      and data_type = 'timestamp with time zone'
+      and is_nullable = 'YES'
+  ) then
+    raise exception 'Reconciliation verification failed: public.match_rounds.hint_used_at is missing or incompatible.';
+  end if;
+
+  if not exists (
+    select 1
+    from information_schema.columns c
+    join pg_catalog.pg_attrdef d on d.adrelid = c.table_name::regclass and d.adnum = (
+      select attnum
+      from pg_catalog.pg_attribute a
+      where a.attrelid = c.table_name::regclass and a.attname = c.column_name
+    )
+    where c.table_schema = 'public'
+      and c.table_name = 'match_rounds'
+      and c.column_name = 'hint_penalty_seconds'
+      and c.data_type = 'integer'
+      and c.is_nullable = 'NO'
+      and pg_catalog.pg_get_expr(d.adbin, d.adrelid) = '0'
+  ) then
+    raise exception 'Reconciliation verification failed: public.match_rounds.hint_penalty_seconds is missing or incompatible.';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_class t on t.oid = c.conrelid
+    where t.relname = 'match_rounds'
+      and c.conname = 'match_rounds_hint_penalty_seconds_check'
+      and pg_catalog.pg_get_constraintdef(c.oid) = 'CHECK (hint_penalty_seconds >= 0 AND hint_penalty_seconds <= 10)'
+  ) then
+    raise exception 'Reconciliation verification failed: match_rounds_hint_penalty_seconds_check is missing or incompatible.';
+  end if;
 end;
 $verify$;
 

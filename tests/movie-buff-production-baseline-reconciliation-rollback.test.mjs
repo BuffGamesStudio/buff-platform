@@ -58,6 +58,14 @@ test("baseline reconciliation rollback removes every live helper dependency with
   assert.match(sql, /platform_role in \('creator', 'moderator', 'admin'\)/i);
   assert.match(sql, /from public\.match_rounds as mr[\s\S]*join public\.match_players as mp/i);
   assert.match(sql, /from public\.game_rooms as gr[\s\S]*gr\.host_id = auth\.uid\(\)/i);
+  assert.match(sql, /do \$remove_match_rounds_runtime\$/i);
+  assert.match(sql, /Rollback preflight failed: public\.match_rounds\.playback_started_at is missing or incompatible\./i);
+  assert.match(sql, /Rollback preflight failed: public\.match_rounds\.hint_used_at is missing or incompatible\./i);
+  assert.match(sql, /Rollback preflight failed: public\.match_rounds\.hint_penalty_seconds is missing or incompatible\./i);
+  assert.match(sql, /drop constraint match_rounds_hint_penalty_seconds_check/i);
+  assert.match(sql, /drop column playback_started_at/i);
+  assert.match(sql, /drop column hint_used_at/i);
+  assert.match(sql, /drop column hint_penalty_seconds/i);
   assert.match(sql, /drop function public\.is_movie_buff_round_member\(uuid\)/i);
   assert.match(sql, /drop function public\.is_movie_buff_match_member\(uuid\)/i);
   assert.match(sql, /drop function public\.is_movie_buff_room_member\(uuid\)/i);
