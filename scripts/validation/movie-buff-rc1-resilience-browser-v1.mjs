@@ -122,11 +122,63 @@ const evidence = {
   browserContextCount: 0,
   startedAt: new Date().toISOString(),
   checks: [],
+  cases: [],
   failures: [],
 };
 
 function pass(name, details = {}) {
   evidence.checks.push({ name, classification: "PASS", observedAt: new Date().toISOString(), details });
+}
+
+function addCase(caseRecord) {
+  evidence.cases.push(caseRecord);
+}
+
+async function touchParticipant(index, roomId) {
+  const { data, error } = await apiClients[index].rpc("touch_movie_buff_match_participant", { p_room_id: roomId });
+  if (error) throw error;
+  assert.ok(data?.serverNow, "touch_movie_buff_match_participant did not return serverNow");
+  return data;
+}
+
+async function advancePhase(index, roomId, expectedVersion) {
+  const { data, error } = await apiClients[index].rpc("advance_movie_buff_match_phase", {
+    p_room_id: roomId,
+    p_expected_version: expectedVersion,
+  });
+  if (error) throw error;
+  return data;
+}
+
+async function armSubjectSeat(matchId, playerId, deadlineAt, anchorNow, replacementReadyAt = null) {
+  const lastSeenAt = new Date(Date.parse(anchorNow) - 60_000).toISOString();
+  const { error } = await admin
+    .from("movie_buff_match_participant_seats")
+    .update({
+      participant_state: "reconnect_grace",
+      controller_type: "human",
+      controller_player_id: playerId,
+      last_seen_at: lastSeenAt,
+      reconnect_deadline_at: deadlineAt,
+      abandoned_at: null,
+      replacement_ready_at: replacementReadyAt,
+    })
+    .eq("match_id", matchId)
+    .eq("original_player_id", playerId);
+  if (error) throw error;
+}
+
+function supportOutcome(result) {
+  if (result.status === "fulfilled") {
+    return {
+      status: "fulfilled",
+      value: result.value,
+    };
+  }
+  return {
+    status: "rejected",
+    reason: serializeError(result.reason),
+  };
 }
 
 async function seatFor(matchId, playerId) {
@@ -182,7 +234,7 @@ async function createDisposableMatch(label) {
       is_ready: true,
       is_host: index === 0,
       left_at: null,
-      joined_at: new Date(Date.now() + index).toISOString(),
+      joined_at: new Date(Date.parse(now) + index).toISOString(),
       last_seen_at: now,
     })),
   );
@@ -249,7 +301,7 @@ async function setReconnectGrace(matchId, playerId, deadlineAt, replacementReady
       participant_state: "reconnect_grace",
       controller_type: "human",
       controller_player_id: playerId,
-      last_seen_at: new Date(Date.now() - 60_000).toISOString(),
+      last_seen_at: new Date(Date.parse(deadlineAt) - 60_000).toISOString(),
       reconnect_deadline_at: deadlineAt,
       abandoned_at: null,
       replacement_ready_at: replacementReadyAt,
@@ -292,28 +344,93 @@ try {
   evidence.browserContextCount = contexts.length;
   pass("three-authenticated-browser-processes", { count: browsers.length });
 
-  const before = await createDisposableMatch("pre-deadline");
   const subjectId = sessions[0].user.id;
-  const beforeDeadline = new Date(Date.now() + 4_000).toISOString();
-  await setReconnectGrace(before.matchId, subjectId, beforeDeadline);
-  await browserVisit(0, before.roomId);
+  const nonSubjectIndex = 1;
+  const otherIndex = 2;
+
+  const before = await createDisposableMatch("pre-deadline");
+  const beforeAnchor = await touchParticipant(nonSubjectIndex, before.roomId);
+  const beforeDeadline = new Date(Date.parse(beforeAnchor.serverNow) + 4_000).toISOString();
+  await armSubjectSeat(before.matchId, subjectId, beforeDeadline, beforeAnchor.serverNow);
+  const beforePhase = await phaseView(nonSubjectIndex, before.roomId);
   const beforeSeat = await seatFor(before.matchId, subjectId);
-  assert.equal(beforeSeat.participant_state, "active");
-  assert.equal(beforeSeat.controller_type, "human");
-  assert.equal(beforeSeat.reconnect_deadline_at, null);
-  pass("browser-reconnect-immediately-before-expiry", { deadlineAt: beforeDeadline, finalState: beforeSeat.participant_state });
+  assert.equal(beforeSeat.participant_state, "reconnect_grace");
+
+  await browserVisit(subjectIndex, before.roomId);
+  const afterReconnectPhase = await phaseView(nonSubjectIndex, before.roomId);
+  const afterReconnectSeat = await seatFor(before.matchId, subjectId);
+  assert.equal(afterReconnectSeat.participant_state, "active");
+  assert.equal(afterReconnectSeat.controller_type, "human");
+  assert.equal(afterReconnectSeat.reconnect_deadline_at, null);
+
+  addCase({
+    name: "browser-reconnect-immediately-before-expiry",
+    classification: "PASS",
+    matchId: before.matchId,
+    roomId: before.roomId,
+    clockSource: "touch_movie_buff_match_participant",
+    deadlineAt: beforeDeadline,
+    before: {
+      serverNow: beforeAnchor.serverNow,
+      phase: beforePhase.phase,
+      phaseVersion: beforePhase.phaseVersion,
+      seat: beforeSeat,
+    },
+    operation: {
+      action: "subject_browser_reconnect_before_expiry",
+      outcomes: ["browserVisit"],
+    },
+    after: {
+      serverNow: afterReconnectPhase.serverNow,
+      phase: afterReconnectPhase.phase,
+      phaseVersion: afterReconnectPhase.phaseVersion,
+      seat: afterReconnectSeat,
+    },
+  });
+  pass("browser-reconnect-immediately-before-expiry", { deadlineAt: beforeDeadline, finalState: afterSeat.participant_state });
 
   const after = await createDisposableMatch("post-deadline");
-  const expired = new Date(Date.now() - 250).toISOString();
-  await setReconnectGrace(after.matchId, subjectId, expired);
+  const afterAnchor = await touchParticipant(nonSubjectIndex, after.roomId);
+  const expired = new Date(Date.parse(afterAnchor.serverNow) - 250).toISOString();
+  await armSubjectSeat(after.matchId, subjectId, expired, afterAnchor.serverNow);
+  const afterPhase = await phaseView(nonSubjectIndex, after.roomId);
+  const afterSeatBefore = await seatFor(after.matchId, subjectId);
+  assert.equal(afterSeatBefore.participant_state, "reconnect_grace");
+
   const postResult = await Promise.allSettled([
-    browserVisit(0, after.roomId),
-    browserVisit(1, after.roomId),
+    browserVisit(subjectIndex, after.roomId),
+    browserVisit(nonSubjectIndex, after.roomId),
   ]);
+  const afterPhaseFinal = await phaseView(nonSubjectIndex, after.roomId);
   const afterSeat = await seatFor(after.matchId, subjectId);
   assert.equal(afterSeat.participant_state, "abandoned");
   assert.equal(afterSeat.controller_type, "human", "expired seat must remain staged human before safe boundary");
   assert.ok(afterSeat.replacement_ready_at);
+
+  addCase({
+    name: "browser-reconnect-immediately-after-expiry-fails-closed",
+    classification: "PASS",
+    matchId: after.matchId,
+    roomId: after.roomId,
+    clockSource: "touch_movie_buff_match_participant",
+    deadlineAt: expired,
+    before: {
+      serverNow: afterAnchor.serverNow,
+      phase: afterPhase.phase,
+      phaseVersion: afterPhase.phaseVersion,
+      seat: afterSeatBefore,
+    },
+    operation: {
+      action: "subject_browser_reconnect_after_expiry",
+      outcomes: postResult.map(supportOutcome),
+    },
+    after: {
+      serverNow: afterPhaseFinal.serverNow,
+      phase: afterPhaseFinal.phase,
+      phaseVersion: afterPhaseFinal.phaseVersion,
+      seat: afterSeat,
+    },
+  });
   pass("browser-reconnect-immediately-after-expiry-fails-closed", {
     deadlineAt: expired,
     browserOutcomes: postResult.map((item) => item.status),
@@ -321,16 +438,21 @@ try {
   });
 
   const race = await createDisposableMatch("concurrent-expiry-race");
-  const raceExpired = new Date(Date.now() - 250).toISOString();
-  await setReconnectGrace(race.matchId, subjectId, raceExpired);
+  const raceAnchor = await touchParticipant(nonSubjectIndex, race.roomId);
+  const raceExpired = new Date(Date.parse(raceAnchor.serverNow) - 250).toISOString();
+  await armSubjectSeat(race.matchId, subjectId, raceExpired, raceAnchor.serverNow);
+  const raceBeforePhase = await phaseView(nonSubjectIndex, race.roomId);
+  const raceBeforeSeat = await seatFor(race.matchId, subjectId);
+  assert.equal(raceBeforeSeat.participant_state, "reconnect_grace");
+
   const raceOutcomes = await Promise.allSettled([
-    browserVisit(0, race.roomId),
-    browserVisit(1, race.roomId),
-    browserVisit(2, race.roomId),
+    browserVisit(subjectIndex, race.roomId),
+    advancePhase(otherIndex, race.roomId, raceBeforePhase.phaseVersion),
   ]);
-  const raceSeat = await seatFor(race.matchId, subjectId);
-  assert.equal(raceSeat.participant_state, "abandoned");
-  assert.equal(raceSeat.controller_type, "human");
+  const raceFinalPhase = await phaseView(nonSubjectIndex, race.roomId);
+  const raceFinalSeat = await seatFor(race.matchId, subjectId);
+  assert.equal(raceFinalSeat.participant_state, "abandoned");
+  assert.equal(raceFinalSeat.controller_type, "human");
   const { data: raceRows, error: raceRowsError } = await admin
     .from("movie_buff_match_participant_seats")
     .select("seat_index")
@@ -338,47 +460,193 @@ try {
     .eq("original_player_id", subjectId);
   if (raceRowsError) throw raceRowsError;
   assert.equal(raceRows.length, 1, "concurrent workers must preserve one stable seat");
+
+  addCase({
+    name: "concurrent-browser-reconnect-versus-expiry-finalization",
+    classification: "PASS",
+    matchId: race.matchId,
+    roomId: race.roomId,
+    clockSource: "touch_movie_buff_match_participant",
+    deadlineAt: raceExpired,
+    before: {
+      serverNow: raceAnchor.serverNow,
+      phase: raceBeforePhase.phase,
+      phaseVersion: raceBeforePhase.phaseVersion,
+      seat: raceBeforeSeat,
+    },
+    operation: {
+      action: "subject_browser_reconnect_vs_authoritative_advance",
+      outcomes: raceOutcomes.map(supportOutcome),
+    },
+    after: {
+      serverNow: raceFinalPhase.serverNow,
+      phase: raceFinalPhase.phase,
+      phaseVersion: raceFinalPhase.phaseVersion,
+      seat: raceFinalSeat,
+    },
+  });
   pass("concurrent-browser-reconnect-versus-expiry-finalization", {
     outcomes: raceOutcomes.map((item) => item.status),
     stableSeatRows: raceRows.length,
   });
-  pass("duplicate-expiry-workers-converge", { workerCount: 3, finalState: raceSeat.participant_state });
+
+  const duplicate = await createDisposableMatch("duplicate-expiry-workers");
+  const duplicateAnchor = await touchParticipant(nonSubjectIndex, duplicate.roomId);
+  const duplicateExpired = new Date(Date.parse(duplicateAnchor.serverNow) - 250).toISOString();
+  await armSubjectSeat(duplicate.matchId, subjectId, duplicateExpired, duplicateAnchor.serverNow);
+  const duplicateBeforePhase = await phaseView(nonSubjectIndex, duplicate.roomId);
+  const duplicateBeforeSeat = await seatFor(duplicate.matchId, subjectId);
+  assert.equal(duplicateBeforeSeat.participant_state, "reconnect_grace");
+
+  const duplicateWorkerOutcomes = await Promise.allSettled([
+    advancePhase(subjectIndex, duplicate.roomId, duplicateBeforePhase.phaseVersion),
+    advancePhase(nonSubjectIndex, duplicate.roomId, duplicateBeforePhase.phaseVersion),
+    advancePhase(otherIndex, duplicate.roomId, duplicateBeforePhase.phaseVersion),
+  ]);
+  const duplicateFinalPhase = await phaseView(nonSubjectIndex, duplicate.roomId);
+  const duplicateFinalSeat = await seatFor(duplicate.matchId, subjectId);
+  assert.equal(duplicateFinalSeat.participant_state, "abandoned");
+  assert.equal(duplicateFinalSeat.controller_type, "human");
+
+  const { data: duplicateRows, error: duplicateRowsError } = await admin
+    .from("movie_buff_match_participant_seats")
+    .select("seat_index")
+    .eq("match_id", duplicate.matchId)
+    .eq("original_player_id", subjectId);
+  if (duplicateRowsError) throw duplicateRowsError;
+  assert.equal(duplicateRows.length, 1, "concurrent workers must preserve one stable seat");
+
+  addCase({
+    name: "duplicate-expiry-workers-converge",
+    classification: "PASS",
+    matchId: duplicate.matchId,
+    roomId: duplicate.roomId,
+    clockSource: "touch_movie_buff_match_participant",
+    deadlineAt: duplicateExpired,
+    before: {
+      serverNow: duplicateAnchor.serverNow,
+      phase: duplicateBeforePhase.phase,
+      phaseVersion: duplicateBeforePhase.phaseVersion,
+      seat: duplicateBeforeSeat,
+    },
+    operation: {
+      action: "concurrent_advance_movie_buff_match_phase",
+      workerOutcomes: duplicateWorkerOutcomes.map(supportOutcome),
+    },
+    after: {
+      serverNow: duplicateFinalPhase.serverNow,
+      phase: duplicateFinalPhase.phase,
+      phaseVersion: duplicateFinalPhase.phaseVersion,
+      seat: duplicateFinalSeat,
+    },
+  });
+  pass("duplicate-expiry-workers-converge", {
+    workerOutcomes: duplicateWorkerOutcomes.map((item) => item.status),
+    stableSeatRows: duplicateRows.length,
+  });
 
   const buster = await createDisposableMatch("buster-vip-boundary");
   await wait(4_250);
-  const vipView = await phaseView(1, buster.roomId);
+  const vipView = await phaseView(nonSubjectIndex, buster.roomId);
   assert.equal(vipView.phase, "vip_lock");
-  const readyAt = new Date(Date.now() - 1_000).toISOString();
-  await setReconnectGrace(buster.matchId, subjectId, new Date(Date.now() - 500).toISOString(), readyAt);
-  await Promise.allSettled([browserVisit(1, buster.roomId), browserVisit(2, buster.roomId)]);
-  const vipSeat = await seatFor(buster.matchId, subjectId);
-  assert.equal(vipSeat.participant_state, "abandoned");
-  assert.equal(vipSeat.controller_type, "human", "Buster must remain inactive throughout vip_lock");
-  pass("buster-inactive-during-private-vip", { phase: "vip_lock", controllerType: vipSeat.controller_type });
+  const busterAnchor = await touchParticipant(nonSubjectIndex, buster.roomId);
+  const busterDeadline = new Date(Date.parse(busterAnchor.serverNow) - 500).toISOString();
+  const readyAt = new Date(Date.parse(busterAnchor.serverNow) - 1_000).toISOString();
+  await armSubjectSeat(buster.matchId, subjectId, busterDeadline, busterAnchor.serverNow, readyAt);
+  const busterBeforePhase = await phaseView(nonSubjectIndex, buster.roomId);
+  const busterBeforeSeat = await seatFor(buster.matchId, subjectId);
+  assert.equal(busterBeforePhase.phase, "vip_lock");
+  assert.equal(busterBeforeSeat.controller_type, "human");
+
+  const busterInactiveResults = await Promise.allSettled([
+    browserVisit(nonSubjectIndex, buster.roomId),
+    browserVisit(otherIndex, buster.roomId),
+  ]);
+  const busterInactivePhase = await phaseView(nonSubjectIndex, buster.roomId);
+  const busterInactiveSeat = await seatFor(buster.matchId, subjectId);
+  assert.equal(busterInactiveSeat.participant_state, "abandoned");
+  assert.equal(busterInactiveSeat.controller_type, "human");
+
+  addCase({
+    name: "buster-inactive-during-private-vip",
+    classification: "PASS",
+    matchId: buster.matchId,
+    roomId: buster.roomId,
+    clockSource: "touch_movie_buff_match_participant",
+    deadlineAt: busterDeadline,
+    before: {
+      serverNow: busterAnchor.serverNow,
+      phase: busterBeforePhase.phase,
+      phaseVersion: busterBeforePhase.phaseVersion,
+      seat: busterBeforeSeat,
+    },
+    operation: {
+      action: "subject_abandoned_during_vip_lock",
+      outcomes: busterInactiveResults.map(supportOutcome),
+    },
+    after: {
+      serverNow: busterInactivePhase.serverNow,
+      phase: busterInactivePhase.phase,
+      phaseVersion: busterInactivePhase.phaseVersion,
+      seat: busterInactiveSeat,
+    },
+  });
+  pass("buster-inactive-during-private-vip", {
+    phase: busterInactivePhase.phase,
+    controllerType: busterInactiveSeat.controller_type,
+  });
 
   await Promise.all([
-    routePost(1, "/api/movie-buff/vip/lock", {
+    routePost(nonSubjectIndex, "/api/movie-buff/vip/lock", {
       roomId: buster.roomId,
       roundId: vipView.roundId,
       vipId: null,
       idempotencyKey: randomCode("buster_no_vip_1"),
     }),
-    routePost(2, "/api/movie-buff/vip/lock", {
+    routePost(otherIndex, "/api/movie-buff/vip/lock", {
       roomId: buster.roomId,
       roundId: vipView.roundId,
       vipId: null,
       idempotencyKey: randomCode("buster_no_vip_2"),
     }),
   ]);
-  const boardView = await phaseView(1, buster.roomId);
+  const boardView = await phaseView(nonSubjectIndex, buster.roomId);
   assert.equal(boardView.phase, "board_select");
   const boardSeat = await seatFor(buster.matchId, subjectId);
   assert.equal(boardSeat.controller_type, "buster");
   assert.equal(boardSeat.controller_player_id, null);
+
+  addCase({
+    name: "buster-activates-at-authoritative-safe-boundary",
+    classification: "PASS",
+    matchId: buster.matchId,
+    roomId: buster.roomId,
+    clockSource: "touch_movie_buff_match_participant",
+    deadlineAt: busterDeadline,
+    before: {
+      serverNow: busterInactivePhase.serverNow,
+      phase: busterInactivePhase.phase,
+      phaseVersion: busterInactivePhase.phaseVersion,
+      seat: busterInactiveSeat,
+    },
+    operation: {
+      action: "authoritative_vip_lock_to_board_select_transition",
+      outcomes: [
+        { actor: "vip_lock_no_vip_1", status: "submitted" },
+        { actor: "vip_lock_no_vip_2", status: "submitted" },
+      ],
+    },
+    after: {
+      serverNow: boardView.serverNow,
+      phase: boardView.phase,
+      phaseVersion: boardView.phaseVersion,
+      seat: boardSeat,
+    },
+  });
   pass("buster-activates-at-authoritative-safe-boundary", {
     phase: boardView.phase,
     controllerType: boardSeat.controller_type,
-    trigger: "authoritative vip locks plus authoritative phase advancement",
+    controllerPlayerId: boardSeat.controller_player_id,
   });
 
   for (let index = 0; index < pages.length; index += 1) {
@@ -388,6 +656,7 @@ try {
     });
   }
 
+  assert.equal(evidence.cases.length, 6);
   assert.equal(evidence.checks.length, 7);
   evidence.classification = "PASS";
 } catch (error) {

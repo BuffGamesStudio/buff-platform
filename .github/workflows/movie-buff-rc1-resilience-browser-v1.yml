@@ -307,7 +307,6 @@ jobs:
           assert data['product']['sha']=='81d3618ce7be28a6ce81363a8bda524cd18ece15'
           assert data['product']['tree']=='511c3501bd6a73f7556f636bc9e12ef30935d58d'
           required={
-            'three-authenticated-browser-processes',
             'browser-reconnect-immediately-before-expiry',
             'browser-reconnect-immediately-after-expiry-fails-closed',
             'concurrent-browser-reconnect-versus-expiry-finalization',
@@ -315,9 +314,38 @@ jobs:
             'buster-inactive-during-private-vip',
             'buster-activates-at-authoritative-safe-boundary',
           }
-          observed={item['name'] for item in data['checks'] if item['classification']=='PASS'}
-          missing=required-observed
-          assert not missing, missing
-          assert data['browserProcessCount']==3
-          assert data['browserContextCount']==3
+          names=[case.get('name') for case in data.get('cases', [])]
+          assert len(data.get('cases', [])) == 6, f"expected 6 cases, got {len(data.get('cases', []))}"
+          assert len(names) == len(set(names)), 'case names must be unique'
+          assert set(names) == required, f"unexpected case names: {set(names)}"
+          for case in data['cases']:
+            assert case.get('classification') == 'PASS', case
+            assert case.get('matchId'), case
+            assert case.get('roomId'), case
+            assert case.get('clockSource'), case
+            assert isinstance(case.get('before'), dict), case
+            assert isinstance(case.get('after'), dict), case
+            assert case['before'].get('serverNow'), case
+            assert case['before'].get('phase') is not None, case
+            assert case['before'].get('phaseVersion') is not None, case
+            assert case['before'].get('seat') is not None, case
+            assert case['after'].get('serverNow'), case
+            assert case['after'].get('phase') is not None, case
+            assert case['after'].get('phaseVersion') is not None, case
+            assert case['after'].get('seat') is not None, case
+          race_case = next(case for case in data['cases'] if case['name'] == 'concurrent-browser-reconnect-versus-expiry-finalization')
+          assert isinstance(race_case['operation'].get('outcomes'), list), race_case
+          assert len(race_case['operation']['outcomes']) == 2, race_case
+          duplicate_case = next(case for case in data['cases'] if case['name'] == 'duplicate-expiry-workers-converge')
+          assert isinstance(duplicate_case['operation'].get('workerOutcomes'), list), duplicate_case
+          assert len(duplicate_case['operation']['workerOutcomes']) == 3, duplicate_case
+          assert duplicate_case['matchId'] != race_case['matchId'], 'duplicate-worker matchId must differ from reconnect-race matchId'
+          assert duplicate_case['roomId'] != race_case['roomId'], 'duplicate-worker roomId must differ from reconnect-race roomId'
+          vip_case = next(case for case in data['cases'] if case['name'] == 'buster-inactive-during-private-vip')
+          assert vip_case['before']['seat']['controller_type'] == 'human', vip_case
+          safe_case = next(case for case in data['cases'] if case['name'] == 'buster-activates-at-authoritative-safe-boundary')
+          assert safe_case['after']['seat']['controller_type'] == 'buster', safe_case
+          assert safe_case['after']['seat']['controller_player_id'] is None, safe_case
+          assert data['browserProcessCount'] == 3
+          assert data['browserContextCount'] == 3
           PY
