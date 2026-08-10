@@ -32,13 +32,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf 'DEBUG_BASE_REF=%s HEAD_REF=%s\n' "$GITHUB_BASE_REF" "$GITHUB_HEAD_REF"
-          printf 'DEBUG_HEAD=%s\n' "$(git rev-parse HEAD)"
-          git show -s --format='DEBUG_COMMIT=%H PARENTS=%P' HEAD
-          printf 'DEBUG_DIFF\n'
-          git diff --name-status "${CANDIDATE_SHA}..HEAD"
-          printf 'DEBUG_STATUS\n'
-          git status --porcelain --untracked-files=all
           test "${GITHUB_BASE_REF}" = "${CONTROLLER_BRANCH}"
           test "${GITHUB_HEAD_REF}" = "${TRIGGER_BRANCH}"
           test "$(git rev-parse "${CANDIDATE_SHA}^{tree}")" = "${CANDIDATE_TREE}"
