@@ -137,7 +137,7 @@ begin
     join pg_catalog.pg_class t on t.oid = c.conrelid
     where t.relname = 'match_rounds'
       and c.conname = 'match_rounds_hint_penalty_seconds_check'
-      and pg_catalog.pg_get_constraintdef(c.oid) <> 'CHECK (hint_penalty_seconds >= 0 AND hint_penalty_seconds <= 10)'
+      and pg_catalog.pg_get_constraintdef(c.oid) <> 'CHECK (((hint_penalty_seconds >= 0) AND (hint_penalty_seconds <= 10)))'
   ) then
     raise exception 'Baseline mismatch: public.match_rounds.hint_penalty_seconds_check is incompatible.';
   end if;
@@ -419,7 +419,7 @@ begin
     join pg_catalog.pg_class t on t.oid = c.conrelid
     where t.relname = 'match_rounds'
       and c.conname = 'match_rounds_hint_penalty_seconds_check'
-      and pg_catalog.pg_get_constraintdef(c.oid) = 'CHECK (hint_penalty_seconds >= 0 AND hint_penalty_seconds <= 10)'
+      and pg_catalog.pg_get_constraintdef(c.oid) = 'CHECK (((hint_penalty_seconds >= 0) AND (hint_penalty_seconds <= 10)))'
   ) then
     raise exception 'Reconciliation verification failed: match_rounds_hint_penalty_seconds_check is missing or incompatible.';
   end if;
