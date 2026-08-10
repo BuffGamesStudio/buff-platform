@@ -1,0 +1,315 @@
+{
+  "manifestVersion": 3,
+  "manifestName": "movie-buff-successor-expected-state-manifest-v3",
+  "classificationVocabulary": [
+    "PASS",
+    "FAIL",
+    "UNKNOWN",
+    "NOT APPLICABLE"
+  ],
+  "repository": "BuffGamesStudio/buff-platform",
+  "pullRequest": {
+    "number": 224,
+    "branch": "security/movie-buff-production-baseline-reconciliation-20260808",
+    "baseBranch": "release-candidate/movie-buff-2026-08-07-rc-1"
+  },
+  "historicalRc1": {
+    "sha": "81d3618ce7be28a6ce81363a8bda524cd18ece15",
+    "tree": "511c3501bd6a73f7556f636bc9e12ef30935d58d"
+  },
+  "supersedesManifestSha256": "a2357ac91b5a00e98d0f0a30bd69b8fe901cbfb97b484885a39577fce3ac0adb",
+  "notes": [
+    "This successor manifest preserves the historical manifest-v2 contract everywhere except the corrected join RPC search_path.",
+    "The final containing commit SHA and tree are intentionally excluded to avoid self-referential identity binding."
+  ],
+  "corrections": [
+    {
+      "identity": "public.join_movie_buff_room(text)",
+      "field": "search_path",
+      "previousValue": "pg_catalog, public",
+      "correctedValue": "pg_catalog",
+      "reason": "Production read-only verification and the function-security finalizer both preserve the narrower hardened path."
+    }
+  ],
+  "sixTableContract": [
+    {
+      "tableName": "match_round_player_hints",
+      "policyName": "match_round_player_hints_select_self",
+      "authenticatedSelect": true,
+      "policyKind": "self_round"
+    },
+    {
+      "tableName": "match_round_player_playback",
+      "policyName": "match_round_player_playback_select_self",
+      "authenticatedSelect": true,
+      "policyKind": "self_round"
+    },
+    {
+      "tableName": "movie_buff_boards",
+      "policyName": "movie_buff_boards_select_active_member",
+      "authenticatedSelect": true,
+      "policyKind": "active_room"
+    },
+    {
+      "tableName": "movie_buff_board_categories",
+      "policyName": "movie_buff_board_categories_select_active_member",
+      "authenticatedSelect": true,
+      "policyKind": "active_board"
+    },
+    {
+      "tableName": "movie_buff_board_tiles",
+      "policyName": "movie_buff_board_tiles_select_active_member",
+      "authenticatedSelect": true,
+      "policyKind": "active_board"
+    },
+    {
+      "tableName": "movie_buff_board_events",
+      "policyName": "movie_buff_internal_browser_deny",
+      "authenticatedSelect": false,
+      "policyKind": "restrictive_deny"
+    }
+  ],
+  "criticalFunctions": [
+    {
+      "identity": "public.find_or_create_movie_buff_public_room(uuid,text,integer,integer)",
+      "expectedSearchPath": "pg_catalog",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.set_movie_buff_player_ready(uuid,boolean)",
+      "expectedSearchPath": "pg_catalog",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.get_movie_buff_match_phase_view(uuid)",
+      "expectedSearchPath": "pg_catalog",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.advance_movie_buff_match_phase(uuid,bigint)",
+      "expectedSearchPath": "pg_catalog",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.select_movie_buff_match_tile(uuid,uuid,bigint,text)",
+      "expectedSearchPath": "pg_catalog",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.touch_movie_buff_match_participant(uuid)",
+      "expectedSearchPath": "pg_catalog",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.get_movie_buff_vip_round_view(uuid,uuid)",
+      "expectedSearchPath": "pg_catalog",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.lock_movie_buff_round_vip(uuid,uuid,uuid,text)",
+      "expectedSearchPath": "pg_catalog",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.activate_movie_buff_round_vip(uuid,uuid,text)",
+      "expectedSearchPath": "pg_catalog",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.get_movie_buff_active_leave_quote(uuid)",
+      "expectedSearchPath": "pg_catalog",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.confirm_movie_buff_active_leave(uuid,text,text)",
+      "expectedSearchPath": "pg_catalog",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.join_movie_buff_room(text)",
+      "expectedSearchPath": "pg_catalog",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.leave_movie_buff_room(uuid)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.touch_movie_buff_room_presence(uuid)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.get_movie_buff_round(uuid)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.mark_movie_buff_round_media_ready(uuid)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.use_movie_buff_round_hint(uuid,integer)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.submit_movie_buff_answer(uuid,text)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.get_movie_buff_round_results(uuid)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.get_movie_buff_round_results(uuid,uuid)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.get_movie_buff_final_results(uuid)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.is_buff_content_manager()",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.is_movie_buff_room_member(uuid)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.is_movie_buff_match_member(uuid)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.is_movie_buff_round_member(uuid)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.finalize_movie_buff_vip_round_window(uuid,uuid,timestamptz)",
+      "expectedSearchPath": "pg_catalog",
+      "authenticatedExecute": false,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.get_movie_buff_round_completion(uuid,uuid,timestamptz,integer)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": false,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.get_movie_buff_round_player_time_left(uuid,uuid,timestamptz,integer)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": false,
+      "serviceRoleExecute": true
+    },
+    {
+      "identity": "public.is_movie_buff_round_player_finished(uuid,uuid,timestamptz,integer)",
+      "expectedSearchPath": "pg_catalog, public",
+      "authenticatedExecute": false,
+      "serviceRoleExecute": true
+    }
+  ],
+  "tableSchemas": {
+    "public.match_rounds": {
+      "columns": [
+        {
+          "name": "playback_started_at",
+          "dataType": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "hint_used_at",
+          "dataType": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "hint_penalty_seconds",
+          "dataType": "integer",
+          "nullable": false,
+          "default": "0"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "match_rounds_hint_penalty_seconds_check",
+          "definition": "CHECK (hint_penalty_seconds >= 0 AND hint_penalty_seconds <= 10)"
+        }
+      ]
+    }
+  },
+  "mediaReadyGuard": {
+    "identity": "public.mark_movie_buff_round_media_ready(uuid)",
+    "requiresCall": "movie_buff_phase_require_access(p_room_id)"
+  },
+  "sharedSecuritySchema": {
+    "schema": "movie_buff_security",
+    "owner": "postgres",
+    "authenticatedUsage": true,
+    "authenticatedCreate": false,
+    "anonUsage": false,
+    "helpers": [
+      {
+        "identity": "movie_buff_security.active_room_member(uuid)",
+        "expectedSearchPath": "pg_catalog",
+        "authenticatedExecute": true,
+        "serviceRoleExecute": true
+      },
+      {
+        "identity": "movie_buff_security.active_board_member(uuid)",
+        "expectedSearchPath": "pg_catalog",
+        "authenticatedExecute": true,
+        "serviceRoleExecute": true
+      },
+      {
+        "identity": "movie_buff_security.active_round_member(uuid)",
+        "expectedSearchPath": "pg_catalog",
+        "authenticatedExecute": true,
+        "serviceRoleExecute": true
+      }
+    ]
+  },
+  "rlsAutoEnable": {
+    "identity": "public.rls_auto_enable()",
+    "owner": "postgres",
+    "securityDefiner": true,
+    "expectedSearchPath": "pg_catalog",
+    "directExecute": [],
+    "requiredEventTrigger": "ensure_rls"
+  }
+}
