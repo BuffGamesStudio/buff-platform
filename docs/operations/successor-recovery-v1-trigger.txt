@@ -1,0 +1,7 @@
+fresh successor recovery V1 trigger
+candidate_sha=05b64ff3fcf0e13d5e7470deb4da5dda4019ca23
+candidate_tree=8a5e32acb0ad8207eeba6691a066b6249c1996c7
+manifest_sha256=a77ed93556d338075d8f941e8570f77621551dda47fec5bc1f53a1ad054063bf
+verifier_sha256=664afed48370bcfa1204983eda5f0ec5589c164d13836feb13277430e30faa1b
+note=disposable localhost rollback containment plus exact forward reapply on successor head
+rerun_base_sha=b898df7
