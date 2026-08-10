@@ -1,4 +1,7 @@
--- Read-only post-chain verifier for Movie Buff expected-state manifest v2.
+-- HISTORICAL-ONLY read-only verifier for Movie Buff expected-state manifest v2.
+-- This file intentionally validates the pre-v3 contract and must not be used
+-- as the final successor-state acceptance proof. Current successor acceptance
+-- uses movie_buff_production_chain_successor_manifest_v3_verify.sql.
 -- Expected manifest SHA-256:
 -- a2357ac91b5a00e98d0f0a30bd69b8fe901cbfb97b484885a39577fce3ac0adb
 --
@@ -328,6 +331,7 @@ end;
 $auto_rls$;
 
 select pg_catalog.jsonb_build_object(
+  'scope','historical-only',
   'classification','PASS',
   'manifestSha256','a2357ac91b5a00e98d0f0a30bd69b8fe901cbfb97b484885a39577fce3ac0adb',
   'sixTargetTables',6,
