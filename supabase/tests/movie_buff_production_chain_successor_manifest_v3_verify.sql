@@ -295,6 +295,71 @@ begin
 end;
 $shared_security_schema$;
 
+do $match_rounds_schema$
+declare
+  v_default text;
+begin
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'match_rounds'
+      and column_name = 'playback_started_at'
+      and data_type = 'timestamp with time zone'
+      and is_nullable = 'YES'
+  ) then
+    raise exception 'Manifest verification failed: public.match_rounds.playback_started_at is missing or incompatible.';
+  end if;
+
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'match_rounds'
+      and column_name = 'hint_used_at'
+      and data_type = 'timestamp with time zone'
+      and is_nullable = 'YES'
+  ) then
+    raise exception 'Manifest verification failed: public.match_rounds.hint_used_at is missing or incompatible.';
+  end if;
+
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'match_rounds'
+      and column_name = 'hint_penalty_seconds'
+      and data_type = 'integer'
+      and is_nullable = 'NO'
+  ) then
+    raise exception 'Manifest verification failed: public.match_rounds.hint_penalty_seconds is missing or incompatible.';
+  end if;
+
+  select pg_catalog.pg_get_expr(d.adbin, d.adrelid)
+  into v_default
+  from pg_catalog.pg_attrdef d
+  join pg_catalog.pg_class c on c.oid = d.adrelid
+  join pg_catalog.pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum
+  where c.relname = 'match_rounds'
+    and a.attname = 'hint_penalty_seconds';
+
+  if v_default not in ('0', '0::integer') then
+    raise exception 'Manifest verification failed: public.match_rounds.hint_penalty_seconds default is incompatible.';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_class t on t.oid = c.conrelid
+    where t.relname = 'match_rounds'
+      and c.conname = 'match_rounds_hint_penalty_seconds_check'
+      and pg_catalog.pg_get_constraintdef(c.oid) = 'CHECK (hint_penalty_seconds >= 0 AND hint_penalty_seconds <= 10)'
+  ) then
+    raise exception 'Manifest verification failed: match_rounds_hint_penalty_seconds_check is missing or incompatible.';
+  end if;
+end;
+$match_rounds_schema$;
+
 do $auto_rls$
 declare
   v_oid oid := pg_catalog.to_regprocedure('public.rls_auto_enable()');

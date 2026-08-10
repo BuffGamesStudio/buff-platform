@@ -11,8 +11,8 @@ permissions:
 env:
   PRODUCT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
   PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
-  CANDIDATE_SHA: 8e63d87af755b3829d4a0f1782d9c850d835e25b
-  CANDIDATE_TREE: ae38aba5f96b5f18c775066852ceb80c6175770f
+  CANDIDATE_SHA: 7c5380cc6cd78045e88a89af809d8d4a51aa1099
+  CANDIDATE_TREE: acb24083c8731f608bc3b4291447fa5e0d5035d2
   CONTROLLER_BRANCH: operations/movie-buff-successor-recovery-seat2-20260809
   TRIGGER_BRANCH: operations/movie-buff-successor-recovery-trigger-seat2-20260809
   MANIFEST_PATH: docs/security/movie-buff-successor-expected-state-manifest-v3.json
@@ -471,8 +471,8 @@ jobs:
             'repository':'BuffGamesStudio/buff-platform',
             'productSha':'81d3618ce7be28a6ce81363a8bda524cd18ece15',
             'productTree':'511c3501bd6a73f7556f636bc9e12ef30935d58d',
-            'candidateSha':'8e63d87af755b3829d4a0f1782d9c850d835e25b',
-            'candidateTree':'ae38aba5f96b5f18c775066852ceb80c6175770f',
+            'candidateSha':'7c5380cc6cd78045e88a89af809d8d4a51aa1099',
+            'candidateTree':'acb24083c8731f608bc3b4291447fa5e0d5035d2',
             'manifestPath':'docs/security/movie-buff-successor-expected-state-manifest-v3.json',
             'manifestSha256':'1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf',
             'verifierPath':'supabase/tests/movie_buff_production_chain_successor_manifest_v3_verify.sql',
@@ -527,8 +527,8 @@ jobs:
           assert manifest['classification']=='PASS'
           assert manifest['logicClassification']=='PASS'
           assert manifest['evidenceHygiene']=='PASS'
-          assert manifest['candidateSha']=='8e63d87af755b3829d4a0f1782d9c850d835e25b'
-          assert manifest['candidateTree']=='ae38aba5f96b5f18c775066852ceb80c6175770f'
+          assert manifest['candidateSha']=='7c5380cc6cd78045e88a89af809d8d4a51aa1099'
+          assert manifest['candidateTree']=='acb24083c8731f608bc3b4291447fa5e0d5035d2'
           assert manifest['manifestSha256']=='1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf'
           before=json.loads((root/'successor-forward-before.json').read_text())
           after=json.loads((root/'successor-forward-after.json').read_text())
