@@ -10,8 +10,8 @@ permissions:
 
 env:
   CANDIDATE_BRANCH: security/movie-buff-production-baseline-reconciliation-20260808
-  CANDIDATE_SHA: f8fb36dcf5c4b584ecda10ec2dd44f830e77eb4f
-  CANDIDATE_TREE: 92bb14f94f92a97a63fa1a9cfb9f9629ef09bf90
+  CANDIDATE_SHA: a087604bb6476a686524f6bedde74badf64589e2
+  CANDIDATE_TREE: c02c4fb5590704e374e2dda3b9cfa48993fa2d9a
   CONTROLLER_BRANCH: validation/movie-buff-new-candidate-hash-controller-20260808
   TRIGGER_BRANCH: validation/movie-buff-new-candidate-hash-trigger-20260808
   RECOVERY_SOURCE_SHA: fca74cf8c125926642720b4d135fb75f3784f6f7
@@ -191,8 +191,8 @@ jobs:
           import json
           b=json.load(open('binding.json'))
           assert b['classification']=='PASS'
-          assert b['candidateSha']=='f8fb36dcf5c4b584ecda10ec2dd44f830e77eb4f'
-          assert b['candidateTree']=='92bb14f94f92a97a63fa1a9cfb9f9629ef09bf90'
+          assert b['candidateSha']=='a087604bb6476a686524f6bedde74badf64589e2'
+          assert b['candidateTree']=='c02c4fb5590704e374e2dda3b9cfa48993fa2d9a'
           assert b['forwardStepCount']==22
           assert b['recoveryMapCount']==22
           assert b['manifestSha256']=='a77ed93556d338075d8f941e8570f77621551dda47fec5bc1f53a1ad054063bf'
