@@ -245,6 +245,34 @@
       "serviceRoleExecute": true
     }
   ],
+  "tableSchemas": {
+    "public.match_rounds": {
+      "columns": [
+        {
+          "name": "playback_started_at",
+          "dataType": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "hint_used_at",
+          "dataType": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "hint_penalty_seconds",
+          "dataType": "integer",
+          "nullable": false,
+          "default": "0"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "match_rounds_hint_penalty_seconds_check",
+          "definition": "CHECK (hint_penalty_seconds >= 0 AND hint_penalty_seconds <= 10)"
+        }
+      ]
+    }
+  },
   "mediaReadyGuard": {
     "identity": "public.mark_movie_buff_round_media_ready(uuid)",
     "requiresCall": "movie_buff_phase_require_access(p_room_id)"
