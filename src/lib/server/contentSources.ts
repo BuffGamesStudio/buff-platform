@@ -156,6 +156,7 @@ const FALLBACK_CONTENT_SOURCES: ContentSourceSummary[] = [
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceRoleKey =
+  process.env.SUPABASE_SECRET_KEY ??
   process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl) {
@@ -163,7 +164,9 @@ if (!supabaseUrl) {
 }
 
 if (!supabaseServiceRoleKey) {
-  throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+  throw new Error(
+    "Missing SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY",
+  );
 }
 
 const supabaseAdmin = createClient(

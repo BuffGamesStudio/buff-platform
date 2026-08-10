@@ -10,8 +10,8 @@ permissions:
 
 env:
   CANDIDATE_BRANCH: security/movie-buff-production-baseline-reconciliation-20260808
-  CANDIDATE_SHA: 7c5380cc6cd78045e88a89af809d8d4a51aa1099
-  CANDIDATE_TREE: acb24083c8731f608bc3b4291447fa5e0d5035d2
+  CANDIDATE_SHA: f8fb36dcf5c4b584ecda10ec2dd44f830e77eb4f
+  CANDIDATE_TREE: 92bb14f94f92a97a63fa1a9cfb9f9629ef09bf90
   CONTROLLER_BRANCH: validation/movie-buff-new-candidate-hash-controller-20260808
   TRIGGER_BRANCH: validation/movie-buff-new-candidate-hash-trigger-20260808
   RECOVERY_SOURCE_SHA: fca74cf8c125926642720b4d135fb75f3784f6f7
@@ -153,7 +153,7 @@ jobs:
             'candidateTree':os.environ['CANDIDATE_TREE'],
             'forwardStepCount':22,
             'recoveryMapCount':22,
-            'manifestSha256':'1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf',
+            'manifestSha256':'a77ed93556d338075d8f941e8570f77621551dda47fec5bc1f53a1ad054063bf',
             'manifestVerifierSha256':sys.argv[2],
             'manifestVerifierGitBlobSha':sys.argv[3],
             'externalRecoverySourceSha':os.environ['RECOVERY_SOURCE_SHA'],
@@ -191,11 +191,11 @@ jobs:
           import json
           b=json.load(open('binding.json'))
           assert b['classification']=='PASS'
-          assert b['candidateSha']=='7c5380cc6cd78045e88a89af809d8d4a51aa1099'
-          assert b['candidateTree']=='acb24083c8731f608bc3b4291447fa5e0d5035d2'
+          assert b['candidateSha']=='f8fb36dcf5c4b584ecda10ec2dd44f830e77eb4f'
+          assert b['candidateTree']=='92bb14f94f92a97a63fa1a9cfb9f9629ef09bf90'
           assert b['forwardStepCount']==22
           assert b['recoveryMapCount']==22
-          assert b['manifestSha256']=='1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf'
+          assert b['manifestSha256']=='a77ed93556d338075d8f941e8570f77621551dda47fec5bc1f53a1ad054063bf'
           rows=[line.rstrip('\n').split('\t') for line in open('forward-chain-sha256.tsv')]
           assert rows[0][3].endswith('20260804070000_movie_buff_production_baseline_reconciliation.sql')
           assert rows[20][3].endswith('20260807010000_movie_buff_production_security_manifest_reconciliation.sql')

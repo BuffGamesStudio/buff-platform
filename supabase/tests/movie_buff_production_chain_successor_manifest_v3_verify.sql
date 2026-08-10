@@ -2,7 +2,7 @@
 -- Manifest path:
 -- docs/security/movie-buff-successor-expected-state-manifest-v3.json
 -- Manifest SHA-256:
--- 1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf
+-- a77ed93556d338075d8f941e8570f77621551dda47fec5bc1f53a1ad054063bf
 -- Supersedes historical manifest-v2 SHA-256:
 -- a2357ac91b5a00e98d0f0a30bd69b8fe901cbfb97b484885a39577fce3ac0adb
 --
@@ -400,7 +400,7 @@ select pg_catalog.jsonb_build_object(
   'classification','PASS',
   'manifestVersion','v3',
   'manifestPath','docs/security/movie-buff-successor-expected-state-manifest-v3.json',
-  'manifestSha256','1343bc1500d22114666748b0701247aa4dc7addb7b53d4702c9f938de6c7facf',
+  'manifestSha256','a77ed93556d338075d8f941e8570f77621551dda47fec5bc1f53a1ad054063bf',
   'supersedesManifestSha256','a2357ac91b5a00e98d0f0a30bd69b8fe901cbfb97b484885a39577fce3ac0adb',
   'sixTargetTables',6,
   'criticalFunctions',(select count(*) from expected_critical_functions),
