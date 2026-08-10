@@ -11,14 +11,14 @@ permissions:
 env:
   PRODUCT_SHA: 81d3618ce7be28a6ce81363a8bda524cd18ece15
   PRODUCT_TREE: 511c3501bd6a73f7556f636bc9e12ef30935d58d
-  CANDIDATE_SHA: f8fb36dcf5c4b584ecda10ec2dd44f830e77eb4f
-  CANDIDATE_TREE: 92bb14f94f92a97a63fa1a9cfb9f9629ef09bf90
+  CANDIDATE_SHA: a087604bb6476a686524f6bedde74badf64589e2
+  CANDIDATE_TREE: c02c4fb5590704e374e2dda3b9cfa48993fa2d9a
   CONTROLLER_BRANCH: operations/movie-buff-successor-recovery-seat2-20260809
   TRIGGER_BRANCH: operations/movie-buff-successor-recovery-trigger-seat2-20260809
   MANIFEST_PATH: docs/security/movie-buff-successor-expected-state-manifest-v3.json
   MANIFEST_SHA256: a77ed93556d338075d8f941e8570f77621551dda47fec5bc1f53a1ad054063bf
   VERIFIER_PATH: supabase/tests/movie_buff_production_chain_successor_manifest_v3_verify.sql
-  VERIFIER_SHA256: 9dbd9ab60b0daedeb24cd7791e20e1b3a35b5a62456a6664446e030fd3a7568b
+  VERIFIER_SHA256: 664afed48370bcfa1204983eda5f0ec5589c164d13836feb13277430e30faa1b
   EXTERNAL_RECOVERY_SOURCE_SHA: fca74cf8c125926642720b4d135fb75f3784f6f7
   ARTIFACT_NAME: movie-buff-successor-recovery-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
@@ -41,13 +41,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf 'DEBUG_BASE_REF=%s HEAD_REF=%s\n' "$GITHUB_BASE_REF" "$GITHUB_HEAD_REF"
-          printf 'DEBUG_HEAD=%s\n' "$(git rev-parse HEAD)"
-          git show -s --format='DEBUG_COMMIT=%H PARENTS=%P' HEAD
-          printf 'DEBUG_DIFF\n'
-          git diff --name-status "${CANDIDATE_SHA}..HEAD"
-          printf 'DEBUG_STATUS\n'
-          git status --porcelain --untracked-files=all
           test "${GITHUB_BASE_REF}" = "${CONTROLLER_BRANCH}"
           test "${GITHUB_HEAD_REF}" = "${TRIGGER_BRANCH}"
           test "$(git rev-parse "${PRODUCT_SHA}^{tree}")" = "${PRODUCT_TREE}"
@@ -478,12 +471,12 @@ jobs:
             'repository':'BuffGamesStudio/buff-platform',
             'productSha':'81d3618ce7be28a6ce81363a8bda524cd18ece15',
             'productTree':'511c3501bd6a73f7556f636bc9e12ef30935d58d',
-            'candidateSha':'f8fb36dcf5c4b584ecda10ec2dd44f830e77eb4f',
-            'candidateTree':'92bb14f94f92a97a63fa1a9cfb9f9629ef09bf90',
+            'candidateSha':'a087604bb6476a686524f6bedde74badf64589e2',
+            'candidateTree':'c02c4fb5590704e374e2dda3b9cfa48993fa2d9a',
             'manifestPath':'docs/security/movie-buff-successor-expected-state-manifest-v3.json',
             'manifestSha256':'a77ed93556d338075d8f941e8570f77621551dda47fec5bc1f53a1ad054063bf',
             'verifierPath':'supabase/tests/movie_buff_production_chain_successor_manifest_v3_verify.sql',
-            'verifierSha256':'9dbd9ab60b0daedeb24cd7791e20e1b3a35b5a62456a6664446e030fd3a7568b',
+            'verifierSha256':'664afed48370bcfa1204983eda5f0ec5589c164d13836feb13277430e30faa1b',
             'scope':'disposable-localhost successor rollback containment and exact forward reapply',
             'bootstrapBasis':'pre-20260804070000 local migration replay, local 20260804070000 helper normalization bootstrap, local join_movie_buff_room search_path priming, then exact 20260804073000-20260807014500 forward application',
             'hostedMutation':'NOT APPLICABLE',
@@ -534,8 +527,8 @@ jobs:
           assert manifest['classification']=='PASS'
           assert manifest['logicClassification']=='PASS'
           assert manifest['evidenceHygiene']=='PASS'
-          assert manifest['candidateSha']=='f8fb36dcf5c4b584ecda10ec2dd44f830e77eb4f'
-          assert manifest['candidateTree']=='92bb14f94f92a97a63fa1a9cfb9f9629ef09bf90'
+          assert manifest['candidateSha']=='a087604bb6476a686524f6bedde74badf64589e2'
+          assert manifest['candidateTree']=='c02c4fb5590704e374e2dda3b9cfa48993fa2d9a'
           assert manifest['manifestSha256']=='a77ed93556d338075d8f941e8570f77621551dda47fec5bc1f53a1ad054063bf'
           before=json.loads((root/'successor-forward-before.json').read_text())
           after=json.loads((root/'successor-forward-after.json').read_text())
