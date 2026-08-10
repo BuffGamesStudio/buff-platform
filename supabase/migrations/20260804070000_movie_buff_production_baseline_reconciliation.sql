@@ -126,7 +126,7 @@ begin
     left join pg_catalog.pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
     where c.relname = 'match_rounds'
       and a.attname = 'hint_penalty_seconds'
-      and coalesce(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '') not in ('0','0'::integer)
+      and coalesce(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '') not in ('0','0::integer')
   ) then
     raise exception 'Baseline mismatch: public.match_rounds.hint_penalty_seconds default is incompatible.';
   end if;
