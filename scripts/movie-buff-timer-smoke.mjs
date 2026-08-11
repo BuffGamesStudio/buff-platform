@@ -268,9 +268,9 @@ async function waitForRoundIntroReady(page) {
         "/games/movie-buff/play",
       ) ||
         Array.from(
-          document.querySelectorAll("button"),
-        ).some((button) =>
-          (button.textContent ?? "")
+          document.querySelectorAll("button, a"),
+        ).some((control) =>
+          (control.textContent ?? "")
             .trim()
             .includes("Start Round"),
         )),

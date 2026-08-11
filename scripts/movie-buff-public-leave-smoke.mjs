@@ -228,6 +228,25 @@ async function fillUnique(page, placeholder, value) {
   await locator.type(value);
 }
 
+async function readButtonTexts(page) {
+  return page.locator("button").evaluateAll((elements) =>
+    elements.map((element) =>
+      (element.textContent ?? "").trim(),
+    ),
+  );
+}
+
+async function readBodyText(page) {
+  const body = page.locator("body");
+  const count = await body.count();
+
+  if (count !== 1) {
+    return "";
+  }
+
+  return (await body.innerText()).trim();
+}
+
 function urlMatchesPattern(url, pattern) {
   return url.includes(
     pattern.replace(/\*\*/g, "").replace(/\*/g, ""),
@@ -245,18 +264,22 @@ async function waitForEitherUrl(page, patterns) {
     return currentUrl;
   }
 
-  for (const pattern of patterns) {
-    try {
-      await page.waitForURL(pattern, {
-        timeout: 15000,
-      });
-      return page.url();
-    } catch {}
-  }
+  await page.waitForFunction(
+    (candidatePatterns) =>
+      candidatePatterns.some((pattern) => {
+        const normalizedPattern = pattern
+          .replace(/\*\*/g, "")
+          .replace(/\*/g, "");
 
-  throw new Error(
-    `Timed out waiting for any URL in: ${patterns.join(", ")}`,
+        return window.location.href.includes(
+          normalizedPattern,
+        );
+      }),
+    patterns,
+    { timeout: 30000 },
   );
+
+  return page.url();
 }
 
 async function waitForBoardPreviewReady(page) {
@@ -399,9 +422,9 @@ async function waitForRoundIntroReady(page) {
         "/games/movie-buff/play",
       ) ||
         Array.from(
-          document.querySelectorAll("button"),
-        ).some((button) =>
-          (button.textContent ?? "")
+          document.querySelectorAll("button, a"),
+        ).some((control) =>
+          (control.textContent ?? "")
             .trim()
             .includes("Start Round"),
         )),
@@ -491,10 +514,11 @@ async function waitForHostedReadyState(
     const readyPlayers = activePlayers.filter(
       (row) => row.is_ready === true,
     );
+    const requiredPlayerCount = playerContexts.length;
 
     if (
-      activePlayers.length >= 2 &&
-      readyPlayers.length >= 2
+      activePlayers.length >= requiredPlayerCount &&
+      readyPlayers.length >= requiredPlayerCount
     ) {
       return {
         activePlayerCount: activePlayers.length,
@@ -665,8 +689,10 @@ const browser = await chromium.launch({
 
 const contextOne = await browser.newContext();
 const contextTwo = await browser.newContext();
+const contextThree = await browser.newContext();
 const pageOne = await contextOne.newPage();
 const pageTwo = await contextTwo.newPage();
+const pageThree = await contextThree.newPage();
 
 const result = {
   baseUrl: APP_URL,
@@ -675,44 +701,55 @@ const result = {
 };
 
 try {
-  const [playerOneId, playerTwoId] =
+  const [playerOneId, playerTwoId, playerThreeId] =
     await Promise.all([
-    enterLobbyWithLocalTestAccount(pageOne),
-    enterLobbyWithLocalTestAccount(pageTwo),
-  ]);
+      enterLobbyWithLocalTestAccount(pageOne),
+      enterLobbyWithLocalTestAccount(pageTwo),
+      enterLobbyWithLocalTestAccount(pageThree),
+    ]);
 
   await Promise.all([
     enterPublicMatch(pageOne),
     enterPublicMatch(pageTwo),
+    enterPublicMatch(pageThree),
   ]);
 
   const roomUrlOne = pageOne.url();
   const roomUrlTwo = pageTwo.url();
+  const roomUrlThree = pageThree.url();
   const roomIdOne = new URL(roomUrlOne).searchParams.get(
     "roomId",
   );
   const roomIdTwo = new URL(roomUrlTwo).searchParams.get(
     "roomId",
   );
+  const roomIdThree = new URL(roomUrlThree).searchParams.get(
+    "roomId",
+  );
 
   assert(
     roomIdOne &&
       roomIdTwo &&
-      roomIdOne === roomIdTwo,
-    "Expected both players to enter the same public room.",
+      roomIdThree &&
+      roomIdOne === roomIdTwo &&
+      roomIdTwo === roomIdThree,
+    "Expected all players to enter the same public room.",
   );
 
   result.checkpoints.waitingRoom = {
     pageOne: roomUrlOne,
     pageTwo: roomUrlTwo,
+    pageThree: roomUrlThree,
     roomId: roomIdOne,
     playerOneId,
     playerTwoId,
+    playerThreeId,
   };
 
   await Promise.all([
     ensureReadyForPublicMatch(pageOne),
     ensureReadyForPublicMatch(pageTwo),
+    ensureReadyForPublicMatch(pageThree),
   ]);
 
   if (!isLocalBaseUrl(APP_URL)) {
@@ -727,6 +764,10 @@ try {
           playerId: playerTwoId,
           page: pageTwo,
         },
+        {
+          playerId: playerThreeId,
+          page: pageThree,
+        },
       ],
     );
   }
@@ -734,24 +775,28 @@ try {
   await Promise.all([
     resolveIntoPlay(pageOne),
     resolveIntoPlay(pageTwo),
+    resolveIntoPlay(pageThree),
   ]);
 
   await Promise.all([
     waitForAnswerFormReady(pageOne),
     waitForAnswerFormReady(pageTwo),
+    waitForAnswerFormReady(pageThree),
   ]);
 
   result.checkpoints.play = {
     pageOne: pageOne.url(),
     pageTwo: pageTwo.url(),
+    pageThree: pageThree.url(),
   };
 
-  await clickUnique(pageTwo, "button", "Leave Match");
-  await pageTwo.waitForURL("**/games/movie-buff/lobby");
+  await clickUnique(pageThree, "button", "Leave Match");
+  await pageThree.waitForURL("**/games/movie-buff/lobby");
 
   result.checkpoints.afterLeave = {
-    leaverPage: pageTwo.url(),
-    remainingPageBeforeCheck: pageOne.url(),
+    leaverPage: pageThree.url(),
+    remainingPageOneBeforeCheck: pageOne.url(),
+    remainingPageTwoBeforeCheck: pageTwo.url(),
   };
 
   await pageOne.waitForTimeout(1500);
@@ -773,8 +818,8 @@ try {
           `Expected active room after one public player left, got ${localVerification.roomStatus}.`,
         );
         assert(
-          localVerification.activePlayerCount === 1,
-          `Expected 1 active player after one public player left, got ${localVerification.activePlayerCount}.`,
+          localVerification.activePlayerCount === 2,
+          `Expected 2 active players after one public player left, got ${localVerification.activePlayerCount}.`,
         );
         assert(
           Number(
@@ -796,7 +841,14 @@ try {
           ...localVerification,
         };
       })()
-    : await verifyHostedRemainingPlayerState(pageOne);
+    : {
+        remainingPageOne: await verifyHostedRemainingPlayerState(
+          pageOne,
+        ),
+        remainingPageTwo: await verifyHostedRemainingPlayerState(
+          pageTwo,
+        ),
+      };
 
   result.leaveVerification = verification;
 
@@ -810,8 +862,48 @@ try {
       2,
     ),
   );
+} catch (error) {
+  console.error(
+    JSON.stringify(
+      {
+        ok: false,
+        result,
+        diagnostics: {
+          pageOneUrl: pageOne.url?.() ?? null,
+          pageTwoUrl: pageTwo.url?.() ?? null,
+          pageThreeUrl: pageThree.url?.() ?? null,
+          pageOneButtons: await readButtonTexts(
+            pageOne,
+          ).catch(() => []),
+          pageTwoButtons: await readButtonTexts(
+            pageTwo,
+          ).catch(() => []),
+          pageThreeButtons: await readButtonTexts(
+            pageThree,
+          ).catch(() => []),
+          pageOneBody: await readBodyText(pageOne).catch(
+            () => "",
+          ),
+          pageTwoBody: await readBodyText(pageTwo).catch(
+            () => "",
+          ),
+          pageThreeBody: await readBodyText(
+            pageThree,
+          ).catch(() => ""),
+        },
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      },
+      null,
+      2,
+    ),
+  );
+  process.exitCode = 1;
 } finally {
   await contextOne.close();
   await contextTwo.close();
+  await contextThree.close();
   await browser.close();
 }

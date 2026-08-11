@@ -393,9 +393,9 @@ async function waitForRoundIntroReady(page) {
         "/games/movie-buff/play",
       ) ||
         Array.from(
-          document.querySelectorAll("button"),
-        ).some((button) =>
-          (button.textContent ?? "")
+          document.querySelectorAll("button, a"),
+        ).some((control) =>
+          (control.textContent ?? "")
             .trim()
             .includes("Start Round"),
         )),
@@ -600,6 +600,26 @@ async function waitForFinalResultsReady(page) {
   ]);
 }
 
+async function waitForPostResultsTransition(page) {
+  if (
+    page.url().includes("/final-results") ||
+    !page.url().includes("/round-results")
+  ) {
+    return page.url();
+  }
+
+  await page.waitForFunction(
+    () =>
+      !window.location.pathname.includes(
+        "/games/movie-buff/round-results",
+      ),
+    undefined,
+    { timeout: 45000 },
+  );
+
+  return page.url();
+}
+
 async function resolveIntoPlay(page) {
   if (page.url().includes("/waiting-room")) {
     await waitForPrivateStartReady(page);
@@ -760,13 +780,7 @@ try {
     }
 
     await waitForResultsReady(page);
-    await waitForEitherUrl(page, [
-      "**/games/movie-buff/round-intro?**",
-      "**/games/movie-buff/board-preview?**",
-      "**/games/movie-buff/play?**",
-      "**/games/movie-buff/final-results?**",
-      "**/games/movie-buff/round-results?**",
-    ]);
+    await waitForPostResultsTransition(page);
 
     if (page.url().includes("/final-results")) {
       await waitForFinalResultsReady(page);
