@@ -304,6 +304,13 @@ function parseFirstIntegerMatch(
   return Number.parseInt(match[1], 10);
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&",
+  );
+}
+
 try {
   const {
     storageKey,
@@ -444,10 +451,78 @@ try {
     ],
   );
 
+  const rotationApi = await page.evaluate(
+    async () => {
+      const authStorageKey = Object.keys(
+        window.localStorage,
+      ).find((key) =>
+        key.includes("-auth-token"),
+      );
+
+      const raw =
+        authStorageKey &&
+        window.localStorage.getItem(
+          authStorageKey,
+        );
+      const sessionPayload = raw
+        ? JSON.parse(raw)
+        : null;
+      const accessToken =
+        sessionPayload?.access_token ?? null;
+
+      const response = await fetch(
+        "/api/admin/analytics/rotation",
+        {
+          headers: accessToken
+            ? {
+                Authorization: `Bearer ${accessToken}`,
+              }
+            : {},
+        },
+      );
+
+      return {
+        status: response.status,
+        payload: await response.json(),
+      };
+    },
+  );
+
+  assert(
+    rotationApi.status === 200,
+    `Expected /api/admin/analytics/rotation to return 200, got ${rotationApi.status}.`,
+  );
+
+  const apiEligibleClips = Number(
+    rotationApi.payload?.poolStatus
+      ?.totalEligibleClips ?? NaN,
+  );
+  const apiPrimaryReadyAssets = Number(
+    rotationApi.payload?.poolStatus
+      ?.totalPrimaryReadyAssets ?? NaN,
+  );
+
+  assert(
+    Number.isFinite(apiEligibleClips),
+    "Rotation API did not return a numeric eligible clip count.",
+  );
+  assert(
+    Number.isFinite(apiPrimaryReadyAssets),
+    "Rotation API did not return a numeric primary ready asset count.",
+  );
+
   const rotationBody = await waitForBodyPattern(
     page,
-    /Eligible clips:\s+\d+/i,
+    new RegExp(
+      `Primary ready:\\s+${escapeRegExp(
+        apiPrimaryReadyAssets,
+      )}\\.\\s+Secondary ready:\\s+\\d+\\.\\s+Eligible clips:\\s+${escapeRegExp(
+        apiEligibleClips,
+      )}\\.`,
+      "i",
+    ),
   );
+
   result.checkpoints.rotationControl.eligibleClips =
     parseFirstIntegerMatch(
       rotationBody,
@@ -460,6 +535,10 @@ try {
       /Primary ready:\s+(\d+)/i,
       "Rotation Control did not render primary ready asset counts.",
     );
+  result.checkpoints.rotationControl.apiEligibleClips =
+    apiEligibleClips;
+  result.checkpoints.rotationControl.apiPrimaryReadyAssets =
+    apiPrimaryReadyAssets;
 
   await verifyAdminPage(
     page,
