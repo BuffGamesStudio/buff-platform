@@ -64,11 +64,6 @@ export default function WaitingRoomPage() {
 
   const navigateTo = useCallback(
     (destination: string) => {
-      if (typeof window !== "undefined") {
-        window.location.assign(destination);
-        return;
-      }
-
       router.push(destination);
     },
     [router]
@@ -305,8 +300,12 @@ export default function WaitingRoomPage() {
     players.length > 0 &&
     players.every((player) => player.is_ready);
 
+  const requiredPublicPlayers =
+    room?.max_players ?? 3;
+
   const minimumPlayersReady =
-    !isPublicRoom || players.length >= 2;
+    !isPublicRoom ||
+    players.length === requiredPublicPlayers;
 
   const canStart =
     (isPublicRoom || isCurrentPlayerHost) &&
@@ -540,7 +539,7 @@ export default function WaitingRoomPage() {
 
             <p className="max-w-3xl text-lg leading-8 text-zinc-300">
               {isPublicRoom
-                ? "The match begins automatically as soon as at least 2 players are ready."
+                ? `The match begins automatically as soon as all ${requiredPublicPlayers} public players are ready.`
                 : "The match begins when every player is ready and the host starts it."}{" "}
               You will have limited time to identify each movie, so answer quickly.
             </p>
@@ -784,14 +783,14 @@ export default function WaitingRoomPage() {
 
             {!minimumPlayersReady && isPublicRoom && (
               <p className="text-center text-sm text-amber-300">
-                Public matches need at least 2 players before they can start.
+                {`Public matches need exactly ${requiredPublicPlayers} active players before they can start.`}
               </p>
             )}
 
             {!allPlayersReady && (
               <p className="text-center text-sm text-zinc-500">
                 {isPublicRoom
-                  ? "Every player must be ready before the public match can start."
+                  ? `All ${requiredPublicPlayers} public players must be ready before the public match can start.`
                   : "Every player must be ready before the host can start the match."}
               </p>
             )}

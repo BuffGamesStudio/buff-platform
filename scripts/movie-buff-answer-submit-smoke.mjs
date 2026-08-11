@@ -127,10 +127,7 @@ async function fillUnique(
     count === 1,
     `Expected one input with placeholder "${placeholder}", found ${count}.`,
   );
-  await locator.click();
-  await locator.press("ControlOrMeta+A");
-  await locator.press("Backspace");
-  await locator.type(value);
+  await locator.fill(value);
 }
 
 function urlMatchesPattern(url, pattern) {
@@ -301,58 +298,80 @@ async function waitForRoundIntroReady(page) {
 async function waitForBoardPreviewReady(page) {
   await page.waitForFunction(
     () =>
-      document.body?.innerText?.includes(
+      window.location.pathname.includes(
+        "/games/movie-buff/play",
+      ) ||
+      (document.body?.innerText?.includes(
         "Prototype board",
       ) &&
-      (Array.from(
-        document.querySelectorAll("button"),
-      ).some((button) =>
-        (button.textContent ?? "")
-          .trim()
-          .includes("Select to lock this round"),
-      ) ||
-        document.body?.innerText?.includes(
-          "Board persistence is temporarily unavailable for this room.",
+        (Array.from(
+          document.querySelectorAll("button"),
+        ).some((button) =>
+          (button.textContent ?? "")
+            .trim()
+            .includes("Select to lock this round"),
         ) ||
-        document.body?.innerText?.includes(
-          "Continue to Clip Round",
-        )),
+          document.body?.innerText?.includes(
+            "Waiting for the current selector to choose a tile.",
+          ) ||
+          document.body?.innerText?.includes(
+            "Round intro is live. The board unlocks",
+          ) ||
+          document.body?.innerText?.includes(
+            "VIP lock is in progress. The board opens",
+          ) ||
+          document.body?.innerText?.includes(
+            "Checking the live Movie Buff phase for this room.",
+          ))),
     undefined,
-    { timeout: 30000 },
+    { timeout: 45000 },
   );
 }
 
 async function selectFirstBoardTile(page) {
   await waitForBoardPreviewReady(page);
+  const deadline = Date.now() + 45000;
 
-  const continueButton = page.getByRole("link", {
-    name: "Continue to Clip Round",
-  });
+  while (Date.now() < deadline) {
+    if (page.url().includes("/play")) {
+      return;
+    }
 
-  if ((await continueButton.count()) === 1) {
-    await continueButton.click();
-    await page.waitForURL(
-      "**/games/movie-buff/play?**",
-    );
-    return;
+    const tileButton = page
+      .locator("button")
+      .filter({
+        hasText: "Select to lock this round",
+      })
+      .first();
+
+    if ((await tileButton.count()) >= 1) {
+      await tileButton.click();
+      await waitForEitherUrl(page, [
+        "**/games/movie-buff/play?**",
+        "**/games/movie-buff/round-results?**",
+        "**/games/movie-buff/final-results?**",
+      ]);
+      return;
+    }
+
+    if (!page.url().includes("/board-preview")) {
+      await waitForEitherUrl(page, [
+        "**/games/movie-buff/board-preview?**",
+        "**/games/movie-buff/play?**",
+        "**/games/movie-buff/round-results?**",
+        "**/games/movie-buff/final-results?**",
+      ]);
+
+      if (!page.url().includes("/board-preview")) {
+        return;
+      }
+    }
+
+    await page.waitForTimeout(1000);
   }
 
-  const tileButton = page
-    .locator("button")
-    .filter({
-      hasText: "Select to lock this round",
-    })
-    .first();
-
-  const count = await tileButton.count();
-  assert(
-    count >= 1,
-    "No selectable board tile was available.",
-  );
-
-  await tileButton.click();
-  await page.waitForURL(
-    "**/games/movie-buff/play?**",
+  throw new Error(
+    "Timed out waiting for a selectable board tile or authoritative auto-advance.",
   );
 }
 
@@ -411,6 +430,150 @@ async function waitForAnswerFormReady(page) {
   );
 }
 
+async function waitForAuthoritativeAnswerPhase(
+  page,
+  roomId
+) {
+  const deadline = Date.now() + 45000;
+
+  while (Date.now() < deadline) {
+    const { data, error } =
+      await adminSupabase.rpc(
+        "get_movie_buff_match_phase_view",
+        {
+          p_room_id: roomId,
+        },
+      );
+
+    if (error) {
+      throw new Error(
+        `Authoritative phase check failed: ${error.message}`,
+      );
+    }
+
+    const phase = data?.phase ?? null;
+    const phaseRoute =
+      data?.phaseRoute ?? null;
+
+    if (phase === "answer") {
+      return;
+    }
+
+    if (
+      phase === "abandoned" ||
+      phase === "blocked" ||
+      phaseRoute ===
+        "/games/movie-buff/round-results" ||
+      phaseRoute ===
+        "/games/movie-buff/final-results"
+    ) {
+      throw new Error(
+        `Authoritative phase reached ${phase ?? "unknown"} before answer entry.\nphase_route=${phaseRoute ?? "unknown"}\npage_url=${page.url()}`,
+      );
+    }
+
+    await page.waitForTimeout(1000);
+  }
+
+  throw new Error(
+    `Timed out waiting for authoritative answer phase.\npage_url=${page.url()}`,
+  );
+}
+
+async function startPlaybackAndWait(page, roomId) {
+  const playButton = page.getByRole("button", {
+    name: "Play Movie Clip",
+  });
+  const playButtonCount =
+    await playButton.count();
+
+  if (playButtonCount === 0) {
+    await waitForAuthoritativeAnswerPhase(
+      page,
+      roomId
+    );
+    return;
+  }
+
+  assert(
+    playButtonCount === 1,
+    `Expected one Play Movie Clip button, found ${playButtonCount}.`,
+  );
+
+  await playButton.click();
+
+  try {
+    await page.waitForFunction(
+      () => {
+        const bodyText =
+          document.body?.innerText ?? "";
+        const playStillVisible = Array.from(
+          document.querySelectorAll("button"),
+        ).some((button) =>
+          (button.textContent ?? "")
+            .trim()
+            .includes("Play Movie Clip"),
+        );
+
+        return (
+          bodyText.includes(
+            "The media could not be played or synced",
+          ) ||
+          bodyText.includes(
+            "Time is up. Loading round results...",
+          ) ||
+          (!playStillVisible &&
+            !bodyText.includes(
+              "The clock starts when playback begins.",
+            ))
+        );
+      },
+      undefined,
+      { timeout: 15000 },
+    );
+  } catch (error) {
+    const bodyText = await page.evaluate(
+      () => document.body?.innerText ?? "",
+    );
+
+    throw new Error(
+      [
+        error instanceof Error
+          ? error.message
+          : String(error),
+        `playback_page_url=${page.url()}`,
+        `playback_page_excerpt=${bodyText
+          .replace(/\s+/g, " ")
+          .slice(0, 1200)}`,
+      ].join("\n"),
+    );
+  }
+
+  const bodyText = await page.evaluate(
+    () => document.body?.innerText ?? "",
+  );
+
+  if (
+    bodyText.includes(
+      "The media could not be played or synced",
+    ) ||
+    bodyText.includes(
+      "Time is up. Loading round results...",
+    )
+  ) {
+    throw new Error(
+      `Playback did not open an answer window.\nplayback_page_url=${page.url()}\nplayback_page_excerpt=${bodyText
+        .replace(/\s+/g, " ")
+        .slice(0, 1200)}`,
+    );
+  }
+
+  await waitForAuthoritativeAnswerPhase(
+    page,
+    roomId
+  );
+}
+
 async function maybeReadText(page, text) {
   const locator = page.getByText(text, {
     exact: true,
@@ -424,21 +587,21 @@ async function maybeReadText(page, text) {
   return locator.first().isVisible();
 }
 
-async function submitOneAnswer(page, guessText) {
+async function submitOneAnswer(
+  page,
+  roomId,
+  guessText
+) {
   await waitForAnswerFormReady(page);
-
-  const playButton = page.getByRole("button", {
-    name: "Play Movie Clip",
-  });
-
-  if ((await playButton.count()) === 1) {
-    await playButton.click();
-  }
-
   await fillUnique(
     page,
     "Enter the movie title",
     guessText,
+  );
+
+  await startPlaybackAndWait(
+    page,
+    roomId
   );
 
   await clickUnique(page, "button", "Submit Answer");
@@ -507,7 +670,11 @@ try {
   await resolveIntoPlay(page);
 
   const guessText = `Answer Submit Smoke ${Date.now()}`;
-  await submitOneAnswer(page, guessText);
+  await submitOneAnswer(
+    page,
+    roomId,
+    guessText
+  );
 
   const pageUrl = page.url();
   const roundId =

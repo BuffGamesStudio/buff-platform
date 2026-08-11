@@ -34,7 +34,11 @@ import type {
   GameRoom,
   RoomPlayer,
 } from "@/lib/db/movieBuff";
-import { leaveCurrentRoom } from "@/lib/db/movieBuff";
+import {
+  leaveCurrentRoom,
+  touchMovieBuffRoomPresence,
+} from "@/lib/db/movieBuff";
+import { getCurrentSession } from "@/lib/auth/auth";
 
 import {
   findCurrentRoomId,
@@ -57,6 +61,12 @@ import {
   type MovieBuffRound,
 } from "@/lib/game/roundService";
 import { queueMovieBuffEvent } from "@/lib/game/movieBuffAnalytics";
+import {
+  advanceMovieBuffMatchPhase,
+  buildMovieBuffPhaseRouteHref,
+  getMovieBuffMatchPhaseView,
+  type MovieBuffMatchPhaseView,
+} from "@/lib/game/movieBuffPhaseService";
 import { getMovieBuffDifficultyLabel } from "@/lib/game/movieBuffPresentation";
 import { getMovieBuffPlayerTier } from "@/lib/game/movieBuffPlayerTier";
 import MovieBuffLoadingTicker from "@/components/movie-buff/MovieBuffLoadingTicker";
@@ -133,6 +143,13 @@ type MovieBuffSpeechWindow = Window & {
   webkitSpeechRecognition?: MovieBuffSpeechRecognitionConstructor;
 };
 
+type MovieBuffPlaybackRepairPayload = {
+  repaired?: boolean;
+  roundId?: string | null;
+  playbackStartedAt?: string | null;
+  error?: string;
+};
+
 const CLIP_PLAYBACK_DELAY_MS = 180;
 const HINT_TIME_PENALTY_SECONDS = 5;
 const PLAY_PAGE_INIT_TIMEOUT_MS = 8_000;
@@ -186,6 +203,8 @@ export default function MovieBuffPlayPage() {
   const router = useRouter();
 
   const redirectStarted = useRef(false);
+  const phaseNavigationStartedRef =
+    useRef(false);
   const mediaRef =
     useRef<MediaElement | null>(null);
   const speechRecognitionRef = useRef<
@@ -205,6 +224,17 @@ export default function MovieBuffPlayPage() {
     string | null
   >(null);
   const playbackSyncRoundRef = useRef<
+    string | null
+  >(null);
+  const syncRoundStateRef = useRef<
+    () => Promise<void>
+  >(async () => {});
+  const repairPlaybackStateRef = useRef<
+    (
+      targetRoomId: string
+    ) => Promise<MovieBuffPlaybackRepairPayload | null>
+  >(async () => null);
+  const playbackRepairRoundRef = useRef<
     string | null
   >(null);
   const clipFailedRoundRef = useRef<
@@ -259,16 +289,6 @@ export default function MovieBuffPlayPage() {
 
   const navigateTo = useCallback(
     (destination: string, replace = false) => {
-      if (typeof window !== "undefined") {
-        if (replace) {
-          window.location.replace(destination);
-          return;
-        }
-
-        window.location.assign(destination);
-        return;
-      }
-
       if (replace) {
         router.replace(destination);
         return;
@@ -279,11 +299,259 @@ export default function MovieBuffPlayPage() {
     [router]
   );
 
+  const navigateToPhaseRoute = useCallback(
+    (
+      phaseView: MovieBuffMatchPhaseView,
+      fallbackRoundId?: string | null
+    ) => {
+      const destination =
+        buildMovieBuffPhaseRouteHref(
+          phaseView,
+          roomId || undefined
+        ) ??
+        (phaseView.phaseRoute ===
+          "/games/movie-buff/round-results" &&
+        roomId &&
+        fallbackRoundId
+          ? `/games/movie-buff/round-results?roomId=${encodeURIComponent(
+              roomId
+            )}&roundId=${encodeURIComponent(
+              fallbackRoundId
+            )}`
+          : null);
+
+      if (!destination) {
+        console.info(
+          "[movie-buff-play] no phase destination",
+          {
+            roomId,
+            phase: phaseView.phase,
+            phaseRoute:
+              phaseView.phaseRoute,
+            fallbackRoundId:
+              fallbackRoundId ?? null,
+          }
+        );
+        return false;
+      }
+
+      if (
+        typeof window !== "undefined" &&
+        phaseView.phaseRoute ===
+          window.location.pathname
+      ) {
+        console.info(
+          "[movie-buff-play] phase route already active",
+          {
+            roomId,
+            phase: phaseView.phase,
+            phaseRoute:
+              phaseView.phaseRoute,
+            destination,
+            pathname:
+              window.location.pathname,
+          }
+        );
+        return false;
+      }
+
+      if (
+        phaseNavigationStartedRef.current
+      ) {
+        console.info(
+          "[movie-buff-play] phase navigation already started",
+          {
+            roomId,
+            phase: phaseView.phase,
+            phaseRoute:
+              phaseView.phaseRoute,
+            destination,
+            fallbackRoundId:
+              fallbackRoundId ?? null,
+          }
+        );
+        return true;
+      }
+
+      console.info(
+        "[movie-buff-play] navigating to phase route",
+        {
+          roomId,
+          phase: phaseView.phase,
+          phaseRoute:
+            phaseView.phaseRoute,
+          destination,
+          fallbackRoundId:
+              fallbackRoundId ?? null,
+        }
+      );
+      phaseNavigationStartedRef.current =
+        true;
+      navigateTo(destination, true);
+      return true;
+    },
+    [navigateTo, roomId]
+  );
+
+  const syncPhaseRoute = useCallback(
+    async (options?: {
+      advance?: boolean;
+      fallbackRoundId?: string | null;
+    }) => {
+      if (!roomId) {
+        return false;
+      }
+
+      console.info(
+        "[movie-buff-play] syncPhaseRoute start",
+        {
+          roomId,
+          options:
+            options ?? null,
+          roundId:
+            roundData?.roundId ?? null,
+          answerResultPresent:
+            answerResult !== null,
+          timeLeft,
+          pathname:
+            typeof window !==
+            "undefined"
+              ? window.location.pathname
+              : null,
+        }
+      );
+
+      try {
+        await touchMovieBuffRoomPresence(roomId);
+      } catch {}
+
+      let phaseView =
+        await getMovieBuffMatchPhaseView(roomId);
+
+      console.info(
+        "[movie-buff-play] syncPhaseRoute phase view",
+        {
+          roomId,
+          phase: phaseView.phase,
+          phaseRoute:
+            phaseView.phaseRoute,
+          phaseVersion:
+            phaseView.phaseVersion,
+          roundId:
+            phaseView.roundId,
+        }
+      );
+
+      if (
+        options?.advance &&
+        phaseView.phaseRoute ===
+          "/games/movie-buff/play"
+      ) {
+        console.info(
+          "[movie-buff-play] syncPhaseRoute advancing phase",
+          {
+            roomId,
+            phaseVersion:
+              phaseView.phaseVersion,
+            roundId:
+              phaseView.roundId,
+          }
+        );
+        await advanceMovieBuffMatchPhase(
+          roomId,
+          phaseView.phaseVersion
+        ).catch(() => null);
+
+        phaseView =
+          await getMovieBuffMatchPhaseView(
+            roomId
+          ).catch(() => phaseView);
+
+        console.info(
+          "[movie-buff-play] syncPhaseRoute phase view after advance",
+          {
+            roomId,
+            phase: phaseView.phase,
+            phaseRoute:
+              phaseView.phaseRoute,
+            phaseVersion:
+              phaseView.phaseVersion,
+            roundId:
+              phaseView.roundId,
+          }
+        );
+      }
+
+      if (
+        phaseView.phaseRoute ===
+        "/games/movie-buff/play"
+      ) {
+        if (
+          phaseView.phase === "answer" &&
+          phaseView.answerDeadlineAt
+        ) {
+          setTimeLeft(
+            Math.max(
+              0,
+              Math.ceil(
+                (new Date(
+                  phaseView.answerDeadlineAt
+                ).getTime() -
+                  Date.now()) /
+                  1000
+              )
+            )
+          );
+        }
+
+        if (
+          phaseView.phase === "answer" &&
+          phaseView.roundId ===
+            roundData?.roundId &&
+          !roundData.playbackStartedAt
+        ) {
+          await repairPlaybackStateRef.current(
+            roomId
+          )
+            .then((payload) => {
+              if (
+                !payload?.playbackStartedAt
+              ) {
+                return syncRoundStateRef.current();
+              }
+
+              return null;
+            })
+            .catch(() => null);
+        }
+      }
+
+      return navigateToPhaseRoute(
+        phaseView,
+        options?.fallbackRoundId ?? null
+      );
+    },
+    [
+      answerResult,
+      navigateToPhaseRoute,
+      roomId,
+      roundData?.playbackStartedAt,
+      roundData?.roundId,
+      timeLeft,
+    ]
+  );
+
   const loadPlayers = useCallback(
     async (
       resolvedRoomId: string,
       resolvedPlayerId: string
     ) => {
+      try {
+        await touchMovieBuffRoomPresence(
+          resolvedRoomId
+        );
+      } catch {}
+
       const game = await loadGameState(
         resolvedRoomId,
         resolvedPlayerId
@@ -527,6 +795,10 @@ export default function MovieBuffPlayPage() {
     playbackPreparedRoundRef.current =
       null;
     playbackSyncRoundRef.current = null;
+    playbackRepairRoundRef.current =
+      null;
+    phaseNavigationStartedRef.current =
+      false;
     clipFailedRoundRef.current = null;
     timeoutLoggedRoundRef.current = null;
 
@@ -548,6 +820,12 @@ export default function MovieBuffPlayPage() {
     setMediaFailed(false);
     setMediaStarting(false);
     setHintPending(false);
+    setSubmitting(false);
+    setAnswer("");
+    setAnswerResult(null);
+    setError("");
+    setSpeechListening(false);
+    speechRecognitionRef.current?.stop();
   }, [roundData?.roundId]);
 
   const syncRoundState = useCallback(
@@ -598,6 +876,107 @@ export default function MovieBuffPlayPage() {
   );
 
   useEffect(() => {
+    syncRoundStateRef.current =
+      syncRoundState;
+  }, [syncRoundState]);
+
+  const repairPlaybackState = useCallback(
+    async (targetRoomId: string) => {
+      const activeRoundId =
+        roundData?.roundId ?? null;
+
+      if (
+        !targetRoomId ||
+        !activeRoundId ||
+        playbackRepairRoundRef.current ===
+          activeRoundId
+      ) {
+        return null;
+      }
+
+      const session =
+        await getCurrentSession();
+
+      if (!session?.access_token) {
+        return null;
+      }
+
+      playbackRepairRoundRef.current =
+        activeRoundId;
+
+      try {
+        const response = await fetch(
+          "/api/movie-buff/repair-playback",
+          {
+            method: "POST",
+            headers: {
+              "content-type":
+                "application/json",
+              authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              roomId: targetRoomId,
+            }),
+          }
+        );
+
+        const payload = (await response
+          .json()
+          .catch(() => null)) as
+          | MovieBuffPlaybackRepairPayload
+          | null;
+
+        if (!response.ok) {
+          throw new Error(
+            payload?.error ??
+              "Playback reconciliation failed."
+          );
+        }
+
+        const repairedPlaybackStartedAt =
+          payload?.playbackStartedAt ?? null;
+
+        if (
+          payload?.roundId === activeRoundId &&
+          repairedPlaybackStartedAt
+        ) {
+          setRoundData((currentRound) => {
+            if (
+              !currentRound ||
+              currentRound.roundId !==
+                payload.roundId ||
+              currentRound.playbackStartedAt ===
+                repairedPlaybackStartedAt
+            ) {
+              return currentRound;
+            }
+
+            return {
+              ...currentRound,
+              playbackStartedAt:
+                repairedPlaybackStartedAt,
+            };
+          });
+          setMediaStarted(true);
+          setMediaStarting(false);
+        }
+
+        return payload;
+      } catch (repairError) {
+        playbackRepairRoundRef.current =
+          null;
+        throw repairError;
+      }
+    },
+    [roundData?.roundId]
+  );
+
+  useEffect(() => {
+    repairPlaybackStateRef.current =
+      repairPlaybackState;
+  }, [repairPlaybackState]);
+
+  useEffect(() => {
     if (
       !roomId ||
       loading ||
@@ -621,6 +1000,42 @@ export default function MovieBuffPlayPage() {
   ]);
 
   useEffect(() => {
+    if (!roomId || loading) {
+      return;
+    }
+
+    let active = true;
+
+    void syncPhaseRoute({
+      fallbackRoundId:
+        roundData?.roundId ?? null,
+    }).catch(() => false);
+
+    const timer = window.setInterval(() => {
+      void syncPhaseRoute({
+        fallbackRoundId:
+          roundData?.roundId ?? null,
+      }).catch(() => {
+        if (!active) {
+          return false;
+        }
+
+        return false;
+      });
+    }, 1500);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [
+    loading,
+    roomId,
+    roundData?.roundId,
+    syncPhaseRoute,
+  ]);
+
+  useEffect(() => {
     if (
       timeLeft > 0 &&
       !answerResult
@@ -634,6 +1049,22 @@ export default function MovieBuffPlayPage() {
       media.pause();
     }
   }, [answerResult, timeLeft]);
+
+  useEffect(() => {
+    if (!roundData?.playbackStartedAt) {
+      return;
+    }
+
+    if (clipStartTimeoutRef.current) {
+      window.clearTimeout(
+        clipStartTimeoutRef.current
+      );
+      clipStartTimeoutRef.current = null;
+    }
+
+    setMediaStarted(true);
+    setMediaStarting(false);
+  }, [roundData?.playbackStartedAt]);
 
   useEffect(() => {
     if (
@@ -691,18 +1122,84 @@ export default function MovieBuffPlayPage() {
       ? 2500
       : 1200;
 
+    console.info(
+      "[movie-buff-play] scheduling results redirect",
+      {
+        roomId,
+        roundId:
+          roundData?.roundId ?? null,
+        answerWasSubmitted,
+        timerExpired,
+        delay,
+        phasePath:
+          typeof window !==
+          "undefined"
+            ? window.location.pathname
+            : null,
+      }
+    );
+
     const redirectTimer =
       window.setTimeout(() => {
         redirectStarted.current = true;
 
-        navigateTo(
-          `/games/movie-buff/round-results?roomId=${encodeURIComponent(
-            roomId
-          )}&roundId=${encodeURIComponent(
-            roundData?.roundId ?? ""
-          )}`,
-          true
+        console.info(
+          "[movie-buff-play] redirect timer fired",
+          {
+            roomId,
+            roundId:
+              roundData?.roundId ?? null,
+            answerWasSubmitted,
+            timerExpired,
+            phasePath:
+              window.location.pathname,
+          }
         );
+
+        void syncPhaseRoute({
+          advance: true,
+          fallbackRoundId:
+            roundData?.roundId ?? null,
+        })
+          .then((navigated) => {
+            if (
+              navigated ||
+              !roomId ||
+              !roundData?.roundId
+            ) {
+              return;
+            }
+
+            phaseNavigationStartedRef.current =
+              true;
+            navigateTo(
+              `/games/movie-buff/round-results?roomId=${encodeURIComponent(
+                roomId
+              )}&roundId=${encodeURIComponent(
+                roundData.roundId
+              )}`,
+              true
+            );
+          })
+          .catch(() => {
+            if (
+              !roomId ||
+              !roundData?.roundId
+            ) {
+              return;
+            }
+
+            phaseNavigationStartedRef.current =
+              true;
+            navigateTo(
+              `/games/movie-buff/round-results?roomId=${encodeURIComponent(
+                roomId
+              )}&roundId=${encodeURIComponent(
+                roundData.roundId
+              )}`,
+              true
+            );
+          });
       }, delay);
 
     return () => {
@@ -717,6 +1214,7 @@ export default function MovieBuffPlayPage() {
     roundData,
     navigateTo,
     submitting,
+    syncPhaseRoute,
     timeLeft,
   ]);
 
@@ -1378,11 +1876,54 @@ export default function MovieBuffPlayPage() {
     speechRecognitionRef.current?.stop();
 
     try {
-      const result =
-        await submitMovieBuffAnswer(
-          roomId,
-          cleanedAnswer
-        );
+      let result: MovieBuffAnswerResult;
+
+      try {
+        result =
+          await submitMovieBuffAnswer(
+            roomId,
+            cleanedAnswer
+          );
+      } catch (submitError) {
+        const shouldRepairAndRetry =
+          submitError instanceof Error &&
+          /answer window is not open/i.test(
+            submitError.message
+          );
+
+        if (!shouldRepairAndRetry) {
+          throw submitError;
+        }
+
+        const repairPayload =
+          await repairPlaybackState(roomId);
+
+        const repairedPlaybackStartedAt =
+          repairPayload?.playbackStartedAt ??
+          null;
+
+        if (repairedPlaybackStartedAt) {
+          setRoundData((currentRound) => {
+            if (!currentRound) {
+              return currentRound;
+            }
+
+            return {
+              ...currentRound,
+              playbackStartedAt:
+                repairedPlaybackStartedAt,
+            };
+          });
+          setMediaStarted(true);
+          setMediaStarting(false);
+        }
+
+        result =
+          await submitMovieBuffAnswer(
+            roomId,
+            cleanedAnswer
+          );
+      }
 
       setAnswerResult(result);
       setTimeLeft(0);

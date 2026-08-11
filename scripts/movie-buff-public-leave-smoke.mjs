@@ -262,58 +262,80 @@ async function waitForEitherUrl(page, patterns) {
 async function waitForBoardPreviewReady(page) {
   await page.waitForFunction(
     () =>
-      document.body?.innerText?.includes(
+      window.location.pathname.includes(
+        "/games/movie-buff/play",
+      ) ||
+      (document.body?.innerText?.includes(
         "Prototype board",
       ) &&
-      (Array.from(
-        document.querySelectorAll("button"),
-      ).some((button) =>
-        (button.textContent ?? "")
-          .trim()
-          .includes("Select to lock this round"),
-      ) ||
-        document.body?.innerText?.includes(
-          "Board persistence is temporarily unavailable for this room.",
+        (Array.from(
+          document.querySelectorAll("button"),
+        ).some((button) =>
+          (button.textContent ?? "")
+            .trim()
+            .includes("Select to lock this round"),
         ) ||
-        document.body?.innerText?.includes(
-          "Continue to Clip Round",
-        )),
+          document.body?.innerText?.includes(
+            "Waiting for the current selector to choose a tile.",
+          ) ||
+          document.body?.innerText?.includes(
+            "Round intro is live. The board unlocks",
+          ) ||
+          document.body?.innerText?.includes(
+            "VIP lock is in progress. The board opens",
+          ) ||
+          document.body?.innerText?.includes(
+            "Checking the live Movie Buff phase for this room.",
+          ))),
     undefined,
-    { timeout: 30000 },
+    { timeout: 45000 },
   );
 }
 
 async function selectFirstBoardTile(page) {
   await waitForBoardPreviewReady(page);
+  const deadline = Date.now() + 45000;
 
-  const continueButton = page.getByRole("link", {
-    name: "Continue to Clip Round",
-  });
+  while (Date.now() < deadline) {
+    if (page.url().includes("/play")) {
+      return;
+    }
 
-  if ((await continueButton.count()) === 1) {
-    await continueButton.click();
-    await page.waitForURL(
-      "**/games/movie-buff/play?**",
-    );
-    return;
+    const tileButton = page
+      .locator("button")
+      .filter({
+        hasText: "Select to lock this round",
+      })
+      .first();
+
+    if ((await tileButton.count()) >= 1) {
+      await tileButton.click();
+      await waitForEitherUrl(page, [
+        "**/games/movie-buff/play?**",
+        "**/games/movie-buff/round-results?**",
+        "**/games/movie-buff/final-results?**",
+      ]);
+      return;
+    }
+
+    if (!page.url().includes("/board-preview")) {
+      await waitForEitherUrl(page, [
+        "**/games/movie-buff/board-preview?**",
+        "**/games/movie-buff/play?**",
+        "**/games/movie-buff/round-results?**",
+        "**/games/movie-buff/final-results?**",
+      ]);
+
+      if (!page.url().includes("/board-preview")) {
+        return;
+      }
+    }
+
+    await page.waitForTimeout(1000);
   }
 
-  const tileButton = page
-    .locator("button")
-    .filter({
-      hasText: "Select to lock this round",
-    })
-    .first();
-
-  const count = await tileButton.count();
-  assert(
-    count >= 1,
-    "No selectable board tile was available.",
-  );
-
-  await tileButton.click();
-  await page.waitForURL(
-    "**/games/movie-buff/play?**",
+  throw new Error(
+    "Timed out waiting for a selectable board tile or authoritative auto-advance.",
   );
 }
 

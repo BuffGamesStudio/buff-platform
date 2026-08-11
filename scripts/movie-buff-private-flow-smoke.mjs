@@ -1,4 +1,7 @@
 import { pathToFileURL } from "node:url";
+import fs from "node:fs";
+import path from "node:path";
+import { createClient } from "@supabase/supabase-js";
 import { provisionLocalSmokeSession } from "./movie-buff-smoke-auth.mjs";
 
 const PLAYWRIGHT_ENTRY =
@@ -23,6 +26,58 @@ const MAX_ROUNDS =
 const { chromium } = await import(
   pathToFileURL(PLAYWRIGHT_ENTRY).href
 );
+
+function loadLocalEnv() {
+  const envPath = path.join(process.cwd(), ".env.local");
+  const parsed = {};
+
+  if (!fs.existsSync(envPath)) {
+    return parsed;
+  }
+
+  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmed.indexOf("=");
+
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const value = trimmed.slice(separatorIndex + 1).trim();
+
+    if (key) {
+      parsed[key] = value;
+    }
+  }
+
+  return parsed;
+}
+
+const localEnv = loadLocalEnv();
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ??
+  localEnv.NEXT_PUBLIC_SUPABASE_URL;
+const serviceRoleKey =
+  process.env.SUPABASE_SECRET_KEY ??
+  process.env.SUPABASE_SERVICE_ROLE_KEY ??
+  localEnv.SUPABASE_SECRET_KEY ??
+  localEnv.SUPABASE_SERVICE_ROLE_KEY;
+
+const adminSupabase =
+  supabaseUrl && serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      })
+    : null;
 
 function assert(condition, message) {
   if (!condition) {
@@ -73,15 +128,19 @@ async function fillUnique(
     placeholder,
     { exact: true },
   );
-  const count = await locator.count();
+  const deadline = Date.now() + 5000;
+  let count = await locator.count();
+
+  while (count !== 1 && Date.now() < deadline) {
+    await page.waitForTimeout(250);
+    count = await locator.count();
+  }
+
   assert(
     count === 1,
     `Expected one input with placeholder "${placeholder}", found ${count}.`,
   );
-  await locator.click();
-  await locator.press("ControlOrMeta+A");
-  await locator.press("Backspace");
-  await locator.type(value);
+  await locator.fill(value);
 }
 
 async function maybeReadText(page, text) {
@@ -145,58 +204,80 @@ async function waitForEitherUrl(page, patterns) {
 async function waitForBoardPreviewReady(page) {
   await page.waitForFunction(
     () =>
-      document.body?.innerText?.includes(
+      window.location.pathname.includes(
+        "/games/movie-buff/play",
+      ) ||
+      (document.body?.innerText?.includes(
         "Prototype board",
       ) &&
-      (Array.from(
-        document.querySelectorAll("button"),
-      ).some((button) =>
-        (button.textContent ?? "")
-          .trim()
-          .includes("Select to lock this round"),
-      ) ||
-        document.body?.innerText?.includes(
-          "Board persistence is temporarily unavailable for this room.",
+        (Array.from(
+          document.querySelectorAll("button"),
+        ).some((button) =>
+          (button.textContent ?? "")
+            .trim()
+            .includes("Select to lock this round"),
         ) ||
-        document.body?.innerText?.includes(
-          "Continue to Clip Round",
-        )),
+          document.body?.innerText?.includes(
+            "Waiting for the current selector to choose a tile.",
+          ) ||
+          document.body?.innerText?.includes(
+            "Round intro is live. The board unlocks",
+          ) ||
+          document.body?.innerText?.includes(
+            "VIP lock is in progress. The board opens",
+          ) ||
+          document.body?.innerText?.includes(
+            "Checking the live Movie Buff phase for this room.",
+          ))),
     undefined,
-    { timeout: 30000 },
+    { timeout: 45000 },
   );
 }
 
 async function selectFirstBoardTile(page) {
   await waitForBoardPreviewReady(page);
+  const deadline = Date.now() + 45000;
 
-  const continueButton = page.getByRole("link", {
-    name: "Continue to Clip Round",
-  });
+  while (Date.now() < deadline) {
+    if (page.url().includes("/play")) {
+      return;
+    }
 
-  if ((await continueButton.count()) === 1) {
-    await continueButton.click();
-    await page.waitForURL(
-      "**/games/movie-buff/play?**",
-    );
-    return;
+    const tileButton = page
+      .locator("button")
+      .filter({
+        hasText: "Select to lock this round",
+      })
+      .first();
+
+    if ((await tileButton.count()) >= 1) {
+      await tileButton.click();
+      await waitForEitherUrl(page, [
+        "**/games/movie-buff/play?**",
+        "**/games/movie-buff/round-results?**",
+        "**/games/movie-buff/final-results?**",
+      ]);
+      return;
+    }
+
+    if (!page.url().includes("/board-preview")) {
+      await waitForEitherUrl(page, [
+        "**/games/movie-buff/board-preview?**",
+        "**/games/movie-buff/play?**",
+        "**/games/movie-buff/round-results?**",
+        "**/games/movie-buff/final-results?**",
+      ]);
+
+      if (!page.url().includes("/board-preview")) {
+        return;
+      }
+    }
+
+    await page.waitForTimeout(1000);
   }
 
-  const tileButton = page
-    .locator("button")
-    .filter({
-      hasText: "Select to lock this round",
-    })
-    .first();
-
-  const count = await tileButton.count();
-  assert(
-    count >= 1,
-    "No selectable board tile was available.",
-  );
-
-  await tileButton.click();
-  await page.waitForURL(
-    "**/games/movie-buff/play?**",
+  throw new Error(
+    "Timed out waiting for a selectable board tile or authoritative auto-advance.",
   );
 }
 
@@ -340,23 +421,166 @@ async function waitForAnswerFormReady(page) {
 }
 
 async function waitForResultsReady(page) {
-  const nextRoundButton = page.getByRole("button", {
-    name: "Next Round",
-  });
-  const finalResultsButton = page.getByRole("button", {
-    name: "View Final Results",
-  });
-  const leaveMatchButton = page.getByRole("button", {
-    name: "Leave Match",
-  });
+  await page.waitForFunction(
+    () =>
+      document.body?.innerText?.includes(
+        "Leave Match",
+      ) &&
+      document.body?.innerText?.includes(
+        "Movie Buff",
+      ),
+    undefined,
+    { timeout: 30000 },
+  );
+}
 
-  await Promise.all([
-    leaveMatchButton.first().waitFor({ timeout: 30000 }),
-    Promise.race([
-      nextRoundButton.first().waitFor({ timeout: 30000 }),
-      finalResultsButton.first().waitFor({ timeout: 30000 }),
-    ]),
-  ]);
+async function waitForAuthoritativeAnswerPhase(
+  page,
+  roomId
+) {
+  assert(
+    adminSupabase,
+    "Movie Buff private smoke requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY.",
+  );
+
+  const deadline = Date.now() + 45000;
+
+  while (Date.now() < deadline) {
+    const { data, error } =
+      await adminSupabase.rpc(
+        "get_movie_buff_match_phase_view",
+        {
+          p_room_id: roomId,
+        },
+      );
+
+    if (error) {
+      throw new Error(
+        `Authoritative phase check failed: ${error.message}`,
+      );
+    }
+
+    const phase = data?.phase ?? null;
+    const phaseRoute =
+      data?.phaseRoute ?? null;
+
+    if (phase === "answer") {
+      return;
+    }
+
+    if (
+      phase === "abandoned" ||
+      phase === "blocked" ||
+      phaseRoute ===
+        "/games/movie-buff/round-results" ||
+      phaseRoute ===
+        "/games/movie-buff/final-results"
+    ) {
+      throw new Error(
+        `Authoritative phase reached ${phase ?? "unknown"} before answer entry.\nphase_route=${phaseRoute ?? "unknown"}\npage_url=${page.url()}`,
+      );
+    }
+
+    await page.waitForTimeout(1000);
+  }
+
+  throw new Error(
+    `Timed out waiting for authoritative answer phase.\npage_url=${page.url()}`,
+  );
+}
+
+async function startPlaybackAndWait(page, roomId) {
+  const playButton = page.getByRole("button", {
+    name: "Play Movie Clip",
+  });
+  const playButtonCount =
+    await playButton.count();
+
+  if (playButtonCount === 0) {
+    await waitForAuthoritativeAnswerPhase(
+      page,
+      roomId
+    );
+    return;
+  }
+
+  assert(
+    playButtonCount === 1,
+    `Expected one Play Movie Clip button, found ${playButtonCount}.`,
+  );
+
+  await playButton.click();
+
+  try {
+    await page.waitForFunction(
+      () => {
+        const bodyText =
+          document.body?.innerText ?? "";
+        const playStillVisible = Array.from(
+          document.querySelectorAll("button"),
+        ).some((button) =>
+          (button.textContent ?? "")
+            .trim()
+            .includes("Play Movie Clip"),
+        );
+
+        return (
+          bodyText.includes(
+            "The media could not be played or synced",
+          ) ||
+          bodyText.includes(
+            "Time is up. Loading round results...",
+          ) ||
+          (!playStillVisible &&
+            !bodyText.includes(
+              "The clock starts when playback begins.",
+            ))
+        );
+      },
+      undefined,
+      { timeout: 15000 },
+    );
+  } catch (error) {
+    const bodyText = await page.evaluate(
+      () => document.body?.innerText ?? "",
+    );
+
+    throw new Error(
+      [
+        error instanceof Error
+          ? error.message
+          : String(error),
+        `playback_page_url=${page.url()}`,
+        `playback_page_excerpt=${bodyText
+          .replace(/\s+/g, " ")
+          .slice(0, 1200)}`,
+      ].join("\n"),
+    );
+  }
+
+  const bodyText = await page.evaluate(
+    () => document.body?.innerText ?? "",
+  );
+
+  if (
+    bodyText.includes(
+      "The media could not be played or synced",
+    ) ||
+    bodyText.includes(
+      "Time is up. Loading round results...",
+    )
+  ) {
+    throw new Error(
+      `Playback did not open an answer window.\nplayback_page_url=${page.url()}\nplayback_page_excerpt=${bodyText
+        .replace(/\s+/g, " ")
+        .slice(0, 1200)}`,
+    );
+  }
+
+  await waitForAuthoritativeAnswerPhase(
+    page,
+    roomId
+  );
 }
 
 async function waitForFinalResultsReady(page) {
@@ -415,16 +639,19 @@ async function resolveIntoPlay(page) {
   }
 }
 
-async function playOneRound(page, guessText) {
+async function playOneRound(
+  page,
+  roomId,
+  guessText
+) {
   await waitForAnswerFormReady(page);
+  await fillUnique(
+    page,
+    "Enter the movie title",
+    guessText,
+  );
 
-  const playButton = page.getByRole("button", {
-    name: "Play Movie Clip",
-  });
-
-  if ((await playButton.count()) === 1) {
-    await playButton.click();
-  }
+  await startPlaybackAndWait(page, roomId);
 
   await fillUnique(
     page,
@@ -455,6 +682,11 @@ const result = {
 };
 
 try {
+  assert(
+    adminSupabase,
+    "Movie Buff private smoke requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY.",
+  );
+
   await enterLobbyWithLocalTestAccount(page);
 
   result.checkpoints.lobby = {
@@ -463,8 +695,19 @@ try {
 
   await enterPrivateRoom(page);
 
+  const roomId =
+    new URL(page.url()).searchParams.get(
+      "roomId",
+    ) ?? "";
+
+  assert(
+    roomId,
+    "Expected a roomId in private waiting-room URL.",
+  );
+
   result.checkpoints.waitingRoom = {
     page: page.url(),
+    roomId,
     buttons: await readButtonTexts(page),
   };
 
@@ -489,6 +732,7 @@ try {
 
     await playOneRound(
       page,
+      roomId,
       `Private Smoke Guess ${roundNumber}`,
     );
 
@@ -516,30 +760,15 @@ try {
     }
 
     await waitForResultsReady(page);
+    await waitForEitherUrl(page, [
+      "**/games/movie-buff/round-intro?**",
+      "**/games/movie-buff/board-preview?**",
+      "**/games/movie-buff/play?**",
+      "**/games/movie-buff/final-results?**",
+      "**/games/movie-buff/round-results?**",
+    ]);
 
-    const nextRoundButton = page.getByRole(
-      "button",
-      { name: "Next Round" },
-    );
-    const finalResultsButton =
-      page.getByRole("button", {
-        name: "View Final Results",
-      });
-
-    if ((await nextRoundButton.count()) === 1) {
-      await nextRoundButton.click();
-      await resolveIntoPlay(page);
-      roundResult.nextRound = {
-        page: page.url(),
-      };
-      continue;
-    }
-
-    if ((await finalResultsButton.count()) === 1) {
-      await finalResultsButton.click();
-      await page.waitForURL(
-        "**/games/movie-buff/final-results?**",
-      );
+    if (page.url().includes("/final-results")) {
       await waitForFinalResultsReady(page);
       result.checkpoints.finalResults = {
         page: page.url(),
@@ -548,9 +777,10 @@ try {
       break;
     }
 
-    throw new Error(
-      "Could not find a next-step button on round results.",
-    );
+    await resolveIntoPlay(page);
+    roundResult.nextRound = {
+      page: page.url(),
+    };
   }
 
   assert(

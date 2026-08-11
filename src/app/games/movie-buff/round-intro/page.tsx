@@ -1,7 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -12,7 +19,10 @@ import {
   Trophy,
 } from "lucide-react";
 
-import { leaveCurrentRoom } from "@/lib/db/movieBuff";
+import {
+  leaveCurrentRoom,
+  touchMovieBuffRoomPresence,
+} from "@/lib/db/movieBuff";
 import {
   findCurrentRoomId,
   getCurrentUserId,
@@ -23,6 +33,7 @@ import { supabase } from "@/lib/supabase";
 
 export default function RoundIntroPage() {
   const router = useRouter();
+  const isMountedRef = useRef(false);
   const [roomId, setRoomId] = useState("");
   const [round, setRound] = useState(1);
   const [totalRounds, setTotalRounds] = useState(10);
@@ -31,17 +42,11 @@ export default function RoundIntroPage() {
   const [leaving, setLeaving] = useState(false);
   const [error, setError] = useState("");
 
-  function navigateTo(
+  const navigateTo = useCallback((
     destination: string,
     replace = false
-  ) {
-    if (typeof window !== "undefined") {
-      if (replace) {
-        window.location.replace(destination);
-        return;
-      }
-
-      window.location.assign(destination);
+  ) => {
+    if (!isMountedRef.current) {
       return;
     }
 
@@ -51,9 +56,29 @@ export default function RoundIntroPage() {
     }
 
     router.push(destination);
-  }
+  }, [router]);
+
+  const playRoundHref = useMemo(() => {
+    if (!roomId) {
+      return "/games/movie-buff/lobby";
+    }
+
+    return `/games/movie-buff/board-preview?roomId=${encodeURIComponent(
+      roomId
+    )}&round=${encodeURIComponent(String(round))}`;
+  }, [roomId, round]);
 
   useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
     async function loadIntro() {
       try {
         const params = new URLSearchParams(window.location.search);
@@ -61,20 +86,41 @@ export default function RoundIntroPage() {
 
         const playerId = await getCurrentUserId();
 
+        if (!active || !isMountedRef.current) {
+          return;
+        }
+
         if (!resolvedRoomId) {
           resolvedRoomId =
             (await findCurrentRoomId(playerId)) ?? "";
         }
 
-        if (!resolvedRoomId) {
-          window.location.href = "/games/movie-buff/lobby";
+        if (!active || !isMountedRef.current) {
           return;
         }
+
+        if (!resolvedRoomId) {
+          navigateTo(
+            "/games/movie-buff/lobby",
+            true
+          );
+          return;
+        }
+
+        try {
+          await touchMovieBuffRoomPresence(
+            resolvedRoomId
+          );
+        } catch {}
 
         const game = await loadGameState(
           resolvedRoomId,
           playerId
         );
+
+        if (!active || !isMountedRef.current) {
+          return;
+        }
 
         setError("");
         setRoomId(resolvedRoomId);
@@ -113,6 +159,10 @@ export default function RoundIntroPage() {
             // Pre-warming generated clip media is best-effort only.
           });
       } catch (loadError) {
+        if (!active || !isMountedRef.current) {
+          return;
+        }
+
         if (
           loadError instanceof Error &&
           loadError.message ===
@@ -121,8 +171,10 @@ export default function RoundIntroPage() {
           const nextTarget = encodeURIComponent(
             `/games/movie-buff/round-intro${window.location.search}`,
           );
-          window.location.replace(
+          navigateTo(
             `/sign-in?next=${nextTarget}`
+            ,
+            true
           );
           return;
         }
@@ -134,16 +186,38 @@ export default function RoundIntroPage() {
             : "Unable to prepare the round."
         );
       } finally {
-        setLoading(false);
+        if (active && isMountedRef.current) {
+          setLoading(false);
+        }
       }
     }
 
     void loadIntro();
 
     return () => {
+      active = false;
       void supabase.removeAllChannels();
     };
-  }, []);
+  }, [navigateTo]);
+
+  useEffect(() => {
+    if (!roomId) {
+      return;
+    }
+
+    const presenceTimer = window.setInterval(
+      () => {
+        void touchMovieBuffRoomPresence(
+          roomId
+        ).catch(() => {});
+      },
+      2000
+    );
+
+    return () => {
+      window.clearInterval(presenceTimer);
+    };
+  }, [roomId]);
 
   function handleGoBack() {
     if (leaving) {
@@ -185,19 +259,6 @@ export default function RoundIntroPage() {
     } finally {
       setLeaving(false);
     }
-  }
-
-  function navigateToPlayRound() {
-    if (!roomId) {
-      navigateTo("/games/movie-buff/lobby");
-      return;
-    }
-
-    const destination = `/games/movie-buff/board-preview?roomId=${encodeURIComponent(
-      roomId
-    )}&round=${encodeURIComponent(String(round))}`;
-
-    navigateTo(destination);
   }
 
   if (loading) {
@@ -308,14 +369,13 @@ export default function RoundIntroPage() {
         </div>
 
         <div className="mt-10 flex justify-center">
-          <button
-            type="button"
-            onClick={navigateToPlayRound}
+          <Link
+            href={playRoundHref}
             className="flex w-full max-w-sm items-center justify-center gap-3 rounded-xl bg-red-600 px-8 py-5 text-xl font-black transition hover:bg-red-700"
           >
             Start Round
             <ArrowRight size={24} />
-          </button>
+          </Link>
         </div>
       </section>
     </main>

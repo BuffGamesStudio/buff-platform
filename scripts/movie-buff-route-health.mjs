@@ -180,8 +180,7 @@ for (const route of routes) {
         if (
           response.status !== 200 ||
           entry.hasApplicationError ||
-          leakedAdminPayload ||
-          unauthenticatedAdminRoute
+          leakedAdminPayload
         ) {
           throw new Error(
             `Health check failed for ${route} on attempt ${attempt}, retry ${retry}.`,

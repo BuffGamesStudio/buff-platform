@@ -30,6 +30,21 @@ export type MovieBuffBoardCategoryPreview = {
   tiles: MovieBuffBoardTilePreview[];
 };
 
+export type MovieBuffBoardPreview = {
+  headline: string;
+  supportLine: string;
+  currentTurnLabel: string;
+  boardStatusLabel: string;
+  players: Array<{
+    id: string;
+    name: string;
+    score: number;
+    tier: string;
+    isCurrentSelector: boolean;
+  }>;
+  categories: MovieBuffBoardCategoryPreview[];
+};
+
 export type MovieBuffBoardTilePreview = {
   id: string;
   band: MovieBuffBoardTileBand;

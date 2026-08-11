@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRouter } from "next/navigation";
 import {
@@ -8,7 +8,6 @@ import {
   useState,
 } from "react";
 import {
-  ArrowRight,
   Bot,
   CheckCircle2,
   Clock3,
@@ -20,54 +19,71 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { leaveCurrentRoom } from "@/lib/db/movieBuff";
+import { touchMovieBuffRoomPresence } from "@/lib/db/movieBuff";
 import {
   getCurrentUserId,
   subscribeToGameState,
   unsubscribeFromGameState,
 } from "@/lib/game/gameState";
-import { leaveCurrentRoom } from "@/lib/db/movieBuff";
-
 import {
-  advanceMovieBuffRound,
-  getCurrentMovieBuffRound,
+  buildMovieBuffPhaseRouteHref,
+  getMovieBuffMatchPhaseView,
+} from "@/lib/game/movieBuffPhaseService";
+import {
   getMovieBuffRoundResults,
   type MovieBuffRoundResults,
 } from "@/lib/game/roundService";
 import { getMovieBuffPlayerTier } from "@/lib/game/movieBuffPlayerTier";
 
+function getCountdownSeconds(
+  deadline: string | null | undefined,
+) {
+  if (!deadline) {
+    return null;
+  }
+
+  const milliseconds =
+    new Date(deadline).getTime() - Date.now();
+
+  if (!Number.isFinite(milliseconds)) {
+    return null;
+  }
+
+  return Math.max(
+    0,
+    Math.ceil(milliseconds / 1000),
+  );
+}
+
 export default function RoundResultsPage() {
   const router = useRouter();
   const originalRoundNumber =
     useRef<number | null>(null);
+  const isMountedRef =
+    useRef(false);
 
   const [roomId, setRoomId] =
     useState("");
-  const [roundId, setRoundId] =
-    useState("");
-
   const [results, setResults] =
     useState<MovieBuffRoundResults | null>(
-      null
+      null,
     );
-
   const [loading, setLoading] =
     useState(true);
-  const [advancing, setAdvancing] =
-    useState(false);
   const [leaving, setLeaving] =
     useState(false);
   const [error, setError] =
     useState("");
+  const [nextPhaseCountdown, setNextPhaseCountdown] =
+    useState<number | null>(null);
+  const [, setNowTick] = useState(() =>
+    Date.now(),
+  );
 
   const navigateTo = useCallback(
     (destination: string, replace = false) => {
-      if (typeof window !== "undefined") {
-        if (replace) {
-          window.location.replace(destination);
-          return;
-        }
-
-        window.location.assign(destination);
+      if (!isMountedRef.current) {
         return;
       }
 
@@ -78,20 +94,109 @@ export default function RoundResultsPage() {
 
       router.push(destination);
     },
-    [router]
+    [router],
+  );
+
+  const syncPhase = useCallback(
+    async (
+      resolvedRoomId: string,
+      fallbackRoundId: string,
+    ) => {
+      if (!isMountedRef.current) {
+        return {
+          redirected: false,
+          nextPhaseCountdown: null,
+        };
+      }
+
+      const phaseView =
+        await getMovieBuffMatchPhaseView(
+          resolvedRoomId,
+        );
+
+      if (!isMountedRef.current) {
+        return {
+          redirected: false,
+          nextPhaseCountdown: null,
+        };
+      }
+
+      const destination =
+        buildMovieBuffPhaseRouteHref(
+          phaseView,
+          resolvedRoomId,
+        );
+
+      if (
+        destination &&
+        !destination.includes(
+          "/games/movie-buff/round-results?",
+        )
+      ) {
+        navigateTo(destination, true);
+        return {
+          redirected: true,
+          nextPhaseCountdown: null,
+        };
+      }
+
+      const phaseRoundId =
+        phaseView.roundId ??
+        fallbackRoundId;
+
+      if (
+        destination &&
+        destination.includes(
+          "/games/movie-buff/round-results?",
+        ) &&
+        !destination.includes(
+          encodeURIComponent(phaseRoundId),
+        )
+      ) {
+        navigateTo(
+          `/games/movie-buff/round-results?roomId=${encodeURIComponent(
+            resolvedRoomId,
+          )}&roundId=${encodeURIComponent(
+            phaseRoundId,
+          )}`,
+          true,
+        );
+        return {
+          redirected: true,
+          nextPhaseCountdown: null,
+        };
+      }
+
+      return {
+        redirected: false,
+        nextPhaseCountdown:
+          getCountdownSeconds(
+            phaseView.resultsEndAt,
+          ),
+      };
+    },
+    [navigateTo],
   );
 
   const loadResults = useCallback(
     async (
       resolvedRoomId: string,
-      resolvedRoundId: string
+      resolvedRoundId: string,
     ) => {
+      if (!isMountedRef.current) {
+        return;
+      }
+
       try {
         const nextResults =
           await getMovieBuffRoundResults(
             resolvedRoomId,
-            resolvedRoundId
+            resolvedRoundId,
           );
+
+        if (!isMountedRef.current) {
+          return;
+        }
 
         if (
           originalRoundNumber.current ===
@@ -107,55 +212,65 @@ export default function RoundResultsPage() {
         ) {
           navigateTo(
             `/games/movie-buff/final-results?roomId=${encodeURIComponent(
-              resolvedRoomId
+              resolvedRoomId,
             )}`,
-            true
+            true,
           );
-
           return;
         }
 
-        try {
-          const currentRound =
-            await getCurrentMovieBuffRound(
-              resolvedRoomId
-            );
+        const phaseSync =
+          await syncPhase(
+            resolvedRoomId,
+            nextResults.roundId,
+          ).catch(() => null);
 
-          if (
-            currentRound.roundId !==
-            resolvedRoundId
-          ) {
-            navigateTo(
-              `/games/movie-buff/board-preview?roomId=${encodeURIComponent(
-                resolvedRoomId
-              )}`,
-              true
-            );
-
-            return;
-          }
-        } catch {
-          // Keep showing the current round results if the live round check fails.
+        if (
+          !isMountedRef.current ||
+          phaseSync?.redirected
+        ) {
+          return;
         }
 
+        setNextPhaseCountdown(
+          phaseSync?.nextPhaseCountdown ??
+            null,
+        );
         setResults(nextResults);
         setError("");
       } catch (loadError) {
+        if (!isMountedRef.current) {
+          return;
+        }
+
         setError(
           loadError instanceof Error
             ? loadError.message
-            : "Unable to load round results."
+            : "Unable to load round results.",
         );
       } finally {
-        setLoading(false);
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
       }
     },
-    [navigateTo]
+    [navigateTo, syncPhase],
   );
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
     let refreshInterval:
+      | number
+      | undefined;
+    let countdownInterval:
       | number
       | undefined;
     let channel:
@@ -170,14 +285,16 @@ export default function RoundResultsPage() {
 
         const parameters =
           new URLSearchParams(
-            window.location.search
+            window.location.search,
           );
-
         const resolvedRoomId =
           parameters.get("roomId") ?? "";
-
         const resolvedRoundId =
           parameters.get("roundId") ?? "";
+
+        if (!active || !isMountedRef.current) {
+          return;
+        }
 
         if (
           !resolvedRoomId ||
@@ -185,20 +302,27 @@ export default function RoundResultsPage() {
         ) {
           navigateTo(
             "/games/movie-buff/lobby",
-            true
+            true,
           );
           return;
         }
 
         setRoomId(resolvedRoomId);
-        setRoundId(resolvedRoundId);
+        try {
+          await touchMovieBuffRoomPresence(
+            resolvedRoomId,
+          );
+        } catch {}
 
         await loadResults(
           resolvedRoomId,
-          resolvedRoundId
+          resolvedRoundId,
         );
 
-        if (!active) {
+        if (
+          !active ||
+          !isMountedRef.current
+        ) {
           return;
         }
 
@@ -206,55 +330,32 @@ export default function RoundResultsPage() {
           window.setInterval(() => {
             void loadResults(
               resolvedRoomId,
-              resolvedRoundId
+              resolvedRoundId,
             );
           }, 2000);
+
+        countdownInterval =
+          window.setInterval(() => {
+            if (active) {
+              setNowTick(Date.now());
+            }
+          }, 1000);
 
         channel =
           subscribeToGameState(
             resolvedRoomId,
-            async () => {
-              try {
-                const refreshed =
-                  await getMovieBuffRoundResults(
-                    resolvedRoomId,
-                    resolvedRoundId
-                  );
-
-                if (
-                  refreshed.roomStatus ===
-                  "finished"
-                ) {
-                  navigateTo(
-                    `/games/movie-buff/final-results?roomId=${encodeURIComponent(
-                      resolvedRoomId
-                    )}`,
-                    true
-                  );
-
-                  return;
-                }
-
-                if (
-                  originalRoundNumber.current !==
-                    null &&
-                  refreshed.roundNumber ===
-                    originalRoundNumber.current
-                ) {
-                  setResults(refreshed);
-                }
-              } catch {
-                navigateTo(
-                  `/games/movie-buff/board-preview?roomId=${encodeURIComponent(
-                    resolvedRoomId
-                  )}`,
-                  true
-                );
-              }
-            }
+            () => {
+              void loadResults(
+                resolvedRoomId,
+                resolvedRoundId,
+              );
+            },
           );
-
       } catch (initializeError) {
+        if (!active || !isMountedRef.current) {
+          return;
+        }
+
         if (
           initializeError instanceof Error &&
           initializeError.message ===
@@ -262,9 +363,9 @@ export default function RoundResultsPage() {
         ) {
           navigateTo(
             `/sign-in?next=${encodeURIComponent(
-              `/games/movie-buff/round-results${window.location.search}`
+              `/games/movie-buff/round-results${window.location.search}`,
             )}`,
-            true
+            true,
           );
           return;
         }
@@ -272,9 +373,8 @@ export default function RoundResultsPage() {
         setError(
           initializeError instanceof Error
             ? initializeError.message
-            : "Unable to initialize results."
+            : "Unable to initialize results.",
         );
-
         setLoading(false);
       }
     }
@@ -286,90 +386,44 @@ export default function RoundResultsPage() {
 
       if (refreshInterval) {
         window.clearInterval(
-          refreshInterval
+          refreshInterval,
+        );
+      }
+
+      if (countdownInterval) {
+        window.clearInterval(
+          countdownInterval,
         );
       }
 
       if (channel) {
         void unsubscribeFromGameState(
-          channel
+          channel,
         );
       }
     };
   }, [loadResults, navigateTo]);
 
-  async function handleNextRound() {
-    if (
-      !roomId ||
-      !roundId ||
-      advancing
-    ) {
+  useEffect(() => {
+    if (!roomId) {
       return;
     }
 
-    setAdvancing(true);
-    setError("");
+    const presenceTimer = window.setInterval(
+      () => {
+        void touchMovieBuffRoomPresence(
+          roomId,
+        ).catch(() => {});
+      },
+      2000,
+    );
 
-    try {
-      const resolveResponse = await fetch(
-        "/api/movie-buff/board/resolve",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            roomId,
-          }),
-        }
+    return () => {
+      window.clearInterval(
+        presenceTimer,
       );
-
-      if (!resolveResponse.ok) {
-        const payload =
-          (await resolveResponse.json().catch(
-            () => null
-          )) as {
-            error?: string;
-          } | null;
-
-        throw new Error(
-          payload?.error ??
-            "Unable to resolve the selected board tile."
-        );
-      }
-
-      const result =
-        await advanceMovieBuffRound(
-          roomId
-        );
-
-      if (
-        result.status === "finished"
-      ) {
-        navigateTo(
-          `/games/movie-buff/final-results?roomId=${encodeURIComponent(
-            roomId
-          )}`
-        );
-
-        return;
-      }
-
-      navigateTo(
-        `/games/movie-buff/board-preview?roomId=${encodeURIComponent(
-          roomId
-        )}`
-      );
-    } catch (advanceError) {
-      setError(
-        advanceError instanceof Error
-          ? advanceError.message
-          : "Unable to advance the round."
-      );
-    } finally {
-      setAdvancing(false);
-    }
-  }
+    };
+  }, [roomId]);
 
   async function handleLeaveMatch() {
     if (leaving) {
@@ -378,9 +432,9 @@ export default function RoundResultsPage() {
 
     const resolvedRoomId =
       roomId ||
-      new URLSearchParams(window.location.search).get(
-        "roomId"
-      ) ||
+      new URLSearchParams(
+        window.location.search,
+      ).get("roomId") ||
       "";
 
     if (!resolvedRoomId) {
@@ -392,13 +446,15 @@ export default function RoundResultsPage() {
     setError("");
 
     try {
-      await leaveCurrentRoom(resolvedRoomId);
+      await leaveCurrentRoom(
+        resolvedRoomId,
+      );
       navigateTo("/games/movie-buff/lobby");
     } catch (leaveError) {
       setError(
         leaveError instanceof Error
           ? leaveError.message
-          : "Unable to leave the match."
+          : "Unable to leave the match.",
       );
     } finally {
       setLeaving(false);
@@ -487,11 +543,11 @@ export default function RoundResultsPage() {
       </header>
 
       <section className="mx-auto max-w-7xl px-6 py-10">
-        {error && (
+        {error ? (
           <div className="mb-6 rounded-2xl border border-red-700 bg-red-950/40 p-4 font-bold text-red-300">
             {error}
           </div>
-        )}
+        ) : null}
 
         <div
           className={`mb-8 rounded-3xl border p-8 ${
@@ -543,11 +599,11 @@ export default function RoundResultsPage() {
                   </strong>
                 </p>
 
-                {results.hintBonus > 0 && (
+                {results.hintBonus > 0 ? (
                   <p className="mt-4 text-sm font-black uppercase tracking-[0.2em] text-cyan-300">
                     Solved from the hint before playback: +{results.hintBonus}
                   </p>
-                )}
+                ) : null}
               </div>
             </div>
 
@@ -629,7 +685,7 @@ export default function RoundResultsPage() {
 
                         <p className="text-xs font-black uppercase tracking-[0.2em] text-zinc-500">
                           {getMovieBuffPlayerTier(
-                            player.score
+                            player.score,
                           )}
                         </p>
 
@@ -650,7 +706,7 @@ export default function RoundResultsPage() {
                       {player.score.toLocaleString()}
                     </p>
                   </div>
-                )
+                ),
               )}
             </div>
           </div>
@@ -720,45 +776,22 @@ export default function RoundResultsPage() {
               </div>
             </div>
 
-            {results.isHost ? (
-              results.roundComplete ? (
-                <button
-                  type="button"
-                  onClick={
-                    handleNextRound
-                  }
-                  disabled={advancing}
-                  className="flex w-full items-center justify-center gap-3 rounded-xl bg-red-600 px-8 py-5 text-xl font-black transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {advancing
-                    ? "Loading..."
-                    : results.roundNumber >=
-                        results.totalRounds
-                      ? "View Final Results"
-                      : "Next Round"}
+            {results.roundComplete ? (
+              <div className="w-full rounded-xl border border-yellow-700 bg-yellow-500/10 px-8 py-5 text-center">
+                <p className="text-sm font-black uppercase tracking-[0.2em] text-yellow-300">
+                  Next Phase
+                </p>
 
-                  <ArrowRight
-                    size={24}
-                  />
-                </button>
-              ) : (
-                <div className="w-full rounded-xl border border-yellow-700 bg-yellow-500/10 px-8 py-5 text-center">
-                  <p className="text-sm font-black uppercase tracking-[0.2em] text-yellow-300">
-                    Round Still Live
-                  </p>
+                <p className="mt-2 text-2xl font-black text-white">
+                  {nextPhaseCountdown === null
+                    ? "Opening automatically"
+                    : `Opening in ${nextPhaseCountdown}s`}
+                </p>
 
-                  <p className="mt-2 text-2xl font-black text-white">
-                    {progressLabel}
-                  </p>
-
-                  <p className="mt-2 text-sm font-bold text-zinc-400">
-                    The next round unlocks when everyone answers or times out.
-                  </p>
-                </div>
-              )
-            ) : results.roundComplete ? (
-              <div className="w-full rounded-xl border border-zinc-700 px-8 py-5 text-center text-xl font-black text-zinc-500">
-                Waiting for host...
+                <p className="mt-2 text-sm font-bold text-zinc-400">
+                  The rehearsal phase engine advances to the next route
+                  automatically.
+                </p>
               </div>
             ) : (
               <div className="w-full rounded-xl border border-yellow-700 bg-yellow-500/10 px-8 py-5 text-center">
@@ -771,7 +804,7 @@ export default function RoundResultsPage() {
                 </p>
 
                 <p className="mt-2 text-sm font-bold text-zinc-400">
-                  Waiting for the rest of the room to finish this movie.
+                  The next phase unlocks when everyone answers or times out.
                 </p>
               </div>
             )}

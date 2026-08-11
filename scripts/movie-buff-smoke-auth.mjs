@@ -133,13 +133,24 @@ export async function provisionLocalSmokeAccount(label) {
     });
   };
 
-  let { error } = await createViaSignup();
+  const shouldPreferAdminProvisioning =
+    Boolean(adminSupabase) &&
+    isHostedSupabaseUrl(supabaseUrl);
+
+  let error = null;
+
+  if (shouldPreferAdminProvisioning) {
+    ({ error } = await createViaAdmin());
+  } else {
+    ({ error } = await createViaSignup());
+  }
 
   if (error && adminSupabase) {
     const normalizedMessage = error.message.toLowerCase();
     const shouldFallbackToAdmin =
       normalizedMessage.includes("rate limit") ||
-      normalizedMessage.includes("invalid");
+      normalizedMessage.includes("invalid") ||
+      normalizedMessage.includes("email not confirmed");
 
     if (shouldFallbackToAdmin) {
       const adminResult = await createViaAdmin();

@@ -3,9 +3,9 @@ import "server-only";
 import {
   movieBuffBoardBandPresentation,
   movieBuffBoardTileBands,
-  type MovieBuffBoardCategoryPreview,
   type MovieBuffBoardDraft,
   type MovieBuffBoardDraftCategory,
+  type MovieBuffBoardPreview,
   type MovieBuffBoardTileBand,
   type MovieBuffBoardTilePreview,
 } from "@/lib/game/movieBuffBoard";
@@ -76,6 +76,7 @@ type RoomPlayerRow = {
   player_id: string;
   is_host: boolean;
   joined_at: string;
+  score: number;
   profiles: {
     display_name: string | null;
     username: string | null;
@@ -84,6 +85,7 @@ type RoomPlayerRow = {
 
 type PersistedBoardTileRow = {
   id: string;
+  board_category_id: string;
   tile_order: number;
   band: MovieBuffBoardTileBand;
   point_value: number;
@@ -110,21 +112,6 @@ type PersistedBoardRow = {
   tiles_used_count: number;
   total_tiles_count: number;
   movie_buff_board_categories: PersistedBoardCategoryRow[] | null;
-};
-
-export type MovieBuffBoardPreview = {
-  headline: string;
-  supportLine: string;
-  currentTurnLabel: string;
-  boardStatusLabel: string;
-  players: Array<{
-    id: string;
-    name: string;
-    score: number;
-    tier: string;
-    isCurrentSelector: boolean;
-  }>;
-  categories: MovieBuffBoardCategoryPreview[];
 };
 
 function toPreviewId(prefix: string, index: number) {
@@ -580,6 +567,38 @@ async function listLegacyFallbackMediaByBand(): Promise<
 function buildLegacyGlobalFallbackDraft(
   mediaByBand: Record<MovieBuffBoardTileBand, EligibleBoardMedia[]>,
 ): MovieBuffBoardDraft {
+  const usedMediaKeys = new Set<string>();
+
+  const pickMediaForBand = (
+    band: MovieBuffBoardTileBand,
+  ) => {
+    const candidates = mediaByBand[band] ?? [];
+    const unseenCandidate =
+      candidates.find((candidate) => {
+        const key =
+          candidate.contentMediaId ??
+          candidate.clipId ??
+          candidate.contentId ??
+          candidate.mediaUrl;
+
+        return !usedMediaKeys.has(key);
+      }) ?? null;
+    const selectedMedia =
+      unseenCandidate ?? candidates[0] ?? null;
+
+    if (selectedMedia) {
+      const key =
+        selectedMedia.contentMediaId ??
+        selectedMedia.clipId ??
+        selectedMedia.contentId ??
+        selectedMedia.mediaUrl;
+
+      usedMediaKeys.add(key);
+    }
+
+    return selectedMedia;
+  };
+
   const category: MovieBuffBoardDraftCategory = {
     id: toPreviewId("category", 0),
     categoryId: "legacy-global-mix",
@@ -588,7 +607,8 @@ function buildLegacyGlobalFallbackDraft(
     eraBucket: null,
     primaryGenre: null,
     tiles: movieBuffBoardTileBands.map((band, tileIndex) => {
-      const selectedMedia = mediaByBand[band][0] ?? null;
+      const selectedMedia =
+        pickMediaForBand(band);
 
       return {
         id: toPreviewId("tile-1", tileIndex),
@@ -614,6 +634,85 @@ function buildLegacyGlobalFallbackDraft(
   };
 }
 
+function buildLegacyLobbyFallbackDraft(
+  categories: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    eraBucket: string | null;
+    primaryGenre: string | null;
+  }>,
+  mediaByBand: Record<MovieBuffBoardTileBand, EligibleBoardMedia[]>,
+): MovieBuffBoardDraft {
+  const usedMediaKeys = new Set<string>();
+
+  const pickMediaForBand = (
+    band: MovieBuffBoardTileBand,
+  ) => {
+    const candidates = mediaByBand[band] ?? [];
+    const unseenCandidate =
+      candidates.find((candidate) => {
+        const key =
+          candidate.contentMediaId ??
+          candidate.clipId ??
+          candidate.contentId ??
+          candidate.mediaUrl;
+
+        return !usedMediaKeys.has(key);
+      }) ?? null;
+    const selectedMedia =
+      unseenCandidate ?? candidates[0] ?? null;
+
+    if (selectedMedia) {
+      const key =
+        selectedMedia.contentMediaId ??
+        selectedMedia.clipId ??
+        selectedMedia.contentId ??
+        selectedMedia.mediaUrl;
+
+      usedMediaKeys.add(key);
+    }
+
+    return selectedMedia;
+  };
+
+  const draftCategories: MovieBuffBoardDraftCategory[] = categories.map(
+    (category, categoryIndex) => ({
+      id: toPreviewId("category", categoryIndex),
+      categoryId: category.id,
+      label: category.name,
+      slug: category.slug,
+      eraBucket: category.eraBucket,
+      primaryGenre: category.primaryGenre,
+      tiles: movieBuffBoardTileBands.map((band, tileIndex) => {
+        const selectedMedia =
+          pickMediaForBand(band);
+
+        return {
+          id: toPreviewId(`tile-${categoryIndex + 1}`, tileIndex),
+          band,
+          tierLabel: getTierLabel(band),
+          label: movieBuffBoardBandPresentation[band].label,
+          pointValue: movieBuffBoardBandPresentation[band].points,
+          status: "available",
+          clipId: selectedMedia?.clipId ?? undefined,
+          contentMediaId:
+            selectedMedia?.contentMediaId ?? undefined,
+          contentTitle: selectedMedia?.contentTitle ?? null,
+        };
+      }),
+    }),
+  );
+
+  return {
+    headline: "So You Think You're a Movie Buff?",
+    supportLine: "Watch. Guess. Win.",
+    categoryCount: draftCategories.length,
+    tileCount: draftCategories.length * movieBuffBoardTileBands.length,
+    categories: draftCategories,
+  };
+}
+
 async function listRoomPlayers(
   roomId: string,
 ): Promise<RoomPlayerRow[]> {
@@ -624,6 +723,7 @@ async function listRoomPlayers(
         player_id,
         is_host,
         joined_at,
+        score,
         profiles:player_id (
           display_name,
           username
@@ -713,7 +813,7 @@ function toBoardPreviewFromPersisted(
 async function getPersistedBoard(
   roomId: string,
 ): Promise<PersistedBoardRow | null> {
-  const { data, error } = await supabaseAdmin
+  const { data: boardData, error: boardError } = await supabaseAdmin
     .from("movie_buff_boards")
     .select(
       `
@@ -723,37 +823,119 @@ async function getPersistedBoard(
         selector_player_id,
         current_tile_id,
         tiles_used_count,
-        total_tiles_count,
-        movie_buff_board_categories (
-          id,
-          display_order,
-          label,
-          era_bucket,
-          primary_genre,
-        movie_buff_board_tiles (
-            id,
-            tile_order,
-            band,
-            point_value,
-            is_used,
-            clip_id,
-            content_media_id
-          )
-        )
+        total_tiles_count
       `,
     )
     .eq("room_id", roomId)
     .maybeSingle();
 
-  if (error) {
-    if (isUnavailableBoardTableError(error.message)) {
+  if (boardError) {
+    if (isUnavailableBoardTableError(boardError.message)) {
       return null;
     }
 
-    throw new Error(error.message);
+    throw new Error(boardError.message);
   }
 
-  return (data ?? null) as PersistedBoardRow | null;
+  const board = (boardData ?? null) as PersistedBoardRow | null;
+
+  if (!board) {
+    return null;
+  }
+
+  const [
+    { data: categoriesData, error: categoriesError },
+    { data: tilesData, error: tilesError },
+  ] = await Promise.all([
+    supabaseAdmin
+      .from("movie_buff_board_categories")
+      .select(
+        `
+          id,
+          display_order,
+          label,
+          era_bucket,
+          primary_genre
+        `,
+      )
+      .eq("board_id", board.id)
+      .order("display_order", { ascending: true }),
+    supabaseAdmin
+      .from("movie_buff_board_tiles")
+      .select(
+        `
+          id,
+          board_category_id,
+          tile_order,
+          band,
+          point_value,
+          is_used,
+          clip_id,
+          content_media_id
+        `,
+      )
+      .eq("board_id", board.id)
+      .order("tile_order", { ascending: true }),
+  ]);
+
+  if (categoriesError) {
+    throw new Error(categoriesError.message);
+  }
+
+  if (tilesError) {
+    throw new Error(tilesError.message);
+  }
+
+  const tilesByCategoryId = new Map<string, PersistedBoardTileRow[]>();
+
+  for (const tile of (tilesData ?? []) as unknown as PersistedBoardTileRow[]) {
+    const existingTiles =
+      tilesByCategoryId.get(tile.board_category_id) ?? [];
+    existingTiles.push(tile);
+    tilesByCategoryId.set(tile.board_category_id, existingTiles);
+  }
+
+  return {
+    ...board,
+    movie_buff_board_categories: ((categoriesData ?? []) as unknown as PersistedBoardCategoryRow[]).map(
+      (category) => ({
+        ...category,
+        movie_buff_board_tiles:
+          tilesByCategoryId.get(category.id) ?? [],
+      }),
+    ),
+  };
+}
+
+async function loadPersistedBoardPreview(
+  roomId: string,
+  roomPlayers: RoomPlayerRow[],
+): Promise<{
+  boardId: string;
+  preview: MovieBuffBoardPreview;
+} | null> {
+  const board = await getPersistedBoard(roomId);
+
+  if (!board) {
+    return null;
+  }
+
+  const preview = toBoardPreviewFromPersisted(
+    board,
+    roomPlayers,
+  );
+  const hasAnyTiles = preview.categories.some(
+    (category) => category.tiles.length > 0,
+  );
+
+  if (!hasAnyTiles) {
+    return null;
+  }
+
+  return {
+    boardId: board.id,
+    preview,
+  };
 }
 
 export async function createMovieBuffBoardDraft(): Promise<MovieBuffBoardDraft> {
@@ -768,30 +950,53 @@ export async function createMovieBuffBoardDraft(): Promise<MovieBuffBoardDraft> 
       : await listLegacyEligibleBoardCategories().catch(() => []);
 
   const legacyGlobalMediaByBand =
-    boardCategories.length === 0
-      ? await listLegacyFallbackMediaByBand().catch(() => emptyMediaByBand())
-      : emptyMediaByBand();
+    await listLegacyFallbackMediaByBand().catch(() => emptyMediaByBand());
   const hasLegacyGlobalCoverage =
     movieBuffBoardTileBands.every(
       (band) => (legacyGlobalMediaByBand[band] ?? []).length > 0,
     );
 
-  if (boardCategories.length === 0 && hasLegacyGlobalCoverage) {
-    return buildLegacyGlobalFallbackDraft(legacyGlobalMediaByBand);
+  const lobbyFallbackCategories =
+    lobbyCategories
+      .filter((category) => category.id !== null)
+      .slice(0, 6)
+      .map((category) => ({
+        id: category.id ?? "",
+        name: category.name,
+        slug: category.slug,
+        eraBucket: null,
+        primaryGenre: null,
+      }));
+  const legacyFallbackCategories =
+    lobbyFallbackCategories.length > 0
+      ? lobbyFallbackCategories
+      : Array.from({ length: 6 }, (_, index) => ({
+          id: `legacy-movie-mix-${index + 1}`,
+          name: `Movie Mix ${index + 1}`,
+          slug: `movie-mix-${index + 1}`,
+          eraBucket: null,
+          primaryGenre: null,
+        }));
+  const boardTileCapacity =
+    boardCategories.length *
+    movieBuffBoardTileBands.length;
+  const needsLegacyFallbackBoard =
+    boardCategories.length === 0 ||
+    boardTileCapacity < 10;
+
+  if (
+    needsLegacyFallbackBoard &&
+    hasLegacyGlobalCoverage
+  ) {
+    return buildLegacyLobbyFallbackDraft(
+      legacyFallbackCategories,
+      legacyGlobalMediaByBand,
+    );
   }
 
   if (boardCategories.length === 0) {
     return buildFallbackDraftFromLobby(
-      lobbyCategories
-        .filter((category) => category.id !== null)
-        .slice(0, 6)
-        .map((category) => ({
-          id: category.id ?? "",
-          name: category.name,
-          slug: category.slug,
-          eraBucket: null,
-          primaryGenre: null,
-        })),
+      lobbyFallbackCategories,
     );
   }
 
@@ -807,9 +1012,12 @@ export async function createMovieBuffBoardDraft(): Promise<MovieBuffBoardDraft> 
         const fallbackMedia = boardCategories
           .flatMap((candidateCategory) => candidateCategory.mediaByBand[band])
           .find(Boolean) ?? null;
+        const legacyFallbackMedia =
+          legacyGlobalMediaByBand[band].find(Boolean) ?? null;
         const selectedMedia =
           category.mediaByBand[band][0] ??
           fallbackMedia ??
+          legacyFallbackMedia ??
           null;
 
         return {
@@ -842,115 +1050,132 @@ export async function ensureMovieBuffBoardForRoom(
   boardId: string;
   preview: MovieBuffBoardPreview;
 }> {
-  const [existingBoard, roomPlayers] = await Promise.all([
-    getPersistedBoard(roomId),
-    listRoomPlayers(roomId),
-  ]);
+  const roomPlayers = await listRoomPlayers(roomId);
+  const existingBoardPreview =
+    await loadPersistedBoardPreview(
+      roomId,
+      roomPlayers,
+    );
 
-  if (existingBoard) {
-    return {
-      boardId: existingBoard.id,
-      preview: toBoardPreviewFromPersisted(existingBoard, roomPlayers),
-    };
+  if (existingBoardPreview) {
+    return existingBoardPreview;
   }
 
   const draft = await createMovieBuffBoardDraft();
   const selectorPlayerId = roomPlayers[0]?.player_id ?? null;
+  try {
+    const { data: insertedBoard, error: boardError } = await supabaseAdmin
+      .from("movie_buff_boards")
+      .insert({
+        room_id: roomId,
+        status: "ready",
+        selector_player_id: selectorPlayerId,
+        tiles_used_count: 0,
+        total_tiles_count: draft.tileCount,
+      })
+      .select("id")
+      .single();
 
-  const { data: insertedBoard, error: boardError } = await supabaseAdmin
-    .from("movie_buff_boards")
-    .insert({
-      room_id: roomId,
-      status: "ready",
-      selector_player_id: selectorPlayerId,
-      tiles_used_count: 0,
-      total_tiles_count: draft.tileCount,
-    })
-    .select("id")
-    .single();
+    if (boardError || !insertedBoard) {
+      throw new Error(boardError?.message ?? "Failed to create board");
+    }
 
-  if (boardError || !insertedBoard) {
-    throw new Error(boardError?.message ?? "Failed to create board");
-  }
+    const boardId = insertedBoard.id as string;
 
-  const boardId = insertedBoard.id as string;
+    const { data: insertedCategories, error: categoriesError } =
+      await supabaseAdmin
+        .from("movie_buff_board_categories")
+        .insert(
+          draft.categories.map((category, index) => ({
+            board_id: boardId,
+            display_order: index,
+            label: category.label,
+            era_bucket: category.eraBucket,
+            primary_genre: category.primaryGenre,
+          })),
+        )
+        .select("id, display_order");
 
-  const { data: insertedCategories, error: categoriesError } =
-    await supabaseAdmin
-      .from("movie_buff_board_categories")
-      .insert(
-        draft.categories.map((category, index) => ({
-          board_id: boardId,
-          display_order: index,
-          label: category.label,
-          era_bucket: category.eraBucket,
-          primary_genre: category.primaryGenre,
-        })),
-      )
-      .select("id, display_order");
+    if (categoriesError || !insertedCategories) {
+      throw new Error(
+        categoriesError?.message ?? "Failed to create board categories",
+      );
+    }
 
-  if (categoriesError || !insertedCategories) {
-    throw new Error(
-      categoriesError?.message ?? "Failed to create board categories",
+    const categoryIdByOrder = new Map<number, string>(
+      insertedCategories.map((category) => [
+        category.display_order as number,
+        category.id as string,
+      ]),
     );
+
+    const tilesToInsert = draft.categories.flatMap(
+      (category, categoryIndex) =>
+        category.tiles.map((tile, tileIndex) => {
+          const boardCategoryId =
+            categoryIdByOrder.get(categoryIndex);
+
+          if (!boardCategoryId) {
+            throw new Error("Board category mapping failed");
+          }
+
+          return {
+            board_id: boardId,
+            board_category_id: boardCategoryId,
+            tile_order: tileIndex,
+            band: tile.band,
+            point_value: tile.pointValue,
+            clip_id: tile.clipId ?? null,
+            content_media_id: tile.contentMediaId ?? null,
+          };
+        }),
+    );
+
+    const { error: tilesError } = await supabaseAdmin
+      .from("movie_buff_board_tiles")
+      .insert(tilesToInsert);
+
+    if (tilesError) {
+      throw new Error(tilesError.message);
+    }
+
+    await supabaseAdmin.from("movie_buff_board_events").insert({
+      board_id: boardId,
+      room_id: roomId,
+      player_id: selectorPlayerId,
+      event_type: "board_created",
+      payload: {
+        categoryCount: draft.categoryCount,
+        tileCount: draft.tileCount,
+      },
+    });
+
+    const persistedBoardPreview =
+      await loadPersistedBoardPreview(
+        roomId,
+        roomPlayers,
+      );
+
+    if (!persistedBoardPreview) {
+      throw new Error(
+        "Board created but could not be reloaded",
+      );
+    }
+
+    return persistedBoardPreview;
+  } catch (error) {
+    const recoveredBoardPreview =
+      await loadPersistedBoardPreview(
+        roomId,
+        roomPlayers,
+      ).catch(() => null);
+
+    if (recoveredBoardPreview) {
+      return recoveredBoardPreview;
+    }
+
+    throw error;
   }
-
-  const categoryIdByOrder = new Map<number, string>(
-    insertedCategories.map((category) => [
-      category.display_order as number,
-      category.id as string,
-    ]),
-  );
-
-  const tilesToInsert = draft.categories.flatMap((category, categoryIndex) =>
-    category.tiles.map((tile, tileIndex) => {
-      const boardCategoryId = categoryIdByOrder.get(categoryIndex);
-
-      if (!boardCategoryId) {
-        throw new Error("Board category mapping failed");
-      }
-
-        return {
-          board_id: boardId,
-          board_category_id: boardCategoryId,
-          tile_order: tileIndex,
-          band: tile.band,
-          point_value: tile.pointValue,
-          clip_id: tile.clipId ?? null,
-          content_media_id: tile.contentMediaId ?? null,
-        };
-    }),
-  );
-
-  const { error: tilesError } = await supabaseAdmin
-    .from("movie_buff_board_tiles")
-    .insert(tilesToInsert);
-
-  if (tilesError) {
-    throw new Error(tilesError.message);
-  }
-
-  await supabaseAdmin.from("movie_buff_board_events").insert({
-    board_id: boardId,
-    room_id: roomId,
-    player_id: selectorPlayerId,
-    event_type: "board_created",
-    payload: {
-      categoryCount: draft.categoryCount,
-      tileCount: draft.tileCount,
-    },
-  });
-
-  const persistedBoard = await getPersistedBoard(roomId);
-
-  if (!persistedBoard) {
-    throw new Error("Board created but could not be reloaded");
-  }
-
-  return {
-    boardId,
-    preview: toBoardPreviewFromPersisted(persistedBoard, roomPlayers),
-  };
 }
 
 export async function selectMovieBuffBoardTile(input: {
