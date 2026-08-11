@@ -56,9 +56,54 @@ function runStep(step, command, commandArgs, extraEnv = {}) {
   };
 }
 
+function buildSyntheticStep(
+  step,
+  ok,
+  stdout,
+  stderr = "",
+) {
+  return {
+    step,
+    command: "(synthetic)",
+    ok,
+    stdout,
+    stderr,
+    exitCode: ok ? 0 : 1,
+  };
+}
+
+function isLocalBaseUrl(url) {
+  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/i.test(
+    url
+  );
+}
+
+function canUseLocalDockerVerifier() {
+  const result = spawnSync(
+    "docker",
+    ["ps", "--format", "{{.Names}}"],
+    { encoding: "utf8" }
+  );
+
+  if (result.status !== 0) {
+    return false;
+  }
+
+  return result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .some((line) => line.startsWith("supabase_db_"));
+}
+
 const args = parseArgs(process.argv.slice(2));
 const repoRoot = process.cwd();
 const env = {};
+const resolvedBaseUrl =
+  args.baseUrl ??
+  process.env.MOVIE_BUFF_BASE_URL ??
+  "http://127.0.0.1:3001";
+const dockerVerifierAvailable =
+  canUseLocalDockerVerifier();
 
 if (args.baseUrl) {
   env.MOVIE_BUFF_BASE_URL = args.baseUrl;
@@ -222,26 +267,42 @@ if (args.fullSuite) {
       env
     ),
     runStep(
-      "analytics_verifier",
+      "pool_health",
       "node",
       [
         path.join(
           repoRoot,
           "scripts",
-          "verify-movie-buff-analytics.mjs"
+          "movie-buff-pool-health.mjs"
         ),
       ],
       env
-    )
+    ),
+    isLocalBaseUrl(resolvedBaseUrl) ||
+    dockerVerifierAvailable
+      ? runStep(
+          "analytics_verifier",
+          "node",
+          [
+            path.join(
+              repoRoot,
+              "scripts",
+              "verify-movie-buff-analytics.mjs"
+            ),
+          ],
+          env
+        )
+      : buildSyntheticStep(
+          "analytics_verifier",
+          true,
+          "Skipped: verify-movie-buff-analytics.mjs requires a local Docker-backed Supabase runtime. Hosted verification is covered here by route health, auth, public/private/leave/admin/timer smokes, and pool health."
+        )
   );
 }
 
 const result = {
   ok: steps.every((step) => step.ok),
-  baseUrl:
-    args.baseUrl ??
-    process.env.MOVIE_BUFF_BASE_URL ??
-    "http://127.0.0.1:3001",
+  baseUrl: resolvedBaseUrl,
   envFile: args.envFile ?? null,
   steps,
 };

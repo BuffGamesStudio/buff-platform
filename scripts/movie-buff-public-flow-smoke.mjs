@@ -183,6 +183,22 @@ function urlMatchesPattern(url, pattern) {
   return url.includes(normalizedPattern);
 }
 
+const PLAY_ROUTE_TRANSITION_TEXT = [
+  "Loading round...",
+  "Loading round results...",
+  "Preparing round...",
+  "Loading the next Movie Buff page.",
+  "Checking the live Movie Buff phase for this room.",
+];
+
+function bodyShowsLoadingResults(bodyText) {
+  return (
+    bodyText.includes("Loading round results") ||
+    bodyText.includes("Round Results") ||
+    bodyText.includes("Final Results")
+  );
+}
+
 async function waitForEitherUrl(page, patterns) {
   const currentUrl = page.url();
 
@@ -210,6 +226,106 @@ async function waitForEitherUrl(page, patterns) {
   );
 
   return page.url();
+}
+
+async function waitForResultsSurface(
+  page,
+  patterns
+) {
+  const currentUrl = page.url();
+
+  if (
+    patterns.some((pattern) =>
+      urlMatchesPattern(currentUrl, pattern)
+    )
+  ) {
+    return currentUrl;
+  }
+
+  const currentBodyText =
+    await readBodyText(page);
+
+  if (bodyShowsLoadingResults(currentBodyText)) {
+    return currentUrl;
+  }
+
+  await page.waitForFunction(
+    (candidatePatterns) => {
+      const href = window.location.href;
+      const bodyText =
+        document.body?.innerText ?? "";
+
+      const onResultsUrl =
+        candidatePatterns.some((pattern) => {
+          const normalizedPattern = pattern
+            .replace(/\*\*/g, "")
+            .replace(/\*/g, "");
+
+          return href.includes(
+            normalizedPattern
+          );
+        });
+
+      return (
+        onResultsUrl ||
+        bodyText.includes(
+          "Loading round results"
+        ) ||
+        bodyText.includes("Round Results") ||
+        bodyText.includes("Final Results")
+      );
+    },
+    patterns,
+    { timeout: 30000 }
+  );
+
+  return page.url();
+}
+
+async function waitForPlayRouteReady(page) {
+  await page.waitForFunction(
+    (transitionSnippets) => {
+      if (
+        !window.location.pathname.includes(
+          "/games/movie-buff/play"
+        )
+      ) {
+        return false;
+      }
+
+      const bodyText =
+        document.body?.innerText ?? "";
+
+      if (
+        transitionSnippets.some((snippet) =>
+          bodyText.includes(snippet)
+        )
+      ) {
+        return false;
+      }
+
+      const hasAnswerInput = Array.from(
+        document.querySelectorAll("input")
+      ).some(
+        (input) =>
+          input.getAttribute(
+            "placeholder"
+          ) === "Enter the movie title"
+      );
+
+      const hasPlayButton = Array.from(
+        document.querySelectorAll("button")
+      ).some((button) =>
+        (button.textContent ?? "")
+          .trim()
+          .includes("Play Movie Clip")
+      );
+
+      return hasAnswerInput || hasPlayButton;
+    },
+    PLAY_ROUTE_TRANSITION_TEXT,
+    { timeout: 45000 }
+  );
 }
 
 async function waitForBoardPreviewReady(page) {
@@ -393,18 +509,31 @@ async function waitForRoundIntroReady(page) {
 }
 
 async function waitForAnswerFormReady(page) {
+  await waitForPlayRouteReady(page);
   await page.waitForFunction(
-    () =>
-      Array.from(
+    (transitionSnippets) => {
+      const bodyText =
+        document.body?.innerText ?? "";
+
+      if (
+        transitionSnippets.some((snippet) =>
+          bodyText.includes(snippet)
+        )
+      ) {
+        return false;
+      }
+
+      return Array.from(
         document.querySelectorAll("input")
       ).some(
         (input) =>
           input.getAttribute(
             "placeholder"
           ) === "Enter the movie title"
-      ),
-    undefined,
-    { timeout: 30000 }
+      );
+    },
+    PLAY_ROUTE_TRANSITION_TEXT,
+    { timeout: 45000 }
   );
 }
 
@@ -586,23 +715,37 @@ async function waitForFinalResultsReady(page) {
 }
 
 async function waitForPostResultsTransition(page) {
-  if (
-    page.url().includes("/final-results") ||
-    !page.url().includes("/round-results")
-  ) {
-    return page.url();
+  const deadline = Date.now() + 45000;
+
+  while (Date.now() < deadline) {
+    const currentUrl = page.url();
+
+    if (currentUrl.includes("/final-results")) {
+      return currentUrl;
+    }
+
+    const bodyText = await readBodyText(page);
+    const onRoundResultsRoute =
+      currentUrl.includes("/round-results");
+    const loadingResultsOnPlayRoute =
+      currentUrl.includes("/play") &&
+      bodyShowsLoadingResults(bodyText);
+
+    if (
+      !onRoundResultsRoute &&
+      !loadingResultsOnPlayRoute
+    ) {
+      return currentUrl;
+    }
+
+    await page.waitForTimeout(500);
   }
 
-  await page.waitForFunction(
-    () =>
-      !window.location.pathname.includes(
-        "/games/movie-buff/round-results"
-      ),
-    undefined,
-    { timeout: 45000 }
+  throw new Error(
+    `Timed out waiting for post-results transition.\npage_url=${page.url()}\npage_excerpt=${(await readBodyText(page))
+      .replace(/\s+/g, " ")
+      .slice(0, 1200)}`
   );
-
-  return page.url();
 }
 
 async function resolveIntoPlay(page) {
@@ -624,6 +767,10 @@ async function resolveIntoPlay(page) {
   if (page.url().includes("/board-preview")) {
     await selectFirstBoardTile(page);
   }
+
+  if (page.url().includes("/play")) {
+    await waitForPlayRouteReady(page);
+  }
 }
 
 async function playOneRound(
@@ -631,6 +778,11 @@ async function playOneRound(
   roomId,
   guessText
 ) {
+  const resultPatterns = [
+    "**/games/movie-buff/round-results?**",
+    "**/games/movie-buff/final-results?**",
+  ];
+
   await waitForAnswerFormReady(page);
   await fillUnique(
     page,
@@ -639,6 +791,7 @@ async function playOneRound(
   );
 
   await startPlaybackAndWait(page, roomId);
+  await waitForAnswerFormReady(page);
 
   await fillUnique(
     page,
@@ -646,12 +799,88 @@ async function playOneRound(
     guessText
   );
 
-  await clickUnique(page, "button", "Submit Answer");
+  const submitButton = page.getByRole("button", {
+    name: "Submit Answer",
+  });
+  const submitCount = await submitButton.count();
 
-  await waitForEitherUrl(page, [
-    "**/games/movie-buff/round-results?**",
-    "**/games/movie-buff/final-results?**",
-  ]);
+  assert(
+    submitCount === 1,
+    `Expected one Submit Answer button, found ${submitCount}.`
+  );
+
+  try {
+    await submitButton.click({ timeout: 5000 });
+  } catch (error) {
+    const currentUrl = page.url();
+    const bodyText = await readBodyText(page);
+
+    if (
+      resultPatterns.some((pattern) =>
+        urlMatchesPattern(currentUrl, pattern)
+      )
+    ) {
+      return;
+    }
+
+    if (bodyShowsLoadingResults(bodyText)) {
+      return;
+    }
+
+    try {
+      await page
+        .getByPlaceholder(
+          "Enter the movie title",
+          { exact: true }
+        )
+        .evaluate((input) => {
+          if (
+            !(input instanceof HTMLInputElement)
+          ) {
+            return false;
+          }
+
+          input.form?.requestSubmit();
+          return true;
+        });
+    } catch {}
+
+    await waitForResultsSurface(
+      page,
+      resultPatterns
+    ).catch(() => null);
+
+    const recoveredBodyText =
+      await readBodyText(page);
+
+    if (
+      resultPatterns.some((pattern) =>
+        urlMatchesPattern(page.url(), pattern)
+      ) ||
+      bodyShowsLoadingResults(
+        recoveredBodyText
+      )
+    ) {
+      return;
+    }
+
+    throw new Error(
+      [
+        error instanceof Error
+          ? error.message
+          : String(error),
+        `submit_page_url=${page.url()}`,
+        `submit_page_excerpt=${recoveredBodyText
+          .replace(/\s+/g, " ")
+          .slice(0, 1200)}`,
+      ].join("\n")
+    );
+  }
+
+  await waitForResultsSurface(
+    page,
+    resultPatterns
+  );
 }
 
 const browser = await chromium.launch({

@@ -243,6 +243,9 @@ export default function MovieBuffPlayPage() {
   const timeoutLoggedRoundRef = useRef<
     string | null
   >(null);
+  const activeRoundIdRef = useRef<
+    string | null
+  >(null);
 
   const [roomId, setRoomId] =
     useState("");
@@ -286,6 +289,11 @@ export default function MovieBuffPlayPage() {
     useState(false);
   const [leaving, setLeaving] =
     useState(false);
+
+  useEffect(() => {
+    activeRoundIdRef.current =
+      roundData?.roundId ?? null;
+  }, [roundData?.roundId]);
 
   const navigateTo = useCallback(
     (destination: string, replace = false) => {
@@ -1871,6 +1879,9 @@ export default function MovieBuffPlayPage() {
       return;
     }
 
+    const submittingRoundId =
+      roundData?.roundId ?? null;
+
     setSubmitting(true);
     setError("");
     speechRecognitionRef.current?.stop();
@@ -1923,6 +1934,22 @@ export default function MovieBuffPlayPage() {
             roomId,
             cleanedAnswer
           );
+      }
+
+      if (
+        submittingRoundId &&
+        activeRoundIdRef.current !==
+          submittingRoundId
+      ) {
+        console.info(
+          "[movie-buff-play] ignoring stale answer result",
+          {
+            submittingRoundId,
+            activeRoundId:
+              activeRoundIdRef.current,
+          }
+        );
+        return;
       }
 
       setAnswerResult(result);
