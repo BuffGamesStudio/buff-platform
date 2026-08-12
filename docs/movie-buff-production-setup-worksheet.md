@@ -11,7 +11,7 @@ Use it to collect the exact production values and decisions that remain useful
 for production provenance and any remaining external launch gates.
 
 For the latest hosted-state snapshot, see
-[movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md).
+[movie-buff-hosted-validation-status-2026-08-12.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-12.md).
 
 August 11, 2026 addendum:
 

@@ -20,7 +20,7 @@ Vendor-specific companion:
 
 Current hosted-state companion:
 
-- [movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md)
+- [movie-buff-hosted-validation-status-2026-08-12.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-12.md)
 
 ## Current proven baseline
 
@@ -44,7 +44,7 @@ August 11, 2026 addendum:
 - hosted runtime parity is now proven on the live production alias
   `https://movie-buff-sigma.vercel.app`
 - current hosted/runtime status is tracked in:
-  - [movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md)
+  - [movie-buff-hosted-validation-status-2026-08-12.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-12.md)
 - the top remaining gaps are no longer "can the hosted app run the game?"
 - the remaining gaps are now external gates such as broader Supabase
   production reconciliation, reviewer acceptance, and any human-controlled

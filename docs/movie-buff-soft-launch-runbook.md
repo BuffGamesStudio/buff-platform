@@ -35,7 +35,7 @@ Fresh evidence update for Friday, July 31, 2026:
 
 Current hosted-state companion:
 
-- [movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md)
+- [movie-buff-hosted-validation-status-2026-08-12.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-12.md)
 
 August 11, 2026 addendum:
 

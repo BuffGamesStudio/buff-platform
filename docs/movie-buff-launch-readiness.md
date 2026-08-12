@@ -12,7 +12,7 @@ August 11, 2026 addendum:
 
 - this July 30 launch-readiness audit is now historical
 - for the current hosted-runtime truth, use:
-  - [movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md)
+  - [movie-buff-hosted-validation-status-2026-08-12.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-12.md)
 - many of the blocker statements below were based on pre-hosted-parity local
   evidence and are no longer the latest state for the live production alias
 

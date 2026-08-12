@@ -14,7 +14,7 @@ August 11, 2026 addendum:
 
 - this July 31 audit is now historical
 - for the current hosted-runtime truth, use:
-  - [movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md)
+  - [movie-buff-hosted-validation-status-2026-08-12.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-12.md)
 - several July 31 hosted facts in this document, including deployment identity,
   movie/clip counts, and operator-account conclusions, are no longer the latest
   state

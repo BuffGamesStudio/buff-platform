@@ -11,7 +11,7 @@ This is the exact production-setup guide for launching Movie Buff on:
 
 It assumes the repo is already locally verified. For the latest live blocker
 snapshot, see
-[movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md).
+[movie-buff-hosted-validation-status-2026-08-12.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-12.md).
 
 August 11, 2026 addendum:
 

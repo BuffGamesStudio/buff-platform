@@ -6,7 +6,7 @@ August 11, 2026 addendum:
 
 - this July 30 clip-coverage audit is now historical
 - for the current hosted-runtime truth, use:
-  - [movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md)
+  - [movie-buff-hosted-validation-status-2026-08-12.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-12.md)
 - the statement below that hosted deployment parity is unproven reflects the
   earlier July state, not the current live production alias
 
