@@ -210,22 +210,6 @@ async function clickUnique(page, role, name) {
   );
 }
 
-async function fillUnique(page, placeholder, value) {
-  const locator = page.getByPlaceholder(
-    placeholder,
-    { exact: true },
-  );
-  const count = await locator.count();
-  assert(
-    count === 1,
-    `Expected one input with placeholder "${placeholder}", found ${count}.`,
-  );
-  await locator.click();
-  await locator.press("ControlOrMeta+A");
-  await locator.press("Backspace");
-  await locator.type(value);
-}
-
 function urlMatchesPattern(url, pattern) {
   return url.includes(
     pattern.replace(/\*\*/g, "").replace(/\*/g, ""),

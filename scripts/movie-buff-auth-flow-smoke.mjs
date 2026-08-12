@@ -27,26 +27,6 @@ function assert(condition, message) {
   }
 }
 
-async function fillUnique(
-  page,
-  placeholder,
-  value,
-) {
-  const locator = page.getByPlaceholder(
-    placeholder,
-    { exact: true },
-  );
-  const count = await locator.count();
-  assert(
-    count === 1,
-    `Expected one input with placeholder "${placeholder}", found ${count}.`,
-  );
-  await locator.click();
-  await locator.press("ControlOrMeta+A");
-  await locator.press("Backspace");
-  await locator.type(value);
-}
-
 async function expectUniqueText(page, text) {
   const locator = page.getByText(text, {
     exact: true,

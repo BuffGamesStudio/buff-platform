@@ -259,10 +259,7 @@ function resolvePublicAssetPath(publicUrl) {
   );
 }
 
-function hasBuiltAsset(
-  mediaUrl,
-  thumbnailUrl = null,
-) {
+function hasBuiltAsset(mediaUrl) {
   const resolvedPath =
     resolvePublicAssetPath(mediaUrl);
 
