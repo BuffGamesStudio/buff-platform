@@ -44,7 +44,7 @@ export default function RoundIntroPage() {
   const [totalRounds, setTotalRounds] = useState(1);
   const [view, setView] = useState<MovieBuffVipRoundView | null>(null);
   const [clockOffsetMs, setClockOffsetMs] = useState(0);
-  const [nowMs, setNowMs] = useState(Date.now());
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [lockingVipId, setLockingVipId] = useState<string | null | undefined>();
   const [error, setError] = useState("");
@@ -124,16 +124,16 @@ export default function RoundIntroPage() {
     };
   }, [refresh, roomId, roundId]);
 
+  const deadlineAt = view?.deadlineAt;
   const remainingSeconds = useMemo(() => {
-    if (!view?.deadlineAt) return 0;
+    if (!deadlineAt) return 0;
     return Math.max(
       0,
       Math.ceil(
-        (new Date(view.deadlineAt).getTime() - (nowMs + clockOffsetMs)) /
-          1000,
+        (new Date(deadlineAt).getTime() - (nowMs + clockOffsetMs)) / 1000,
       ),
     );
-  }, [clockOffsetMs, nowMs, view?.deadlineAt]);
+  }, [clockOffsetMs, deadlineAt, nowMs]);
 
   async function lock(vipId: string | null) {
     if (!roomId || !roundId || view?.lock || lockingVipId !== undefined) return;

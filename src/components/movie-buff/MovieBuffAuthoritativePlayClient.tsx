@@ -261,7 +261,7 @@ export default function MovieBuffAuthoritativePlayClient({
     );
   }, [nowMs, phase?.playbackStartsAt, serverOffsetMs]);
 
-  async function useHint() {
+  async function requestHint() {
     if (hintPending || phase?.phase !== "answer") return;
     setHintPending(true);
     setError("");
@@ -451,7 +451,7 @@ export default function MovieBuffAuthoritativePlayClient({
             <button
               type="button"
               disabled={!answerOpen || hintPending || round.hintUsed}
-              onClick={() => void useHint()}
+              onClick={() => void requestHint()}
               className="flex w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-4 text-center font-black text-amber-100 disabled:opacity-50"
             >
               <Lightbulb size={18} /> {round.hintUsed ? "Hint used" : hintPending ? "Loading hint..." : "Use hint (-5 sec)"}

@@ -65,12 +65,18 @@ export default function MovieBuffRoundIntroLayout({
 
   useEffect(() => {
     if (!roomId) return;
-    void synchronizeCanonicalPhase();
+    const initialSync = window.setTimeout(
+      () => void synchronizeCanonicalPhase(),
+      0,
+    );
     const interval = window.setInterval(
       () => void synchronizeCanonicalPhase(),
       750,
     );
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearTimeout(initialSync);
+      window.clearInterval(interval);
+    };
   }, [roomId, synchronizeCanonicalPhase]);
 
   return (

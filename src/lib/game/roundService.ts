@@ -101,17 +101,6 @@ function resolveRoundMediaUrl(row: {
   const storedMediaUrl = String(
     row.result_media_url ?? "",
   ).trim();
-  const isGeneratorBackedMediaUrl =
-    storedMediaUrl.startsWith(
-      "/api/movie-buff/generated/"
-    ) ||
-    storedMediaUrl.startsWith(
-      "/api/movie-buff/generated/pending"
-    ) ||
-    storedMediaUrl.startsWith(
-      "/api/movie-buff/round-media/"
-    );
-
   if (
     (clipType === "video" || clipType === "audio") &&
     roundId.length > 0

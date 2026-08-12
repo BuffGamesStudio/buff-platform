@@ -22,7 +22,7 @@ export default function MovieBuffAuthoritativeResultsClient({
   const [phase, setPhase] = useState<MovieBuffAuthoritativePhaseView | null>(null);
   const [results, setResults] = useState<MovieBuffRoundResults | null>(null);
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
-  const [nowMs, setNowMs] = useState(Date.now());
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -51,25 +51,26 @@ export default function MovieBuffAuthoritativeResultsClient({
   }, [roomId, router]);
 
   useEffect(() => {
-    void load();
+    const initialLoad = window.setTimeout(() => void load(), 0);
     const poll = window.setInterval(() => void load(), 750);
     const clock = window.setInterval(() => setNowMs(Date.now()), 250);
     return () => {
+      window.clearTimeout(initialLoad);
       window.clearInterval(poll);
       window.clearInterval(clock);
     };
   }, [load]);
 
+  const resultsEndAt = phase?.resultsEndAt;
   const remainingSeconds = useMemo(() => {
-    if (!phase?.resultsEndAt) return 0;
+    if (!resultsEndAt) return 0;
     return Math.max(
       0,
       Math.ceil(
-        (new Date(phase.resultsEndAt).getTime() - (nowMs + serverOffsetMs)) /
-          1000,
+        (new Date(resultsEndAt).getTime() - (nowMs + serverOffsetMs)) / 1000,
       ),
     );
-  }, [nowMs, phase?.resultsEndAt, serverOffsetMs]);
+  }, [nowMs, resultsEndAt, serverOffsetMs]);
 
   if (!phase || !results) {
     return (

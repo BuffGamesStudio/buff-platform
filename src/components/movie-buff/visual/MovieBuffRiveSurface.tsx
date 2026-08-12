@@ -50,19 +50,19 @@ export function MovieBuffRiveSurface({
 
   useEffect(() => {
     const normalizedSource = assetSource.trim();
-    setFailureReason(null);
+    const syncRuntime = window.setTimeout(() => {
+      setFailureReason(null);
 
-    if (!normalizedSource) {
-      setRuntimeStatus("failed");
-      setFailureReason("asset_load_error");
-      return;
-    }
+      if (!normalizedSource) {
+        setRuntimeStatus("failed");
+        setFailureReason("asset_load_error");
+        return;
+      }
 
-    if (reducedMotion === false) {
-      setRuntimeStatus("loading");
-    } else {
-      setRuntimeStatus("idle");
-    }
+      setRuntimeStatus(reducedMotion === false ? "loading" : "idle");
+    }, 0);
+
+    return () => window.clearTimeout(syncRuntime);
   }, [assetSource, reducedMotion]);
 
   const renderStaticFallback = (

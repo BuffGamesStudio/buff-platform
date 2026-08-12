@@ -85,13 +85,20 @@ export function MovieBuffAuthoritativeNavigation({
   useEffect(() => {
     if (urlRoomId) {
       window.sessionStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, urlRoomId);
-      setRememberedRoomId(urlRoomId);
-      return;
+      const syncRoomId = window.setTimeout(
+        () => setRememberedRoomId(urlRoomId),
+        0,
+      );
+      return () => window.clearTimeout(syncRoomId);
     }
 
-    setRememberedRoomId(
-      window.sessionStorage.getItem(ACTIVE_ROOM_STORAGE_KEY)?.trim() ?? "",
+    const storedRoomId =
+      window.sessionStorage.getItem(ACTIVE_ROOM_STORAGE_KEY)?.trim() ?? "";
+    const syncRoomId = window.setTimeout(
+      () => setRememberedRoomId(storedRoomId),
+      0,
     );
+    return () => window.clearTimeout(syncRoomId);
   }, [urlRoomId]);
 
   const synchronize = useCallback(async () => {
@@ -139,16 +146,21 @@ export function MovieBuffAuthoritativeNavigation({
 
   useEffect(() => {
     if (!shouldSynchronize) {
-      setView(null);
-      setSyncError("");
-      setLeaveQuote(null);
-      setLeaveError("");
-      return;
+      const reset = window.setTimeout(() => {
+        setView(null);
+        setSyncError("");
+        setLeaveQuote(null);
+        setLeaveError("");
+      }, 0);
+      return () => window.clearTimeout(reset);
     }
 
-    void synchronize();
+    const initialSync = window.setTimeout(() => void synchronize(), 0);
     const interval = window.setInterval(() => void synchronize(), 750);
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearTimeout(initialSync);
+      window.clearInterval(interval);
+    };
   }, [shouldSynchronize, synchronize]);
 
   function blockLegacyClick(event: MouseEvent<HTMLDivElement>) {
