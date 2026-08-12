@@ -14,24 +14,26 @@ and deployment-parity facts only.
 ## Exact repo and deployment identity
 
 - repo branch: `main`
-- current repo head: `e2c753ea9cdae1a758801d0ae2ef37c8ddd380b7`
-- commit message: `Reconcile Movie Buff docs with hosted runtime state`
-- latest production deployment: `dpl_9fQAjEP1tqszq1zN7SWd9xtcoARZ`
+- current repo head: `f80252e4cd25980749311ffcf38af77538b236ac`
+- commit message: `Refresh Movie Buff hosted status docs for Aug 12`
+- latest production deployment: `dpl_8akJowd7Jr9uU6i21MAp7xWQu9aV`
 - production alias:
   - `https://movie-buff-sigma.vercel.app`
 - current production alias state: `READY`
 - current production alias commit:
-  - `e2c753ea9cdae1a758801d0ae2ef37c8ddd380b7`
+  - `f80252e4cd25980749311ffcf38af77538b236ac`
 
 ## What changed since the August 11 runtime revalidation
 
 The live alias has moved from the August 11 validation commit
-`278691530b573c5e4174d4c9c8f477a650a12fd7` to two later `main` commits:
+`278691530b573c5e4174d4c9c8f477a650a12fd7` to three later `main` commits:
 
 - `5d895b71602f00515c52868fee6080a8cd2ebf51`
   - `Document current Movie Buff hosted validation state`
 - `e2c753ea9cdae1a758801d0ae2ef37c8ddd380b7`
   - `Reconcile Movie Buff docs with hosted runtime state`
+- `f80252e4cd25980749311ffcf38af77538b236ac`
+  - `Refresh Movie Buff hosted status docs for Aug 12`
 
 These later commits are documentation-only. No Movie Buff application runtime
 files changed after `278691530b573c5e4174d4c9c8f477a650a12fd7`.
@@ -118,7 +120,7 @@ For bounded smokes, the harness records:
   - deployment: `dpl_9zgCMs9NMZcnTy7Ls5csrR1hHhsc`
   - error: `ENOENT` during `mkdir` on `media`
 - that cluster points to an older non-live deployment, not the current live
-  alias deployment `dpl_9fQAjEP1tqszq1zN7SWd9xtcoARZ`
+  alias deployment `dpl_8akJowd7Jr9uU6i21MAp7xWQu9aV`
 
 ## Important scope limit
 
