@@ -214,6 +214,23 @@ export default function MovieBuffAuthoritativePlayClient({
   }, [phase?.phase, phase?.playbackStartsAt, playAtAuthoritativeOffset, round?.mediaUrl]);
 
   useEffect(() => {
+    if (!phase?.playbackStartsAt || !round?.mediaUrl) return;
+    if (!["transition", "playback", "answer"].includes(phase.phase)) return;
+
+    // Media can finish loading after the authoritative start timestamp. A
+    // single load/play callback can race an in-flight seek and leave a slow or
+    // reduced-motion client several seconds ahead of the shared server epoch.
+    // Reconcile the passive media clock while the server-owned phase is active;
+    // the phase itself remains the only authority and this never advances it.
+    const interval = window.setInterval(
+      () => void playAtAuthoritativeOffset(),
+      750,
+    );
+
+    return () => window.clearInterval(interval);
+  }, [phase?.phase, phase?.playbackStartsAt, playAtAuthoritativeOffset, round?.mediaUrl]);
+
+  useEffect(() => {
     return () => {
       if (playbackRetryRef.current !== null) {
         window.clearTimeout(playbackRetryRef.current);
