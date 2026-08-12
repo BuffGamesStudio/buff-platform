@@ -4,24 +4,28 @@ Date: Wednesday, August 12, 2026
 
 ## Purpose
 
-This note captures the current hosted-runtime and deployment evidence for the
-live Movie Buff production alias as of August 12.
+This note captures a dated hosted-runtime and deployment snapshot for the live
+Movie Buff production alias on August 12.
 
 It is intentionally narrower than the broader production security / Supabase
 reconciliation packet. Use this note for current hosted gameplay, auth, admin,
 and deployment-parity facts only.
 
-## Exact repo and deployment identity
+## Validation capture identity
 
-- repo branch: `main`
-- current repo head: `f80252e4cd25980749311ffcf38af77538b236ac`
-- commit message: `Refresh Movie Buff hosted status docs for Aug 12`
-- latest production deployment: `dpl_8akJowd7Jr9uU6i21MAp7xWQu9aV`
+- repo branch at capture: `main`
+- repo head at capture: `f80252e4cd25980749311ffcf38af77538b236ac`
+- repo commit message at capture: `Refresh Movie Buff hosted status docs for Aug 12`
+- production deployment at capture: `dpl_8akJowd7Jr9uU6i21MAp7xWQu9aV`
 - production alias:
   - `https://movie-buff-sigma.vercel.app`
-- current production alias state: `READY`
-- current production alias commit:
+- production alias state at capture: `READY`
+- production alias commit at capture:
   - `f80252e4cd25980749311ffcf38af77538b236ac`
+
+Later docs-only commits can move the alias to a newer deployment without
+changing Movie Buff runtime code. When the exact latest deployment ID matters,
+re-check the Vercel project directly.
 
 ## What changed since the August 11 runtime revalidation
 
