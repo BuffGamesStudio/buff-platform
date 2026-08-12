@@ -18,9 +18,9 @@ Vendor-specific companion:
 
 - [movie-buff-vercel-supabase-production-setup.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-vercel-supabase-production-setup.md)
 
-Current live-state companion:
+Current hosted-state companion:
 
-- [movie-buff-live-status-2026-08-09.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-live-status-2026-08-09.md)
+- [movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md)
 
 ## Current proven baseline
 
