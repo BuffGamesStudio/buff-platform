@@ -12,6 +12,19 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isLockContendedError(error: unknown) {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("code" in error)
+  ) {
+    return false;
+  }
+
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === "EEXIST" || (process.platform === "win32" && code === "EPERM");
+}
+
 export function isMissingFilesystemEntry(error: unknown) {
   return (
     typeof error === "object" &&
@@ -59,14 +72,7 @@ export async function withExclusiveFilesystemLock<T>(
         await fsp.unlink(lockPath).catch(() => {});
       }
     } catch (error) {
-      if (
-        !(
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          (error as NodeJS.ErrnoException).code === "EEXIST"
-        )
-      ) {
+      if (!isLockContendedError(error)) {
         throw error;
       }
 
