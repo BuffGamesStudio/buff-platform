@@ -79,6 +79,37 @@ const adminSupabase =
       })
     : null;
 
+async function fetchRoomTotalRounds(roomId) {
+  assert(
+    adminSupabase,
+    "Movie Buff private smoke requires an admin Supabase client to inspect room settings."
+  );
+
+  const { data, error } = await adminSupabase
+    .from("game_rooms")
+    .select("total_rounds")
+    .eq("id", roomId)
+    .single();
+
+  if (error || !data) {
+    throw new Error(
+      `Could not read private room settings for ${roomId}: ${error?.message ?? "missing row"}`
+    );
+  }
+
+  const totalRounds = Number.parseInt(
+    String(data.total_rounds ?? ""),
+    10
+  );
+
+  assert(
+    Number.isFinite(totalRounds) && totalRounds > 0,
+    `Private room ${roomId} returned invalid total_rounds: ${data.total_rounds}`
+  );
+
+  return totalRounds;
+}
+
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
@@ -971,6 +1002,17 @@ try {
     buttons: await readButtonTexts(page),
   };
 
+  const totalRounds = await fetchRoomTotalRounds(
+    roomId
+  );
+
+  result.checkpoints.roomSettings = {
+    roomId,
+    totalRounds,
+    configuredMaxRounds: MAX_ROUNDS,
+    cappedRun: MAX_ROUNDS < totalRounds,
+  };
+
   await clickUnique(page, "button", "I'm Ready");
   await resolveIntoPlay(page);
 
@@ -1037,10 +1079,19 @@ try {
     };
   }
 
-  assert(
-    Boolean(result.checkpoints.finalResults),
-    "Private flow did not reach final results.",
-  );
+  if (!result.checkpoints.finalResults) {
+    if (MAX_ROUNDS < totalRounds) {
+      result.checkpoints.partialRun = {
+        configuredMaxRounds: MAX_ROUNDS,
+        totalRounds,
+        nextPage: page.url(),
+      };
+    } else {
+      throw new Error(
+        `Private flow did not reach final results after ${MAX_ROUNDS} rounds (room total ${totalRounds}).`
+      );
+    }
+  }
 
   console.log(
     JSON.stringify(
