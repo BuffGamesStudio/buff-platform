@@ -7,11 +7,18 @@ Date: Friday, July 31, 2026
 This worksheet is the shortest path from the current locally verified Movie Buff
 state to a real hosted soft-launch verification run.
 
-Use it to collect the exact production values and decisions that are still
-blocking hosted parity.
+Use it to collect the exact production values and decisions that remain useful
+for production provenance and any remaining external launch gates.
 
-For the latest live blocker snapshot, see
-[movie-buff-live-status-2026-08-09.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-live-status-2026-08-09.md).
+For the latest hosted-state snapshot, see
+[movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md).
+
+August 11, 2026 addendum:
+
+- the hosted runtime parity work itself is already complete
+- this worksheet is now mainly useful for tracking environment provenance and
+  any remaining external production decisions, not for proving first hosted
+  gameplay readiness
 
 ## 1. Required production values
 

@@ -10,6 +10,15 @@ Is Movie Buff actually at a ready soft-launch state right now?
 
 The answer below is based on current repo state and current hosted/runtime evidence.
 
+August 11, 2026 addendum:
+
+- this July 31 audit is now historical
+- for the current hosted-runtime truth, use:
+  - [movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md)
+- several July 31 hosted facts in this document, including deployment identity,
+  movie/clip counts, and operator-account conclusions, are no longer the latest
+  state
+
 ## Current environment verified
 
 - repo: `C:\Users\shapa\BuffGames\buff-platform`

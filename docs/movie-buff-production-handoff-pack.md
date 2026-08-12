@@ -39,7 +39,16 @@ As of Friday, July 31, 2026, the following are already proven locally:
   - primary: `fan 10 / buff 13 / buffster 19`
   - secondary: `fan 23 / buff 49 / buffster 33`
 
-The top unresolved blocker is hosted deployment parity.
+August 11, 2026 addendum:
+
+- hosted runtime parity is now proven on the live production alias
+  `https://movie-buff-sigma.vercel.app`
+- current hosted/runtime status is tracked in:
+  - [movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md)
+- the top remaining gaps are no longer "can the hosted app run the game?"
+- the remaining gaps are now external gates such as broader Supabase
+  production reconciliation, reviewer acceptance, and any human-controlled
+  promotion or production-data decisions
 
 Fresh evidence update from Friday, July 31, 2026:
 
@@ -255,12 +264,14 @@ Record the real rollback commands here:
 
 The shortest remaining path from current evidence is:
 
-1. choose the real production host
-2. fill the real production env values
-3. apply the launch-critical migrations to the hosted DB
-4. deploy
-5. run the hosted full suite
-6. if all checks pass, run a small invited soft-launch session
+1. preserve the current hosted-validation evidence on the live alias
+2. preserve the current repo/runtime alignment on `main`
+3. resolve the remaining non-runtime gates outside this repo surface:
+   - Supabase production reconciliation and any authorized DB changes
+   - reviewer / MOV-19 acceptance
+   - any explicit human launch or promotion decision
+4. if those gates clear, run the invited soft-launch session against the
+   already-live production alias
 
 That is the current bottleneck. The main gameplay flow is no longer the
-highest-risk area based on local evidence.
+highest-risk area based on current hosted evidence.

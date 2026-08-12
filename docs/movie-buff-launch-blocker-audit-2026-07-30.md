@@ -2,6 +2,14 @@
 
 Date: Thursday, July 30, 2026
 
+August 11, 2026 addendum:
+
+- this July 30 blocker audit is now historical
+- for the current hosted-runtime truth, use:
+  - [movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md)
+- several blocker rows below still refer to hosted parity as future work
+  because they were written before the August 11 hosted-runtime revalidation
+
 ## Scope
 
 This audit switches Movie Buff into launch-blocker mode.

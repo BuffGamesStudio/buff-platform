@@ -11,7 +11,15 @@ This is the exact production-setup guide for launching Movie Buff on:
 
 It assumes the repo is already locally verified. For the latest live blocker
 snapshot, see
-[movie-buff-live-status-2026-08-09.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-live-status-2026-08-09.md).
+[movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md).
+
+August 11, 2026 addendum:
+
+- the Vercel production alias is already live and current
+- the hosted runtime verification path is already green on
+  `https://movie-buff-sigma.vercel.app`
+- use this setup guide for environment provenance and rollback/reference tasks,
+  not as proof that the hosted runtime still needs first-time parity work
 
 ## 1. Create or confirm the production Vercel project
 

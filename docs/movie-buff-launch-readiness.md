@@ -8,6 +8,14 @@ This document separates what is already proven from what is still a launch block
 
 It uses current repo state, current local verifier output, and recent local browser/runtime verification as the evidence base.
 
+August 11, 2026 addendum:
+
+- this July 30 launch-readiness audit is now historical
+- for the current hosted-runtime truth, use:
+  - [movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md)
+- many of the blocker statements below were based on pre-hosted-parity local
+  evidence and are no longer the latest state for the live production alias
+
 ## Evidence used
 
 - pre-build and completion docs:

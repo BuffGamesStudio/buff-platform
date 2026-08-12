@@ -349,3 +349,13 @@ Hosted parity is not proven until all of these are true on the hosted target:
   - `/admin/analytics/matches`
 - current hosted database migration state is recorded and includes the launch-critical set above
 - hosted full-suite preflight passes with real non-placeholder production env values
+
+August 11, 2026 addendum:
+
+- these hosted-runtime criteria have now been met on
+  `https://movie-buff-sigma.vercel.app`
+- current direct PASS evidence exists for route health, auth, admin smoke,
+  public/private gameplay spot checks, leave flows, timer behavior, pool
+  health, deployment env validation, launch migration inventory, and bootstrap
+  artifact inventory
+- the remaining open gates are therefore outside hosted runtime parity itself

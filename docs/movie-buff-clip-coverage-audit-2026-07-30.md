@@ -2,6 +2,14 @@
 
 Date: Thursday, July 30, 2026
 
+August 11, 2026 addendum:
+
+- this July 30 clip-coverage audit is now historical
+- for the current hosted-runtime truth, use:
+  - [movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md)
+- the statement below that hosted deployment parity is unproven reflects the
+  earlier July state, not the current live production alias
+
 ## Current launch-relevant content state
 
 Current local counts after the Friday, July 31, 2026 pool and coverage refresh:

@@ -33,9 +33,20 @@ Fresh evidence update for Friday, July 31, 2026:
 - `npm run movie-buff:check-deploy-env`: fail because production values are still undefined
 - `node .\scripts\movie-buff-hosted-preflight.mjs --env-file .env.production.example --base-url http://127.0.0.1:3001`: fail because the example env file still contains placeholder values
 
-Current live-state companion:
+Current hosted-state companion:
 
-- [movie-buff-live-status-2026-08-09.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-live-status-2026-08-09.md)
+- [movie-buff-hosted-validation-status-2026-08-11.md](C:/Users/shapa/BuffGames/buff-platform/docs/movie-buff-hosted-validation-status-2026-08-11.md)
+
+August 11, 2026 addendum:
+
+- the hosted runtime path is now green on
+  `https://movie-buff-sigma.vercel.app`
+- the current production alias has recent direct PASS evidence for route
+  health, auth, public/private gameplay spot checks, leave flows, admin smoke,
+  timer behavior, and pool health
+- the remaining blockers are no longer "can the hosted app run the core game?"
+- the remaining blockers are external launch gates such as broader Supabase
+  production reconciliation and any human-controlled acceptance/promotion
 
 Additional hosted recovery artifact now present:
 
@@ -382,7 +393,9 @@ As of Thursday, July 30, 2026:
   - `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`
 - the real hosted deployment target and real production values are still not defined in repo
 
-That means hosted deployment parity is still an explicit launch task.
+That statement is now historical. As of August 11, 2026, hosted runtime parity
+is proven; use the current hosted-validation note for the live alias instead of
+treating hosted parity itself as the open blocker.
 
 Repo-backed parity proof added on Friday, July 31, 2026:
 
