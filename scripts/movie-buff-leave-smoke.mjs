@@ -1,9 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import fs from "node:fs";
-import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { provisionLocalSmokeSession } from "./movie-buff-smoke-auth.mjs";
+import { resolveSmokeEnvironment } from "./movie-buff-smoke-env.mjs";
 
 const PLAYWRIGHT_ENTRY =
   process.env.PLAYWRIGHT_ENTRY ??
@@ -21,47 +20,11 @@ const { chromium } = await import(
   pathToFileURL(PLAYWRIGHT_ENTRY).href
 );
 
-function loadLocalEnv() {
-  const envPath = path.join(process.cwd(), ".env.local");
-  const parsed = {};
-
-  if (!fs.existsSync(envPath)) {
-    return parsed;
-  }
-
-  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
-    const trimmed = line.trim();
-
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const separatorIndex = trimmed.indexOf("=");
-
-    if (separatorIndex === -1) {
-      continue;
-    }
-
-    const key = trimmed.slice(0, separatorIndex).trim();
-    const value = trimmed.slice(separatorIndex + 1).trim();
-
-    if (key) {
-      parsed[key] = value;
-    }
-  }
-
-  return parsed;
-}
-
-const localEnv = loadLocalEnv();
-const supabaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ??
-  localEnv.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey =
-  process.env.SUPABASE_SECRET_KEY ??
-  process.env.SUPABASE_SERVICE_ROLE_KEY ??
-  localEnv.SUPABASE_SECRET_KEY ??
-  localEnv.SUPABASE_SERVICE_ROLE_KEY;
+const smokeEnvironment = resolveSmokeEnvironment({
+  baseUrl: APP_URL,
+});
+const supabaseUrl = smokeEnvironment.supabaseUrl;
+const serviceRoleKey = smokeEnvironment.serviceRoleKey;
 
 const adminSupabase =
   supabaseUrl && serviceRoleKey

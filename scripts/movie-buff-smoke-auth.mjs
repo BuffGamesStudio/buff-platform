@@ -1,47 +1,9 @@
-import fs from "node:fs";
-import path from "node:path";
-
 import { createClient } from "@supabase/supabase-js";
+import { resolveSmokeEnvironment } from "./movie-buff-smoke-env.mjs";
 
-function loadLocalEnv() {
-  const envPath = path.join(process.cwd(), ".env.local");
-  const parsed = {};
-
-  if (!fs.existsSync(envPath)) {
-    return parsed;
-  }
-
-  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
-    const trimmed = line.trim();
-
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const separatorIndex = trimmed.indexOf("=");
-
-    if (separatorIndex === -1) {
-      continue;
-    }
-
-    const key = trimmed.slice(0, separatorIndex).trim();
-    const value = trimmed.slice(separatorIndex + 1).trim();
-
-    if (key) {
-      parsed[key] = value;
-    }
-  }
-
-  return parsed;
-}
-
-const localEnv = loadLocalEnv();
-const supabaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ??
-  localEnv.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey =
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-  localEnv.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+const smokeEnvironment = resolveSmokeEnvironment();
+const supabaseUrl = smokeEnvironment.supabaseUrl;
+const supabaseKey = smokeEnvironment.publishableKey;
 
 if (!supabaseUrl || !supabaseKey) {
   throw new Error(
@@ -50,14 +12,8 @@ if (!supabaseUrl || !supabaseKey) {
 }
 
 const serviceRoleKey =
-  process.env.SUPABASE_SECRET_KEY ??
-  process.env.SUPABASE_SERVICE_ROLE_KEY ??
-  localEnv.SUPABASE_SECRET_KEY ??
-  localEnv.SUPABASE_SERVICE_ROLE_KEY;
-const smokeEmailDomain =
-  process.env.MOVIE_BUFF_SMOKE_EMAIL_DOMAIN ??
-  localEnv.MOVIE_BUFF_SMOKE_EMAIL_DOMAIN ??
-  "example.com";
+  smokeEnvironment.serviceRoleKey;
+const smokeEmailDomain = smokeEnvironment.smokeEmailDomain;
 
 const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {

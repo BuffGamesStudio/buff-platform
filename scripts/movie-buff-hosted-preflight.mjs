@@ -1,10 +1,16 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import {
+  isLocalSmokeBaseUrl,
+  resolveSmokeEnvironment,
+} from "./movie-buff-smoke-env.mjs";
 
 function parseArgs(argv) {
   const args = {
     envFile: null,
     baseUrl: null,
+    expectedSupabaseRef: null,
+    repoRoot: null,
     fullSmoke: false,
     fullSuite: false,
   };
@@ -20,6 +26,18 @@ function parseArgs(argv) {
 
     if (value === "--base-url") {
       args.baseUrl = argv[index + 1] ?? null;
+      index += 1;
+      continue;
+    }
+
+    if (value === "--expected-supabase-ref") {
+      args.expectedSupabaseRef = argv[index + 1] ?? null;
+      index += 1;
+      continue;
+    }
+
+    if (value === "--repo-root") {
+      args.repoRoot = argv[index + 1] ?? null;
       index += 1;
       continue;
     }
@@ -40,6 +58,7 @@ function parseArgs(argv) {
 function runStep(step, command, commandArgs, extraEnv = {}) {
   const result = spawnSync(command, commandArgs, {
     encoding: "utf8",
+    cwd: repoRoot,
     env: {
       ...process.env,
       ...extraEnv,
@@ -72,12 +91,6 @@ function buildSyntheticStep(
   };
 }
 
-function isLocalBaseUrl(url) {
-  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/i.test(
-    url
-  );
-}
-
 function canUseLocalDockerVerifier() {
   const result = spawnSync(
     "docker",
@@ -96,20 +109,86 @@ function canUseLocalDockerVerifier() {
 }
 
 const args = parseArgs(process.argv.slice(2));
-const repoRoot = process.cwd();
-const env = {};
+const repoRoot = path.resolve(
+  args.repoRoot ?? process.cwd(),
+);
+const resolvedEnvFile = args.envFile
+  ? path.resolve(repoRoot, args.envFile)
+  : null;
 const resolvedBaseUrl =
   args.baseUrl ??
   process.env.MOVIE_BUFF_BASE_URL ??
   "http://127.0.0.1:3001";
+let smokeEnvironment;
+
+try {
+  smokeEnvironment = resolveSmokeEnvironment({
+    baseUrl: resolvedBaseUrl,
+    envFile: resolvedEnvFile,
+    expectedSupabaseRef: args.expectedSupabaseRef,
+  });
+} catch (error) {
+  console.error(
+    JSON.stringify(
+      {
+        ok: false,
+        baseUrl: resolvedBaseUrl,
+        envFile: resolvedEnvFile,
+        error: error instanceof Error
+          ? error.message
+          : String(error),
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(1);
+}
+
+const env = {
+  MOVIE_BUFF_BASE_URL: resolvedBaseUrl,
+};
+
+if (smokeEnvironment.expectedSupabaseRef) {
+  env.MOVIE_BUFF_EXPECTED_SUPABASE_REF =
+    smokeEnvironment.expectedSupabaseRef;
+}
+const forwardedEnvNames = [
+  "NEXT_PUBLIC_APP_URL",
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+  "SUPABASE_SECRET_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "MOVIE_BUFF_SMOKE_EMAIL_DOMAIN",
+];
+
+for (const name of forwardedEnvNames) {
+  if (smokeEnvironment.values[name] != null) {
+    env[name] = smokeEnvironment.values[name];
+  }
+}
+
+if (smokeEnvironment.envFilePath) {
+  env.MOVIE_BUFF_SMOKE_ENV_FILE =
+    smokeEnvironment.envFilePath;
+}
+
 const dockerVerifierAvailable =
   canUseLocalDockerVerifier();
 
-if (args.baseUrl) {
-  env.MOVIE_BUFF_BASE_URL = args.baseUrl;
-}
-
 const steps = [
+  buildSyntheticStep(
+    "target_env",
+    true,
+    JSON.stringify({
+      baseUrl: resolvedBaseUrl,
+      envFile: smokeEnvironment.envFilePath,
+      supabaseProjectRef:
+        smokeEnvironment.supabaseProjectRef,
+      expectedSupabaseRef:
+        smokeEnvironment.expectedSupabaseRef,
+    }),
+  ),
   runStep(
     "launch_migrations",
     "node",
@@ -143,8 +222,14 @@ const steps = [
         "scripts",
         "movie-buff-deployment-env-check.mjs"
       ),
-      ...(args.envFile
-        ? ["--env-file", args.envFile]
+        ...(resolvedEnvFile
+        ? ["--env-file", resolvedEnvFile]
+        : []),
+      ...(smokeEnvironment.expectedSupabaseRef
+        ? [
+            "--expected-supabase-ref",
+            smokeEnvironment.expectedSupabaseRef,
+          ]
         : []),
     ],
     env
@@ -278,7 +363,7 @@ if (args.fullSuite) {
       ],
       env
     ),
-    isLocalBaseUrl(resolvedBaseUrl) ||
+    isLocalSmokeBaseUrl(resolvedBaseUrl) ||
     dockerVerifierAvailable
       ? runStep(
           "analytics_verifier",
@@ -303,7 +388,8 @@ if (args.fullSuite) {
 const result = {
   ok: steps.every((step) => step.ok),
   baseUrl: resolvedBaseUrl,
-  envFile: args.envFile ?? null,
+  envFile: resolvedEnvFile,
+  repoRoot,
   steps,
 };
 

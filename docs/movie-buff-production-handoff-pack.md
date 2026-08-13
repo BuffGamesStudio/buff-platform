@@ -181,9 +181,24 @@ Expected:
 
 ### Step 5: run the hosted full-suite preflight
 
+The hosted harness now requires an explicit Supabase project ref. Do not use a
+repository .env.local or .env.production file when it points at the rehearsal
+project eiamucxbestinitydkvu.
+
+For Vercel production variables, run from a clean temporary working directory
+so Vercel cannot merge the repository's local rehearsal file over the
+production values:
+
 ```powershell
-node .\scripts\movie-buff-hosted-preflight.mjs --env-file .env.production --base-url https://your-real-host.example.com --full-suite
+$repo = 'C:\path\to\buff-platform'
+$smokeCwd = Join-Path $env:TEMP 'movie-buff-production-smoke'
+New-Item -ItemType Directory -Force $smokeCwd | Out-Null
+npx vercel env run --project prj_u2IlNNHUvEhnAytuuymv9GdN7hJY --cwd $smokeCwd -e production -- node "$repo\scripts\movie-buff-hosted-preflight.mjs" --repo-root $repo --base-url https://your-real-host.example.com --expected-supabase-ref yfatwreicmiocdxzyznd --full-suite
 ```
+
+If using a manually supplied env file instead, pass
+--env-file <absolute-production-env-file> and keep the same
+--expected-supabase-ref yfatwreicmiocdxzyznd guard.
 
 Expected:
 

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import { resolveSmokeEnvironment } from "./movie-buff-smoke-env.mjs";
 
 const repoRoot = process.cwd();
 const runtimePoolRoot = path.join(
@@ -12,50 +13,10 @@ const runtimePoolRoot = path.join(
   "pool",
 );
 
-function readEnvFile(envPath) {
-  const content = fs.readFileSync(envPath, "utf8");
-  const values = {};
-
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const separatorIndex = trimmed.indexOf("=");
-
-    if (separatorIndex === -1) {
-      continue;
-    }
-
-    const key = trimmed.slice(0, separatorIndex).trim();
-    const rawValue = trimmed
-      .slice(separatorIndex + 1)
-      .trim();
-
-    values[key] = rawValue.replace(
-      /^['"]|['"]$/g,
-      "",
-    );
-  }
-
-  return values;
-}
-
-const envPath = path.join(repoRoot, ".env.local");
-const envValues = fs.existsSync(envPath)
-  ? readEnvFile(envPath)
-  : {};
-
-const supabaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ??
-  envValues.NEXT_PUBLIC_SUPABASE_URL;
+const smokeEnvironment = resolveSmokeEnvironment();
+const supabaseUrl = smokeEnvironment.supabaseUrl;
 const supabaseServiceRoleKey =
-  process.env.SUPABASE_SECRET_KEY ??
-  process.env.SUPABASE_SERVICE_ROLE_KEY ??
-  envValues.SUPABASE_SECRET_KEY ??
-  envValues.SUPABASE_SERVICE_ROLE_KEY;
+  smokeEnvironment.serviceRoleKey;
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error(

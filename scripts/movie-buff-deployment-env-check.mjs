@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { supabaseProjectRef } from "./movie-buff-smoke-env.mjs";
 
 const requiredEnv = [
   "NEXT_PUBLIC_APP_URL",
@@ -28,6 +29,7 @@ const placeholderMarkers = [
 function parseArgs(argv) {
   const args = {
     envFile: null,
+    expectedSupabaseRef: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -35,6 +37,12 @@ function parseArgs(argv) {
 
     if (value === "--env-file") {
       args.envFile = argv[index + 1] ?? null;
+      index += 1;
+      continue;
+    }
+
+    if (value === "--expected-supabase-ref") {
+      args.expectedSupabaseRef = argv[index + 1] ?? null;
       index += 1;
     }
   }
@@ -188,6 +196,29 @@ const appUrl =
   sourcedEnv.NEXT_PUBLIC_APP_URL ??
   process.env.NEXT_PUBLIC_APP_URL ??
   "";
+
+const supabaseUrl =
+  sourcedEnv.NEXT_PUBLIC_SUPABASE_URL ??
+  process.env.NEXT_PUBLIC_SUPABASE_URL ??
+  "";
+const expectedSupabaseRef =
+  args.expectedSupabaseRef ??
+  sourcedEnv.MOVIE_BUFF_EXPECTED_SUPABASE_REF ??
+  process.env.MOVIE_BUFF_EXPECTED_SUPABASE_REF ??
+  null;
+const resolvedSupabaseRef = supabaseProjectRef(
+  supabaseUrl,
+);
+
+if (expectedSupabaseRef) {
+  result.expectedSupabaseRef = expectedSupabaseRef;
+  result.supabaseProjectRef = resolvedSupabaseRef;
+
+  if (resolvedSupabaseRef !== expectedSupabaseRef) {
+    result.ok = false;
+    result.supabaseTargetMismatch = true;
+  }
+}
 
 if (appUrl && !appUrl.match(/^https?:\/\//i)) {
   result.ok = false;
