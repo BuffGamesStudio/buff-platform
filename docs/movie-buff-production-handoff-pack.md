@@ -335,3 +335,31 @@ The remaining source-control follow-up is to commit and push the dirty working
 tree so future Git deployments reproduce this exact release. Supabase advisor
 warnings remain a separate security/performance review item, not a blocker for
 the accepted gameplay behavior.
+
+## Superseding release verification — 2026-08-13
+
+The source-control follow-up is complete. `main` and `origin/main` both point
+to commit `699d7b2a1cd57e59e485da46124af2f977d5c6d9` (`feat(movie-buff): ship
+per-player round flow`), and the worktree is clean.
+
+Vercel automatically built that exact commit as READY production deployment
+`dpl_2i5rxw6CnTMvZVe9mfhwBsaf6oCt`, with aliases
+`movie-buff-sigma.vercel.app`, `movie-buff-shaheed1.vercel.app`, and
+`movie-buff-git-main-shaheed1.vercel.app`. The compiled bundle is bound to
+production Supabase ref `yfatwreicmiocdxzyznd`. Static route health, the
+production build, lint, migration gate, bootstrap gate, and smoke-script syntax
+checks pass.
+
+The production migration ledger includes the policy repair and all six
+per-player playback/answer migrations. A fresh policy read confirms both
+authenticated match-visibility policies use `is_movie_buff_match_member` and
+contain no tautological self-comparisons. The current Supabase advisor counts
+remain a separate backlog: 57 security notices and 108 performance notices;
+no advisor remediation was applied during this release verification.
+
+The repository's ignored local `.env.production` still points at rehearsal
+Supabase ref `eiamucxbestinitydkvu`; it is not evidence for Vercel's production
+binding and must not be used to run production behavioral smoke. The attempted
+exact-deployment rerun was correctly blocked by that mismatch, while the
+previous production three-client, ten-round acceptance remains the gameplay
+evidence for this same deployed source state.

@@ -748,3 +748,26 @@ attempts, and the Vercel runtime-error query for the last hour returned no
 errors. The public alias remains on the existing main deployment; no Vercel
 promotion was performed because the newer READY deployment is from a separate
 branch and the current workspace candidate is uncommitted.
+
+## Superseding source and advisor recheck — 2026-08-13
+
+The source candidate is no longer uncommitted. `main` and `origin/main` both
+point to `699d7b2a1cd57e59e485da46124af2f977d5c6d9`, and Vercel deployment
+`dpl_2i5rxw6CnTMvZVe9mfhwBsaf6oCt` is READY on the public production alias.
+Its compiled client targets `yfatwreicmiocdxzyznd`.
+
+The production migration ledger now includes the policy repair plus the six
+per-player playback/answer migrations. A fresh policy read confirms the
+membership predicates remain repaired. The fresh advisor read reports 57
+security notices (1 anonymous SECURITY DEFINER execution warning, 30
+authenticated SECURITY DEFINER execution warnings, 25 anonymous-access policy
+notices, and leaked-password protection disabled) and 108 performance notices
+(50 unindexed foreign keys, 11 auth RLS init-plan notices, 26 unused-index
+notices, 20 multiple-permissive-policy notices, and one absolute Auth
+connection-allocation notice). These are intentionally unchanged and remain a
+separate hardening review.
+
+The ignored local `.env.production` is rehearsal-bound to
+`eiamucxbestinitydkvu`; it must not be used as production secret-binding proof
+or as the credential source for a production smoke run. The exact-commit
+behavioral rerun was stopped by that target mismatch after static checks passed.

@@ -899,3 +899,29 @@ Remaining operational follow-ups, not blockers for this gameplay contract:
    exposed `SECURITY DEFINER` RPC warnings. They should be reviewed separately
    before a broader security hardening pass; changing them was outside this
    cutover because the live smoke depends on the current RPC contract.
+
+## Superseding exact-commit verification — 2026-08-13
+
+The release is now reproducible from Git. `main` and `origin/main` point to
+`699d7b2a1cd57e59e485da46124af2f977d5c6d9`, and the worktree is clean. Vercel
+built that exact SHA as READY production deployment
+`dpl_2i5rxw6CnTMvZVe9mfhwBsaf6oCt`; the `movie-buff-sigma.vercel.app` alias
+resolves to it and its compiled client targets production Supabase
+`yfatwreicmiocdxzyznd`.
+
+The exact deployment passed static route health, the production build, lint,
+the launch-migration gate, the bootstrap-artifact gate, and smoke-script syntax
+checks. A behavioral-suite attempt against the unique deployment URL was
+invalidated by Vercel Deployment Protection redirecting the test browser to
+`vercel.com/login`. The rerun against the public alias reached the app, but the
+local smoke harness was using the ignored `.env.production` rehearsal target
+`eiamucxbestinitydkvu`, while the deployed bundle uses production ref
+`yfatwreicmiocdxzyznd`; its test sessions therefore could not authenticate to
+the deployed project. No application regression is inferred from that invalid
+cross-project test.
+
+The prior production three-client, ten-round acceptance remains the valid
+behavioral proof for this source state. The current external verification gap
+is to run the smoke harness with the production Supabase credentials, not to
+change the Movie Buff round-flow code. Recent Vercel error-log review returned
+no error-level runtime entries.
