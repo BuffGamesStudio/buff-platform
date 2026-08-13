@@ -1,0 +1,14 @@
+.git
+.next
+node_modules
+.vercel
+.codex-logs
+.env*
+*.bak
+*.tsbuildinfo
+coverage
+out
+docs
+supabase
+scripts
+public/media/movie-buff/runtime-generated

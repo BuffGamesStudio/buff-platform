@@ -101,8 +101,13 @@ function isLocalBaseUrl(url) {
 }
 
 function resolveDbContainerName() {
+  const projectId =
+    process.env.SUPABASE_LOCAL_PROJECT_ID ??
+    "buff-platform";
   const output = runCommand("docker", [
     "ps",
+    "--filter",
+    `label=com.supabase.cli.project=${projectId}`,
     "--format",
     "{{.Names}}",
   ]);
@@ -116,7 +121,7 @@ function resolveDbContainerName() {
 
   if (!containerName) {
     throw new Error(
-      "Could not find a running Supabase DB container.",
+      `Could not find a running Supabase DB container for local project "${projectId}".`,
     );
   }
 
@@ -210,22 +215,6 @@ async function clickUnique(page, role, name) {
       ", ",
     )}.`,
   );
-}
-
-async function fillUnique(page, placeholder, value) {
-  const locator = page.getByPlaceholder(
-    placeholder,
-    { exact: true },
-  );
-  const count = await locator.count();
-  assert(
-    count === 1,
-    `Expected one input with placeholder "${placeholder}", found ${count}.`,
-  );
-  await locator.click();
-  await locator.press("ControlOrMeta+A");
-  await locator.press("Backspace");
-  await locator.type(value);
 }
 
 async function readButtonTexts(page) {
@@ -646,6 +635,62 @@ where room.id = '${roomId}'::uuid;
 `;
 }
 
+async function verifySupabasePublicLeaveState(roomId) {
+  assert(
+    adminSupabase,
+    "Supabase public-leave verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY.",
+  );
+
+  const [roomResult, playersResult, eventsResult] =
+    await Promise.all([
+      adminSupabase
+        .from("game_rooms")
+        .select("id, status, finished_at")
+        .eq("id", roomId)
+        .maybeSingle(),
+      adminSupabase
+        .from("room_players")
+        .select("player_id, is_ready")
+        .eq("room_id", roomId)
+        .is("left_at", null),
+      adminSupabase
+        .from("movie_buff_round_events")
+        .select("event_type")
+        .eq("room_id", roomId),
+    ]);
+
+  for (const response of [
+    roomResult,
+    playersResult,
+    eventsResult,
+  ]) {
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+  }
+
+  const eventsByType = {};
+
+  for (const row of eventsResult.data ?? []) {
+    eventsByType[row.event_type] =
+      (eventsByType[row.event_type] ?? 0) + 1;
+  }
+
+  return {
+    verificationMode: "supabase-api",
+    roomId,
+    roomStatus: roomResult.data?.status ?? null,
+    finishedAtPresent:
+      roomResult.data?.finished_at != null,
+    activePlayerCount:
+      (playersResult.data ?? []).length,
+    readyPlayerCount: (playersResult.data ?? [])
+      .filter((row) => row.is_ready === true)
+      .length,
+    eventsByType,
+  };
+}
+
 async function verifyHostedRemainingPlayerState(page) {
   await page.waitForTimeout(4000);
 
@@ -801,8 +846,10 @@ try {
 
   await pageOne.waitForTimeout(1500);
 
-  const verification = isLocalBaseUrl(APP_URL)
-    ? (() => {
+  const verification = adminSupabase
+    ? await verifySupabasePublicLeaveState(roomIdOne)
+    : isLocalBaseUrl(APP_URL)
+      ? (() => {
         const containerName =
           resolveDbContainerName();
         const localVerification =
@@ -836,19 +883,19 @@ try {
           "Did not expect match_abandoned while one public player remains.",
         );
 
-        return {
-          verificationMode: "local-sql",
-          ...localVerification,
+          return {
+            verificationMode: "local-sql",
+            ...localVerification,
+          };
+        })()
+      : {
+          remainingPageOne: await verifyHostedRemainingPlayerState(
+            pageOne,
+          ),
+          remainingPageTwo: await verifyHostedRemainingPlayerState(
+            pageTwo,
+          ),
         };
-      })()
-    : {
-        remainingPageOne: await verifyHostedRemainingPlayerState(
-          pageOne,
-        ),
-        remainingPageTwo: await verifyHostedRemainingPlayerState(
-          pageTwo,
-        ),
-      };
 
   result.leaveVerification = verification;
 

@@ -258,6 +258,47 @@ Record the real rollback commands here:
 
 - app rollback command:
 - DB rollback or hotfix command:
+
+## Current ARM packet — 2026-08-13
+
+The current locally verified candidate reached the final hosted gate. The
+following ARM operations are now recorded as completed:
+
+1. Applied
+   [`20260812130000_movie_buff_match_visibility_policy_repair.sql`](C:/Users/shapa/BuffGames/buff-platform/supabase/migrations/20260812130000_movie_buff_match_visibility_policy_repair.sql)
+   to Supabase project `yfatwreicmiocdxzyznd`; the production ledger records
+   version `20260813010036`.
+2. Verified the production `pg_policies` definitions for `match_players` and
+   `match_rounds` contain `is_movie_buff_match_member(match_id)` and no
+   `mine.match_id = mine.match_id` or `mp.match_id = mp.match_id` tautology.
+3. Ran the disposable two-persona cross-match isolation acceptance against
+   production in a transaction-scoped SQL harness. Each persona saw exactly
+   its own player and round rows, no cross-match rows, and the transaction was
+   rolled back. The fail-closed Node smoke remains available for a future
+   operator run with the production env file and both explicit opt-ins:
+
+   ```powershell
+   $env:MOVIE_BUFF_POLICY_ISOLATION_ENV_FILE = ".env.production"
+   $env:MOVIE_BUFF_POLICY_ISOLATION_ALLOW_MUTATION = "1"
+   $env:MOVIE_BUFF_POLICY_ISOLATION_ALLOW_PRODUCTION = "1"
+   npm run movie-buff:smoke-policy-isolation
+   ```
+
+   That Node run creates temporary users and matches, checks exact membership
+   and no cross-match visibility, then deletes its fixtures. Preserve its JSON
+   output if it is used.
+4. Keep `movie-buff-sigma.vercel.app` on the current main deployment unless a
+   human explicitly selects a different READY deployment. The latest READY
+   deployment is from a separate branch and is not the current validated
+   candidate.
+5. A preview-only deployment attempt of the current dirty workspace was made
+   after adding `.vercelignore`; the payload was reduced to 330 MB but the
+   upload aborted at 82.5 MB with Vercel `fetch failed` errors. No new preview
+   deployment was created, and no promotion was attempted.
+
+No Vercel promotion, merge, or secret rotation was performed. The public alias
+remains on the existing main deployment; the latest READY deployment is from
+a separate branch and the current worktree candidate is uncommitted.
 - operator owner:
 
 ## Section 7: fastest remaining path to soft launch
@@ -275,3 +316,22 @@ The shortest remaining path from current evidence is:
 
 That is the current bottleneck. The main gameplay flow is no longer the
 highest-risk area based on current hosted evidence.
+
+## Superseding cutover update — 2026-08-13
+
+The previous sections preserve the pre-cutover handoff history. The current
+release is live on the `movie-buff-sigma.vercel.app` production alias as READY
+deployment `dpl_JCwqLbqJhX6EEVgdMFqWeFzz1SJz`, bound to production Supabase
+`yfatwreicmiocdxzyznd`.
+
+The per-player Movie Buff round flow is production-accepted: each player can
+start playback independently, inactive players are auto-launched at the
+deadline, each player answers against their own playback clock, and submitted
+players wait until all active players finish before the shared phase advances.
+The final production smoke completed all 10 rounds, including a mixed manual /
+automatic first round, and its disposable room and accounts were cleaned up.
+
+The remaining source-control follow-up is to commit and push the dirty working
+tree so future Git deployments reproduce this exact release. Supabase advisor
+warnings remain a separate security/performance review item, not a blocker for
+the accepted gameplay behavior.

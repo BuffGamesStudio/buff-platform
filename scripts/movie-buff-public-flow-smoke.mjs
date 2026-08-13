@@ -230,6 +230,14 @@ function bodyShowsLoadingResults(bodyText) {
   );
 }
 
+function bodyShowsWaitingForPlayers(bodyText) {
+  return (
+    bodyText.includes("Your answer is locked") ||
+    bodyText.includes("Waiting for the other players") ||
+    bodyText.includes("You are finished for this round")
+  );
+}
+
 async function waitForEitherUrl(page, patterns) {
   const currentUrl = page.url();
 
@@ -280,6 +288,10 @@ async function waitForResultsSurface(
     return currentUrl;
   }
 
+  if (bodyShowsWaitingForPlayers(currentBodyText)) {
+    return currentUrl;
+  }
+
   await page.waitForFunction(
     (candidatePatterns) => {
       const href = window.location.href;
@@ -302,6 +314,9 @@ async function waitForResultsSurface(
         bodyText.includes(
           "Loading round results"
         ) ||
+        bodyText.includes("Your answer is locked") ||
+        bodyText.includes("Waiting for the other players") ||
+        bodyText.includes("You are finished for this round") ||
         bodyText.includes("Round Results") ||
         bodyText.includes("Final Results")
       );
@@ -539,105 +554,57 @@ async function waitForRoundIntroReady(page) {
   );
 }
 
-async function waitForAnswerFormReady(page) {
-  await waitForPlayRouteReady(page);
-  await page.waitForFunction(
-    (transitionSnippets) => {
-      const bodyText =
-        document.body?.innerText ?? "";
-
-      if (
-        transitionSnippets.some((snippet) =>
-          bodyText.includes(snippet)
-        )
-      ) {
-        return false;
-      }
-
-      return Array.from(
-        document.querySelectorAll("input")
-      ).some(
-        (input) =>
-          input.getAttribute(
-            "placeholder"
-          ) === "Enter the movie title"
-      );
-    },
-    PLAY_ROUTE_TRANSITION_TEXT,
-    { timeout: 45000 }
-  );
-}
-
 async function waitForResultsReady(page) {
-  await page.waitForFunction(
-    () =>
-      document.body?.innerText?.includes(
-        "Leave Match"
-      ) &&
-      document.body?.innerText?.includes(
-        "Movie Buff"
-      ),
-    undefined,
-    { timeout: 30000 }
-  );
+  try {
+    await page.waitForFunction(
+      () => {
+        const path = window.location.pathname;
+        const bodyText = document.body?.innerText ?? "";
+
+        return (
+          path.includes("/games/movie-buff/round-results") ||
+          path.includes("/games/movie-buff/final-results") ||
+          bodyText.includes("Round Results") ||
+          bodyText.includes("Final Results")
+        );
+      },
+      undefined,
+      { timeout: 45000 }
+    );
+  } catch (error) {
+    const bodyText = await readBodyText(page);
+    throw new Error(
+      [
+        error instanceof Error ? error.message : String(error),
+        `results_page_url=${page.url()}`,
+        `results_page_excerpt=${bodyText.replace(/\s+/g, " ").slice(0, 1600)}`,
+      ].join("\n")
+    );
+  }
 }
 
-async function waitForAuthoritativeAnswerPhase(
-  page,
-  roomId
-) {
-  assert(
-    adminSupabase,
-    "Movie Buff public smoke requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY."
-  );
-
-  const deadline = Date.now() + 45000;
-
-  while (Date.now() < deadline) {
-    const { data, error } =
-      await adminSupabase.rpc(
-        "get_movie_buff_match_phase_view",
-        {
-          p_room_id: roomId,
-        }
-      );
-
-    if (error) {
-      throw new Error(
-        `Authoritative phase check failed: ${error.message}`
-      );
-    }
-
-    const phase = data?.phase ?? null;
-    const phaseRoute =
-      data?.phaseRoute ?? null;
-
-    if (phase === "answer") {
-      return;
-    }
-
-    if (
-      phase === "abandoned" ||
-      phase === "blocked" ||
-      phaseRoute ===
-        "/games/movie-buff/round-results" ||
-      phaseRoute ===
-        "/games/movie-buff/final-results"
-    ) {
-      throw new Error(
-        `Authoritative phase reached ${phase ?? "unknown"} before answer entry.\nphase_route=${phaseRoute ?? "unknown"}\npage_url=${page.url()}`
-      );
-    }
-
-    await page.waitForTimeout(1000);
+async function startPlaybackAndWait(page, options = {}) {
+  if (options.manualStart === false) {
+    return;
   }
 
-  throw new Error(
-    `Timed out waiting for authoritative answer phase.\npage_url=${page.url()}`
-  );
-}
+  try {
+    await page.waitForFunction(
+      () =>
+        Array.from(document.querySelectorAll("button")).some((button) =>
+          (button.textContent ?? "").trim().includes("Play Movie Clip")
+        ) ||
+        Array.from(document.querySelectorAll("button")).some((button) =>
+          (button.getAttribute("aria-label") ?? "").trim() ===
+          "Play Movie Clip"
+        ),
+      undefined,
+      { timeout: 20000 }
+    );
+  } catch {
+    return;
+  }
 
-async function startPlaybackAndWait(page, roomId) {
   const playButton = page.getByRole("button", {
     name: "Play Movie Clip",
   });
@@ -645,10 +612,6 @@ async function startPlaybackAndWait(page, roomId) {
     await playButton.count();
 
   if (playButtonCount === 0) {
-    await waitForAuthoritativeAnswerPhase(
-      page,
-      roomId
-    );
     return;
   }
 
@@ -725,10 +688,46 @@ async function startPlaybackAndWait(page, roomId) {
     );
   }
 
-  await waitForAuthoritativeAnswerPhase(
-    page,
-    roomId
-  );
+}
+
+async function waitForPlayerAnswerReady(page) {
+  try {
+    await page.waitForFunction(
+      () => {
+        const input = Array.from(
+          document.querySelectorAll("input")
+        ).find(
+          (candidate) =>
+            candidate.getAttribute("placeholder") ===
+            "Enter the movie title"
+        );
+        const submitButton = Array.from(
+          document.querySelectorAll("button")
+        ).find((button) =>
+          (button.textContent ?? "")
+            .trim()
+            .includes("Submit Answer")
+        );
+
+        return (
+          input instanceof HTMLInputElement &&
+          !input.disabled &&
+          submitButton instanceof HTMLButtonElement
+        );
+      },
+      undefined,
+      { timeout: 60000 }
+    );
+  } catch (error) {
+    const bodyText = await readBodyText(page);
+    throw new Error(
+      [
+        error instanceof Error ? error.message : String(error),
+        `answer_ready_page_url=${page.url()}`,
+        `answer_ready_page_excerpt=${bodyText.replace(/\s+/g, " ").slice(0, 1600)}`,
+      ].join("\n")
+    );
+  }
 }
 
 async function waitForFinalResultsReady(page) {
@@ -761,10 +760,14 @@ async function waitForPostResultsTransition(page) {
     const loadingResultsOnPlayRoute =
       currentUrl.includes("/play") &&
       bodyShowsLoadingResults(bodyText);
+    const waitingForPlayersOnPlayRoute =
+      currentUrl.includes("/play") &&
+      bodyShowsWaitingForPlayers(bodyText);
 
     if (
       !onRoundResultsRoute &&
-      !loadingResultsOnPlayRoute
+      !loadingResultsOnPlayRoute &&
+      !waitingForPlayersOnPlayRoute
     ) {
       return currentUrl;
     }
@@ -806,23 +809,20 @@ async function resolveIntoPlay(page) {
 
 async function playOneRound(
   page,
-  roomId,
-  guessText
+  guessText,
+  options = {}
 ) {
   const resultPatterns = [
     "**/games/movie-buff/round-results?**",
     "**/games/movie-buff/final-results?**",
   ];
 
-  await waitForAnswerFormReady(page);
-  await fillUnique(
-    page,
-    "Enter the movie title",
-    guessText
-  );
+  await startPlaybackAndWait(page, options);
+  if (!page.url().includes("/games/movie-buff/play")) {
+    return;
+  }
 
-  await startPlaybackAndWait(page, roomId);
-  await waitForAnswerFormReady(page);
+  await waitForPlayerAnswerReady(page);
 
   await fillUnique(
     page,
@@ -1034,23 +1034,49 @@ try {
       },
     });
 
-    await Promise.all([
-      playOneRound(
+    if (roundNumber === 1) {
+      await playOneRound(
         pageOne,
-        roomIdOne,
-        `Smoke Guess ${roundNumber}A`
-      ),
-      playOneRound(
-        pageTwo,
-        roomIdOne,
-        `Smoke Guess ${roundNumber}B`
-      ),
-      playOneRound(
-        pageThree,
-        roomIdOne,
-        `Smoke Guess ${roundNumber}C`
-      ),
-    ]);
+        `Smoke Guess ${roundNumber}A`,
+        { manualStart: true }
+      );
+
+      const pageOneWaitingBody = await readBodyText(
+        pageOne
+      );
+      assert(
+        bodyShowsWaitingForPlayers(pageOneWaitingBody),
+        "The first player did not receive the waiting-for-players state after submitting early."
+      );
+
+      await Promise.all([
+        playOneRound(
+          pageTwo,
+          `Smoke Guess ${roundNumber}B`,
+          { manualStart: false }
+        ),
+        playOneRound(
+          pageThree,
+          `Smoke Guess ${roundNumber}C`,
+          { manualStart: false }
+        ),
+      ]);
+    } else {
+      await Promise.all([
+        playOneRound(
+          pageOne,
+          `Smoke Guess ${roundNumber}A`
+        ),
+        playOneRound(
+          pageTwo,
+          `Smoke Guess ${roundNumber}B`
+        ),
+        playOneRound(
+          pageThree,
+          `Smoke Guess ${roundNumber}C`
+        ),
+      ]);
+    }
 
     const currentRound =
       result.rounds[result.rounds.length - 1];

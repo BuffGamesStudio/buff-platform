@@ -18,6 +18,7 @@
     "movie-buff:check-deploy-env": "node ./scripts/movie-buff-deployment-env-check.mjs",
     "movie-buff:check-launch-migrations": "node ./scripts/movie-buff-launch-migration-check.mjs",
     "movie-buff:check-bootstrap-artifacts": "node ./scripts/movie-buff-bootstrap-artifact-check.mjs",
+    "movie-buff:smoke-policy-isolation": "node ./scripts/movie-buff-policy-isolation-smoke.mjs",
     "movie-buff:hosted-preflight": "node ./scripts/movie-buff-hosted-preflight.mjs",
     "movie-buff:local-launch-suite": "node ./scripts/movie-buff-local-launch-suite.mjs",
     "movie-buff:pool-health": "node ./scripts/movie-buff-pool-health.mjs",

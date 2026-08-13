@@ -18,8 +18,13 @@ function runCommand(command, args, options = {}) {
 }
 
 function resolveDbContainerName() {
+  const projectId =
+    process.env.SUPABASE_LOCAL_PROJECT_ID ??
+    "buff-platform";
   const output = runCommand("docker", [
     "ps",
+    "--filter",
+    `label=com.supabase.cli.project=${projectId}`,
     "--format",
     "{{.Names}}",
   ]);
@@ -33,7 +38,7 @@ function resolveDbContainerName() {
 
   if (!containerName) {
     throw new Error(
-      "Could not find a running Supabase DB container.",
+      `Could not find a running Supabase DB container for local project "${projectId}".`,
     );
   }
 
@@ -65,8 +70,8 @@ function runSql(containerName, sql) {
 
   if (result.status !== 0) {
     throw new Error(
-      `SQL verification failed.\n${
-        result.stderr || result.stdout
+      `SQL verification failed.\n${result.stderr || ""}${
+        result.stdout ? `\n${result.stdout}` : ""
       }`,
     );
   }
@@ -506,20 +511,71 @@ rollback;
 const LIFECYCLE_SQL = `
 begin;
 
+-- A clean Supabase reset has no auth users. Provision only two disposable
+-- verifier personas inside this transaction so lifecycle coverage does not
+-- depend on unrelated local state. The auth trigger creates their profiles.
+with fixture_users (id, email, display_name) as (
+  values
+    (
+      gen_random_uuid(),
+      'moviebuff-analytics-host@example.com',
+      'Movie Buff analytics host'
+    ),
+    (
+      gen_random_uuid(),
+      'moviebuff-analytics-guest@example.com',
+      'Movie Buff analytics guest'
+    )
+), missing_fixture_users as (
+  select fixture.*
+  from fixture_users as fixture
+  where not exists (
+    select 1
+    from auth.users as existing
+    where existing.email = fixture.email
+  )
+)
+insert into auth.users (
+  id,
+  aud,
+  role,
+  email,
+  email_confirmed_at,
+  raw_app_meta_data,
+  raw_user_meta_data,
+  created_at,
+  updated_at,
+  is_anonymous
+)
+select
+  fixture.id,
+  'authenticated',
+  'authenticated',
+  fixture.email,
+  now(),
+  '{"provider":"email","providers":["email"]}'::jsonb,
+  jsonb_build_object('display_name', fixture.display_name),
+  now(),
+  now(),
+  false
+from missing_fixture_users as fixture;
+
 create temp table temp_mb_verify_users on commit drop as
 select id
 from auth.users
-where not exists (
-  select 1
-  from public.room_players as rp
-  join public.game_rooms as gr
-    on gr.id = rp.room_id
-  where rp.player_id = auth.users.id
-    and rp.left_at is null
-    and gr.status in ('waiting', 'starting', 'active')
+where email in (
+  'moviebuff-analytics-host@example.com',
+  'moviebuff-analytics-guest@example.com'
 )
-order by created_at asc nulls first, id asc
-limit 2;
+order by email;
+
+do $$
+begin
+  if (select count(*) from temp_mb_verify_users) <> 2 then
+    raise exception 'Analytics verifier could not provision its two disposable users.';
+  end if;
+end
+$$;
 
 create temp table temp_mb_verify_host on commit drop as
 select id as player_id
@@ -798,6 +854,28 @@ from public.start_movie_buff_round_playback(
   (select room_id from temp_mb_verify_room)
 );
 
+-- The lifecycle fixture still exercises the legacy media helpers directly, but
+-- answers are now guarded by the server-owned phase machine. Bootstrap the
+-- authoritative row and fast-forward this disposable transaction to the
+-- answer window without weakening the production trigger or RPC path.
+select public.ensure_movie_buff_match_phase_state(
+  (select room_id from temp_mb_verify_room)
+);
+
+update public.movie_buff_match_phase_state
+set
+  phase = 'answer',
+  phase_version = phase_version + 1,
+  phase_started_at = now(),
+  phase_ends_at = now() + interval '30 seconds',
+  answer_deadline_at = now() + interval '30 seconds',
+  selected_clip_id = (select legacy_clip_id from temp_mb_verify_clip_seed),
+  selection_source = 'system',
+  playback_starts_at = coalesce(playback_starts_at, now()),
+  updated_at = now()
+where match_id = (select match_id from temp_mb_verify_room)
+  and round_id = (select round_id from temp_mb_verify_room);
+
 create temp table temp_mb_clip_started_event on commit drop as
 select public.record_movie_buff_event(
   'clip_started',
@@ -877,22 +955,46 @@ rollback;
 
 const RUNTIME_EDGE_SQL = `
 begin;
+
+with fixture_user (id, email) as (
+  values (gen_random_uuid(), 'moviebuff-analytics-edge@example.com')
+)
+insert into auth.users (
+  id,
+  aud,
+  role,
+  email,
+  email_confirmed_at,
+  raw_app_meta_data,
+  raw_user_meta_data,
+  created_at,
+  updated_at,
+  is_anonymous
+)
+select
+  fixture.id,
+  'authenticated',
+  'authenticated',
+  fixture.email,
+  now(),
+  '{"provider":"email","providers":["email"]}'::jsonb,
+  '{}'::jsonb,
+  now(),
+  now(),
+  false
+from fixture_user as fixture
+where not exists (
+  select 1
+  from auth.users as existing
+  where existing.email = fixture.email
+);
+
 select set_config(
   'request.jwt.claim.sub',
   (
     select u.id::text
     from auth.users as u
-    where not exists (
-      select 1
-      from public.room_players as rp
-      join public.game_rooms as gr
-        on gr.id = rp.room_id
-      where rp.player_id = u.id
-        and rp.left_at is null
-        and gr.status in ('waiting', 'starting', 'active')
-    )
-    order by u.created_at asc, u.id asc
-    limit 1
+    where u.email = 'moviebuff-analytics-edge@example.com'
   ),
   true
 );
@@ -1107,22 +1209,46 @@ rollback;
 
 const MATCH_COMPLETION_SQL = `
 begin;
+
+with fixture_user (id, email) as (
+  values (gen_random_uuid(), 'moviebuff-analytics-completion@example.com')
+)
+insert into auth.users (
+  id,
+  aud,
+  role,
+  email,
+  email_confirmed_at,
+  raw_app_meta_data,
+  raw_user_meta_data,
+  created_at,
+  updated_at,
+  is_anonymous
+)
+select
+  fixture.id,
+  'authenticated',
+  'authenticated',
+  fixture.email,
+  now(),
+  '{"provider":"email","providers":["email"]}'::jsonb,
+  '{}'::jsonb,
+  now(),
+  now(),
+  false
+from fixture_user as fixture
+where not exists (
+  select 1
+  from auth.users as existing
+  where existing.email = fixture.email
+);
+
 select set_config(
   'request.jwt.claim.sub',
   (
     select u.id::text
     from auth.users as u
-    where not exists (
-      select 1
-      from public.room_players as rp
-      join public.game_rooms as gr
-        on gr.id = rp.room_id
-      where rp.player_id = u.id
-        and rp.left_at is null
-        and gr.status in ('waiting', 'starting', 'active')
-    )
-    order by u.created_at asc, u.id asc
-    limit 1
+    where u.email = 'moviebuff-analytics-completion@example.com'
   ),
   true
 );
@@ -1208,6 +1334,31 @@ from public.enter_movie_buff_round(
   (select room_id from temp_mb_complete_room)
 );
 
+-- The authoritative start RPC creates an inert round shell. Bind the
+-- disposable fixture to its local clip and put the phase row in the answer
+-- window so this completion check exercises the real answer trigger.
+update public.match_rounds
+set
+  clip_id = (select legacy_clip_id from temp_mb_complete_clip_seed),
+  started_at = now(),
+  playback_started_at = now()
+where id = (select created_round_id from temp_mb_complete_started);
+
+update public.movie_buff_match_phase_state
+set
+  round_id = (select created_round_id from temp_mb_complete_started),
+  round_number = 1,
+  phase = 'answer',
+  phase_version = phase_version + 1,
+  phase_started_at = now(),
+  phase_ends_at = now() + interval '30 seconds',
+  answer_deadline_at = now() + interval '30 seconds',
+  selected_clip_id = (select legacy_clip_id from temp_mb_complete_clip_seed),
+  selection_source = 'system',
+  playback_starts_at = coalesce(playback_starts_at, now()),
+  updated_at = now()
+where room_id = (select room_id from temp_mb_complete_room);
+
 create temp table temp_mb_complete_answer1 on commit drop as
 select *
 from public.submit_movie_buff_answer(
@@ -1226,6 +1377,28 @@ select *
 from public.enter_movie_buff_round(
   (select room_id from temp_mb_complete_room)
 );
+
+update public.match_rounds
+set
+  clip_id = (select legacy_clip_id from temp_mb_complete_clip_seed),
+  started_at = now(),
+  playback_started_at = now()
+where id = (select result_round_id from temp_mb_complete_round2);
+
+update public.movie_buff_match_phase_state
+set
+  round_id = (select result_round_id from temp_mb_complete_round2),
+  round_number = 2,
+  phase = 'answer',
+  phase_version = phase_version + 1,
+  phase_started_at = now(),
+  phase_ends_at = now() + interval '30 seconds',
+  answer_deadline_at = now() + interval '30 seconds',
+  selected_clip_id = (select legacy_clip_id from temp_mb_complete_clip_seed),
+  selection_source = 'system',
+  playback_starts_at = coalesce(playback_starts_at, now()),
+  updated_at = now()
+where room_id = (select room_id from temp_mb_complete_room);
 
 create temp table temp_mb_complete_answer2 on commit drop as
 select *
@@ -1307,20 +1480,55 @@ rollback;
 const PUBLIC_MATCH_SQL = `
 begin;
 
+with fixture_users (id, email) as (
+  values
+    (
+      gen_random_uuid(),
+      'moviebuff-analytics-public-host@example.com'
+    ),
+    (
+      gen_random_uuid(),
+      'moviebuff-analytics-public-guest@example.com'
+    )
+)
+insert into auth.users (
+  id,
+  aud,
+  role,
+  email,
+  email_confirmed_at,
+  raw_app_meta_data,
+  raw_user_meta_data,
+  created_at,
+  updated_at,
+  is_anonymous
+)
+select
+  fixture.id,
+  'authenticated',
+  'authenticated',
+  fixture.email,
+  now(),
+  '{"provider":"email","providers":["email"]}'::jsonb,
+  '{}'::jsonb,
+  now(),
+  now(),
+  false
+from fixture_users as fixture
+where not exists (
+  select 1
+  from auth.users as existing
+  where existing.email = fixture.email
+);
+
 create temp table temp_mb_public_verify_users on commit drop as
 select id
 from auth.users
-where not exists (
-  select 1
-  from public.room_players as rp
-  join public.game_rooms as gr
-    on gr.id = rp.room_id
-  where rp.player_id = auth.users.id
-    and rp.left_at is null
-    and gr.status in ('waiting', 'starting', 'active')
+where email in (
+  'moviebuff-analytics-public-host@example.com',
+  'moviebuff-analytics-public-guest@example.com'
 )
-order by created_at asc nulls first, id asc
-limit 2;
+order by email;
 
 create temp table temp_mb_public_verify_host on commit drop as
 select id as player_id

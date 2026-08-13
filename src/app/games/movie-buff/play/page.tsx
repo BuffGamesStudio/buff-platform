@@ -199,10 +199,64 @@ function getSpeechRecognitionErrorMessage(
   }
 }
 
+type RoundScopedStateSetter<T> = (
+  value: T | ((currentValue: T) => T)
+) => void;
+
+function useRoundScopedState<T>(
+  roundId: string | null,
+  initialValue: T
+): readonly [T, RoundScopedStateSetter<T>] {
+  const activeRoundIdRef = useRef(roundId);
+  const [state, setState] = useState({
+    roundId,
+    value: initialValue,
+  });
+
+  useLayoutEffect(() => {
+    activeRoundIdRef.current = roundId;
+  }, [roundId]);
+
+  const setValue = useCallback(
+    (
+      value: T | ((currentValue: T) => T)
+    ) => {
+      if (activeRoundIdRef.current !== roundId) {
+        return;
+      }
+
+      setState((currentState) => ({
+        roundId,
+        value:
+          typeof value === "function"
+            ? (
+                value as (
+                  currentValue: T
+                ) => T
+              )(currentState.value)
+            : value,
+      }));
+    },
+    [roundId]
+  );
+
+  return [
+    state.roundId === roundId
+      ? state.value
+      : initialValue,
+    setValue,
+  ] as const;
+}
+
+function useRoundScopedFlag(
+  roundId: string | null
+) {
+  return useRoundScopedState(roundId, false);
+}
+
 export default function MovieBuffPlayPage() {
   const router = useRouter();
 
-  const redirectStarted = useRef(false);
   const phaseNavigationStartedRef =
     useRef(false);
   const mediaRef =
@@ -226,6 +280,12 @@ export default function MovieBuffPlayPage() {
   const playbackSyncRoundRef = useRef<
     string | null
   >(null);
+  const beginMediaRef = useRef<
+    () => Promise<void>
+  >(async () => {});
+  const autoPlaybackAttemptedRoundRef = useRef<
+    string | null
+  >(null);
   const syncRoundStateRef = useRef<
     () => Promise<void>
   >(async () => {});
@@ -243,6 +303,9 @@ export default function MovieBuffPlayPage() {
   const timeoutLoggedRoundRef = useRef<
     string | null
   >(null);
+  const authoritativePhaseViewRef = useRef<
+    MovieBuffMatchPhaseView | null
+  >(null);
   const activeRoundIdRef = useRef<
     string | null
   >(null);
@@ -258,37 +321,70 @@ export default function MovieBuffPlayPage() {
     useState<RoomPlayer[]>([]);
   const [roundData, setRoundData] =
     useState<MovieBuffRound | null>(null);
+  const currentRoundId = roundData?.roundId ?? null;
+  const [authoritativePhaseView, setAuthoritativePhaseView] =
+    useState<MovieBuffMatchPhaseView | null>(null);
 
   const [timeLeft, setTimeLeft] =
-    useState(0);
+    useRoundScopedState(
+      currentRoundId,
+      roundData?.timeLeftSeconds ?? 0
+    );
   const [answer, setAnswer] =
-    useState("");
+    useRoundScopedState(currentRoundId, "");
   const [answerResult, setAnswerResult] =
-    useState<MovieBuffAnswerResult | null>(
+    useRoundScopedState<MovieBuffAnswerResult | null>(
+      currentRoundId,
       null
     );
+  const [timedOut, setTimedOut] =
+    useRoundScopedFlag(currentRoundId);
+
+  const playerFinished =
+    answerResult !== null || timedOut;
 
   const [loading, setLoading] =
     useState(true);
   const [submitting, setSubmitting] =
-    useState(false);
+    useRoundScopedState(currentRoundId, false);
   const [error, setError] =
-    useState("");
+    useRoundScopedState(currentRoundId, "");
+  const setErrorRef = useRef(setError);
+
+  useLayoutEffect(() => {
+    setErrorRef.current = setError;
+  }, [setError]);
 
   const [mediaReady, setMediaReady] =
-    useState(false);
+    useRoundScopedFlag(currentRoundId);
   const [mediaStarted, setMediaStarted] =
-    useState(false);
+    useRoundScopedFlag(currentRoundId);
   const [mediaFailed, setMediaFailed] =
-    useState(false);
+    useRoundScopedFlag(currentRoundId);
   const [mediaStarting, setMediaStarting] =
-    useState(false);
+    useRoundScopedFlag(currentRoundId);
   const [hintPending, setHintPending] =
-    useState(false);
+    useRoundScopedFlag(currentRoundId);
   const [speechListening, setSpeechListening] =
-    useState(false);
+    useRoundScopedState(currentRoundId, false);
   const [leaving, setLeaving] =
     useState(false);
+  const [clockNow, setClockNow] =
+    useState(() => Date.now());
+
+  useEffect(() => {
+    if (!roomId || loading) {
+      return;
+    }
+
+    const clockTimer = window.setInterval(() => {
+      setClockNow(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(clockTimer);
+    };
+  }, [loading, roomId]);
 
   useEffect(() => {
     activeRoundIdRef.current =
@@ -305,6 +401,37 @@ export default function MovieBuffPlayPage() {
       router.push(destination);
     },
     [router]
+  );
+
+  const publishAuthoritativePhaseView = useCallback(
+    (nextPhaseView: MovieBuffMatchPhaseView) => {
+      const previousPhaseView =
+        authoritativePhaseViewRef.current;
+
+      authoritativePhaseViewRef.current =
+        nextPhaseView;
+
+      if (
+        !previousPhaseView ||
+        previousPhaseView.roundId !==
+          nextPhaseView.roundId ||
+        previousPhaseView.phase !==
+          nextPhaseView.phase ||
+        previousPhaseView.phaseVersion !==
+          nextPhaseView.phaseVersion ||
+        previousPhaseView.phaseRoute !==
+          nextPhaseView.phaseRoute ||
+        previousPhaseView.phaseEndsAt !==
+          nextPhaseView.phaseEndsAt ||
+        previousPhaseView.answerDeadlineAt !==
+          nextPhaseView.answerDeadlineAt
+      ) {
+        setAuthoritativePhaseView(
+          nextPhaseView
+        );
+      }
+    },
+    []
   );
 
   const navigateToPhaseRoute = useCallback(
@@ -436,6 +563,10 @@ export default function MovieBuffPlayPage() {
       let phaseView =
         await getMovieBuffMatchPhaseView(roomId);
 
+      publishAuthoritativePhaseView(
+        phaseView
+      );
+
       console.info(
         "[movie-buff-play] syncPhaseRoute phase view",
         {
@@ -474,6 +605,10 @@ export default function MovieBuffPlayPage() {
           await getMovieBuffMatchPhaseView(
             roomId
           ).catch(() => phaseView);
+
+        publishAuthoritativePhaseView(
+          phaseView
+        );
 
         console.info(
           "[movie-buff-play] syncPhaseRoute phase view after advance",
@@ -543,8 +678,9 @@ export default function MovieBuffPlayPage() {
       answerResult,
       navigateToPhaseRoute,
       roomId,
-      roundData?.playbackStartedAt,
-      roundData?.roundId,
+      roundData,
+      publishAuthoritativePhaseView,
+      setTimeLeft,
       timeLeft,
     ]
   );
@@ -660,7 +796,11 @@ export default function MovieBuffPlayPage() {
       speechRecognitionRef.current = null;
       setSpeechListening(false);
     };
-  }, []);
+  }, [
+    setAnswer,
+    setError,
+    setSpeechListening,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -739,12 +879,6 @@ export default function MovieBuffPlayPage() {
         setRoomId(resolvedRoomId);
         setPlayerId(resolvedPlayerId);
         setRoundData(gameRound);
-        setTimeLeft(
-          Math.max(
-            gameRound.timeLeftSeconds,
-            0
-          )
-        );
 
         channel = subscribeToGameState(
           resolvedRoomId,
@@ -770,7 +904,7 @@ export default function MovieBuffPlayPage() {
           return;
         }
 
-        setError(
+        setErrorRef.current(
           initializeError instanceof Error
             ? initializeError.message
             : "Unable to initialize the round."
@@ -796,13 +930,14 @@ export default function MovieBuffPlayPage() {
   }, [loadPlayers, navigateTo]);
 
   useLayoutEffect(() => {
-    redirectStarted.current = false;
     maximumPlayedTime.current = 0;
     mediaReadyRoundRef.current = null;
     clipLoadedRoundRef.current = null;
     playbackPreparedRoundRef.current =
       null;
     playbackSyncRoundRef.current = null;
+    autoPlaybackAttemptedRoundRef.current =
+      null;
     playbackRepairRoundRef.current =
       null;
     phaseNavigationStartedRef.current =
@@ -823,16 +958,6 @@ export default function MovieBuffPlayPage() {
       media.pause();
     }
 
-    setMediaReady(false);
-    setMediaStarted(false);
-    setMediaFailed(false);
-    setMediaStarting(false);
-    setHintPending(false);
-    setSubmitting(false);
-    setAnswer("");
-    setAnswerResult(null);
-    setError("");
-    setSpeechListening(false);
     speechRecognitionRef.current?.stop();
   }, [roundData?.roundId]);
 
@@ -849,6 +974,15 @@ export default function MovieBuffPlayPage() {
           );
 
         setRoundData((currentRound) => {
+          const phaseForRound =
+            authoritativePhaseViewRef.current
+              ?.roundId === nextRound.roundId
+              ? authoritativePhaseViewRef.current
+              : null;
+          const phaseOwnsRoundTimer =
+            phaseForRound?.phase === "answer" ||
+            phaseForRound?.phase === "results";
+
           if (
             !currentRound ||
             currentRound.roundId !==
@@ -864,12 +998,14 @@ export default function MovieBuffPlayPage() {
             currentRound.hintPenaltySeconds !==
               nextRound.hintPenaltySeconds
           ) {
-            setTimeLeft(
-              Math.max(
-                nextRound.timeLeftSeconds,
-                0
-              )
-            );
+            if (!phaseOwnsRoundTimer) {
+              setTimeLeft(
+                Math.max(
+                  nextRound.timeLeftSeconds,
+                  0
+                )
+              );
+            }
 
             return nextRound;
           }
@@ -880,7 +1016,7 @@ export default function MovieBuffPlayPage() {
         // Keep the local round state if sync refresh fails.
       }
     },
-    [roomId]
+    [roomId, setTimeLeft]
   );
 
   useEffect(() => {
@@ -965,8 +1101,6 @@ export default function MovieBuffPlayPage() {
                 repairedPlaybackStartedAt,
             };
           });
-          setMediaStarted(true);
-          setMediaStarting(false);
         }
 
         return payload;
@@ -976,7 +1110,9 @@ export default function MovieBuffPlayPage() {
         throw repairError;
       }
     },
-    [roundData?.roundId]
+    [
+      roundData?.roundId,
+    ]
   );
 
   useEffect(() => {
@@ -988,7 +1124,7 @@ export default function MovieBuffPlayPage() {
     if (
       !roomId ||
       loading ||
-      answerResult
+      playerFinished
     ) {
       return;
     }
@@ -1001,8 +1137,8 @@ export default function MovieBuffPlayPage() {
       window.clearInterval(timer);
     };
   }, [
-    answerResult,
     loading,
+    playerFinished,
     roomId,
     syncRoundState,
   ]);
@@ -1014,10 +1150,12 @@ export default function MovieBuffPlayPage() {
 
     let active = true;
 
-    void syncPhaseRoute({
-      fallbackRoundId:
-        roundData?.roundId ?? null,
-    }).catch(() => false);
+    const initialSyncTimer = window.setTimeout(() => {
+      void syncPhaseRoute({
+        fallbackRoundId:
+          roundData?.roundId ?? null,
+      }).catch(() => false);
+    }, 0);
 
     const timer = window.setInterval(() => {
       void syncPhaseRoute({
@@ -1034,6 +1172,7 @@ export default function MovieBuffPlayPage() {
 
     return () => {
       active = false;
+      window.clearTimeout(initialSyncTimer);
       window.clearInterval(timer);
     };
   }, [
@@ -1044,10 +1183,11 @@ export default function MovieBuffPlayPage() {
   ]);
 
   useEffect(() => {
-    if (
-      timeLeft > 0 &&
-      !answerResult
-    ) {
+    const playerClockExpired =
+      Boolean(roundData?.playbackStartedAt) &&
+      timeLeft <= 0;
+
+    if (!playerFinished && !playerClockExpired) {
       return;
     }
 
@@ -1056,30 +1196,46 @@ export default function MovieBuffPlayPage() {
     if (media && !media.paused) {
       media.pause();
     }
-  }, [answerResult, timeLeft]);
+  }, [playerFinished, roundData?.playbackStartedAt, timeLeft]);
 
-  useEffect(() => {
-    if (!roundData?.playbackStartedAt) {
-      return;
-    }
+  const phaseViewForRound =
+    authoritativePhaseView?.roundId ===
+      roundData?.roundId
+      ? authoritativePhaseView
+      : null;
 
-    if (clipStartTimeoutRef.current) {
-      window.clearTimeout(
-        clipStartTimeoutRef.current
-      );
-      clipStartTimeoutRef.current = null;
-    }
+  const currentPhase =
+    phaseViewForRound?.phase ?? null;
 
-    setMediaStarted(true);
-    setMediaStarting(false);
-  }, [roundData?.playbackStartedAt]);
+  const currentAnswerPhase =
+    currentPhase === "answer";
+
+  const currentPlaybackPhase =
+    currentPhase === "transition" ||
+    currentPhase === "playback";
+
+  const playerTimerExpired =
+    Boolean(roundData?.playbackStartedAt) &&
+    timeLeft <= 0;
+
+  const answerPhaseExpired =
+    currentAnswerPhase &&
+    Boolean(
+      authoritativePhaseView?.answerDeadlineAt
+    ) &&
+    Date.parse(
+      authoritativePhaseView?.answerDeadlineAt ??
+        ""
+    ) <= clockNow;
 
   useEffect(() => {
     if (
       !roomId ||
       !roundData?.roundId ||
-      answerResult ||
-      timeLeft > 0 ||
+      playerFinished ||
+      submitting ||
+      (!playerTimerExpired &&
+        !answerPhaseExpired) ||
       timeoutLoggedRoundRef.current ===
         roundData.roundId
     ) {
@@ -1088,6 +1244,9 @@ export default function MovieBuffPlayPage() {
 
     timeoutLoggedRoundRef.current =
       roundData.roundId;
+
+    setTimedOut(true);
+    setTimeLeft(0);
 
     queueMovieBuffEvent({
       eventType: "timeout",
@@ -1100,130 +1259,18 @@ export default function MovieBuffPlayPage() {
           "trivia",
       },
     });
-  }, [answerResult, roomId, roundData, timeLeft]);
-
-  useEffect(() => {
-    if (
-      !roomId ||
-      loading ||
-      redirectStarted.current
-    ) {
-      return;
-    }
-
-    const answerWasSubmitted =
-      answerResult !== null;
-
-    const timerExpired =
-      roundData !== null &&
-      timeLeft === 0 &&
-      !submitting;
-
-    if (
-      !answerWasSubmitted &&
-      !timerExpired
-    ) {
-      return;
-    }
-
-    const delay = answerWasSubmitted
-      ? 2500
-      : 1200;
-
-    console.info(
-      "[movie-buff-play] scheduling results redirect",
-      {
-        roomId,
-        roundId:
-          roundData?.roundId ?? null,
-        answerWasSubmitted,
-        timerExpired,
-        delay,
-        phasePath:
-          typeof window !==
-          "undefined"
-            ? window.location.pathname
-            : null,
-      }
-    );
-
-    const redirectTimer =
-      window.setTimeout(() => {
-        redirectStarted.current = true;
-
-        console.info(
-          "[movie-buff-play] redirect timer fired",
-          {
-            roomId,
-            roundId:
-              roundData?.roundId ?? null,
-            answerWasSubmitted,
-            timerExpired,
-            phasePath:
-              window.location.pathname,
-          }
-        );
-
-        void syncPhaseRoute({
-          advance: true,
-          fallbackRoundId:
-            roundData?.roundId ?? null,
-        })
-          .then((navigated) => {
-            if (
-              navigated ||
-              !roomId ||
-              !roundData?.roundId
-            ) {
-              return;
-            }
-
-            phaseNavigationStartedRef.current =
-              true;
-            navigateTo(
-              `/games/movie-buff/round-results?roomId=${encodeURIComponent(
-                roomId
-              )}&roundId=${encodeURIComponent(
-                roundData.roundId
-              )}`,
-              true
-            );
-          })
-          .catch(() => {
-            if (
-              !roomId ||
-              !roundData?.roundId
-            ) {
-              return;
-            }
-
-            phaseNavigationStartedRef.current =
-              true;
-            navigateTo(
-              `/games/movie-buff/round-results?roomId=${encodeURIComponent(
-                roomId
-              )}&roundId=${encodeURIComponent(
-                roundData.roundId
-              )}`,
-              true
-            );
-          });
-      }, delay);
-
-    return () => {
-      window.clearTimeout(
-        redirectTimer
-      );
-    };
   }, [
-    answerResult,
-    loading,
+    answerPhaseExpired,
+    authoritativePhaseView?.answerDeadlineAt,
+    currentAnswerPhase,
+    playerFinished,
+    playerTimerExpired,
     roomId,
     roundData,
-    navigateTo,
+    setTimedOut,
+    setTimeLeft,
     submitting,
-    syncPhaseRoute,
-    timeLeft,
+    clockNow,
   ]);
 
   const currentPlayer = useMemo(
@@ -1313,6 +1360,42 @@ export default function MovieBuffPlayPage() {
   const hasPlayableMedia =
     isVideo || isAudio;
 
+  let launchWindowSecondsLeft: number | null =
+    null;
+
+  if (
+    roundData &&
+    !playerFinished &&
+    !roundData.playbackStartedAt &&
+    currentPlaybackPhase &&
+    currentPhase === "playback" &&
+    phaseViewForRound?.phaseEndsAt
+  ) {
+    const deadline = Date.parse(
+      phaseViewForRound.phaseEndsAt
+    );
+
+    if (Number.isFinite(deadline)) {
+      launchWindowSecondsLeft = Math.max(
+        0,
+        Math.ceil((deadline - clockNow) / 1000)
+      );
+    }
+  }
+
+  const displayedTimeLeft =
+    playerFinished
+      ? 0
+      : roundData?.playbackStartedAt
+        ? Math.max(timeLeft, 0)
+        : Math.max(
+            launchWindowSecondsLeft ?? timeLeft,
+            0
+          );
+
+  const playerPlaybackStarted =
+    Boolean(roundData?.playbackStartedAt);
+
   const shouldUseTriviaFallback =
     mediaFailed ||
     (!hasPlayableMedia && !isImage);
@@ -1323,8 +1406,9 @@ export default function MovieBuffPlayPage() {
     !mediaStarted &&
     !mediaStarting &&
     !hintPending &&
-    !answerResult &&
-    timeLeft > 0 &&
+    !playerFinished &&
+    (timeLeft > 0 ||
+      launchWindowSecondsLeft !== null) &&
     !roundData?.hintUsed &&
     !roundData?.playbackStartedAt;
 
@@ -1415,25 +1499,11 @@ export default function MovieBuffPlayPage() {
     mediaReady,
     roomId,
     roundData,
+    setTimeLeft,
   ]);
 
   const displayedStartWindowLeft =
-    useMemo(() => {
-      if (
-        !roundData ||
-        roundData.playbackStartedAt ||
-        answerResult ||
-        timeLeft === 0
-      ) {
-        return null;
-      }
-
-      return Math.max(timeLeft, 0);
-    }, [
-      answerResult,
-      roundData,
-      timeLeft,
-    ]);
+    launchWindowSecondsLeft;
 
   useEffect(() => {
     return () => {
@@ -1448,23 +1518,22 @@ export default function MovieBuffPlayPage() {
   useEffect(() => {
     if (
       !speechRecognitionRef.current ||
-      (!answerResult && timeLeft > 0)
+      !playerFinished
     ) {
       return;
     }
 
     speechRecognitionRef.current.stop();
-  }, [answerResult, timeLeft]);
+  }, [playerFinished]);
 
   function toggleSpeechRecognition() {
     const recognition =
       speechRecognitionRef.current;
 
     if (
-      timeLeft === 0 ||
       !speechRecognitionAvailable ||
       submitting ||
-      answerResult
+      playerFinished
     ) {
       return;
     }
@@ -1707,8 +1776,9 @@ export default function MovieBuffPlayPage() {
       !roomId ||
       !media ||
       mediaStarted ||
-      timeLeft === 0 ||
-      answerResult
+      playerFinished ||
+      (timeLeft === 0 &&
+        launchWindowSecondsLeft === null)
     ) {
       return;
     }
@@ -1776,6 +1846,41 @@ export default function MovieBuffPlayPage() {
         }
       }, CLIP_PLAYBACK_DELAY_MS);
   }
+
+  useEffect(() => {
+    beginMediaRef.current = beginMedia;
+  });
+
+  useEffect(() => {
+    const activeRoundId =
+      roundData?.roundId ?? null;
+
+    if (
+      !activeRoundId ||
+      !roundData?.playbackStartedAt ||
+      !mediaReady ||
+      mediaStarted ||
+      mediaStarting ||
+      mediaFailed ||
+      playerFinished ||
+      autoPlaybackAttemptedRoundRef.current ===
+        activeRoundId
+    ) {
+      return;
+    }
+
+    autoPlaybackAttemptedRoundRef.current =
+      activeRoundId;
+    void beginMediaRef.current();
+  }, [
+    mediaFailed,
+    mediaReady,
+    mediaStarted,
+    mediaStarting,
+    playerFinished,
+    roundData?.playbackStartedAt,
+    roundData?.roundId,
+  ]);
 
   async function useHint() {
     if (!roomId || !canUseHint) {
@@ -1872,9 +1977,11 @@ export default function MovieBuffPlayPage() {
 
     if (
       !cleanedAnswer ||
-      timeLeft === 0 ||
       submitting ||
-      answerResult
+      playerFinished ||
+      !playerPlaybackStarted ||
+      (timeLeft === 0 &&
+        launchWindowSecondsLeft === null)
     ) {
       return;
     }
@@ -2054,7 +2161,7 @@ export default function MovieBuffPlayPage() {
               <Clock3 className="text-red-500" />
             }
             label="Time Left"
-            value={`${timeLeft} seconds`}
+            value={`${displayedTimeLeft} seconds`}
           />
 
           <StatCard
@@ -2092,7 +2199,7 @@ export default function MovieBuffPlayPage() {
           <div className="space-y-6">
             <div className="relative min-h-[420px] overflow-hidden rounded-3xl border border-zinc-800 bg-gradient-to-br from-zinc-950 to-black">
               <div className="absolute right-5 top-5 z-30 flex h-16 w-16 items-center justify-center rounded-full border-4 border-red-600 bg-black/90 text-xl font-black shadow-xl">
-                {timeLeft}
+                {displayedTimeLeft}
               </div>
 
               {isVideo &&
@@ -2139,7 +2246,7 @@ export default function MovieBuffPlayPage() {
                       className="h-full max-h-[560px] w-full object-contain"
                     />
 
-                    {!mediaStarted && (
+                    {!mediaStarted && !playerFinished && (
                       <MediaStartOverlay
                         mediaReady={
                           mediaReady
@@ -2166,6 +2273,9 @@ export default function MovieBuffPlayPage() {
                         startWindowSecondsLeft={
                           displayedStartWindowLeft
                         }
+                        timerRunning={Boolean(
+                          roundData?.playbackStartedAt
+                        )}
                         canUseHint={
                           canUseHint
                         }
@@ -2229,7 +2339,7 @@ export default function MovieBuffPlayPage() {
                       </h2>
                     </div>
 
-                    {!mediaStarted && (
+                    {!mediaStarted && !playerFinished && (
                       <MediaStartOverlay
                         mediaReady={
                           mediaReady
@@ -2256,6 +2366,9 @@ export default function MovieBuffPlayPage() {
                         startWindowSecondsLeft={
                           displayedStartWindowLeft
                         }
+                        timerRunning={Boolean(
+                          roundData?.playbackStartedAt
+                        )}
                         canUseHint={
                           canUseHint
                         }
@@ -2339,10 +2452,24 @@ export default function MovieBuffPlayPage() {
               <p className="mt-2 text-zinc-500">
                 Enter the complete movie title
                 before time expires.
-                {!roundData?.playbackStartedAt
-                  ? " The clock starts when playback begins."
-                  : ""}
+                {roundData?.playbackStartedAt
+                  ? " Your personal clock is running."
+                  : " Start your clip when you are ready; the server will auto-start it when the launch window closes."}
               </p>
+
+              {!playerPlaybackStarted &&
+                !playerFinished &&
+                !hasPlayableMedia && (
+                  <div className="mt-6 rounded-2xl border border-yellow-700/60 bg-yellow-500/10 p-5">
+                    <p className="font-black text-yellow-200">
+                      Waiting for your clip to start.
+                    </p>
+
+                    <p className="mt-2 text-sm font-bold text-zinc-400">
+                      Start playback when you are ready, or let the automatic launch timer start it for you. The answer form unlocks when your personal clock begins.
+                    </p>
+                  </div>
+                )}
 
               {answerResult ? (
                 <div
@@ -2395,7 +2522,17 @@ export default function MovieBuffPlayPage() {
                   )}
 
                   <p className="mt-4 text-sm font-bold text-zinc-400">
-                    Loading round results...
+                    Your answer is locked. Waiting for the other players...
+                  </p>
+                </div>
+              ) : timedOut ? (
+                <div className="mt-6 rounded-2xl border border-red-700 bg-red-500/10 p-6">
+                  <p className="font-black text-red-400">
+                    Your time is up.
+                  </p>
+
+                  <p className="mt-2 text-sm font-bold text-zinc-400">
+                    You are finished for this round. Waiting for the other players; results will open automatically when everyone is done.
                   </p>
                 </div>
               ) : (
@@ -2411,7 +2548,10 @@ export default function MovieBuffPlayPage() {
                       )
                     }
                     disabled={
-                      timeLeft === 0 ||
+                      playerFinished ||
+                      !playerPlaybackStarted ||
+                      (timeLeft === 0 &&
+                        launchWindowSecondsLeft === null) ||
                       submitting
                     }
                     placeholder="Enter the movie title"
@@ -2423,7 +2563,10 @@ export default function MovieBuffPlayPage() {
                     type="button"
                     onClick={toggleSpeechRecognition}
                     disabled={
-                      timeLeft === 0 ||
+                      playerFinished ||
+                      !playerPlaybackStarted ||
+                      (timeLeft === 0 &&
+                        launchWindowSecondsLeft === null) ||
                       !speechRecognitionAvailable ||
                       submitting
                     }
@@ -2453,7 +2596,10 @@ export default function MovieBuffPlayPage() {
                     type="submit"
                     disabled={
                       !answer.trim() ||
-                      timeLeft === 0 ||
+                      playerFinished ||
+                      !playerPlaybackStarted ||
+                      (timeLeft === 0 &&
+                        launchWindowSecondsLeft === null) ||
                       submitting
                     }
                     className="flex items-center justify-center gap-3 rounded-xl bg-red-600 px-8 py-4 text-lg font-black transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
@@ -2468,7 +2614,7 @@ export default function MovieBuffPlayPage() {
               )}
 
               {!speechRecognitionAvailable &&
-                !answerResult && (
+                !playerFinished && (
                   <p className="mt-3 text-sm font-bold text-zinc-500">
                     Voice answers are not available in this browser. Type your
                     answer instead.
@@ -2476,14 +2622,15 @@ export default function MovieBuffPlayPage() {
                 )}
 
               {timeLeft === 0 &&
-                !answerResult && (
+                !playerFinished &&
+                roundData?.playbackStartedAt && (
                   <div className="mt-6 rounded-2xl border border-red-700 bg-red-500/10 p-5">
                     <p className="font-black text-red-400">
                       Time is up.
                     </p>
 
                     <p className="mt-2 text-sm font-bold text-zinc-400">
-                      Loading round results...
+                      Waiting for the other players...
                     </p>
                   </div>
                 )}
@@ -2636,6 +2783,7 @@ function MediaStartOverlay({
   hintUsed,
   hintPenaltySeconds,
   startWindowSecondsLeft,
+  timerRunning,
   canUseHint,
   onUseHint,
   onStart,
@@ -2648,6 +2796,7 @@ function MediaStartOverlay({
   hintUsed: boolean;
   hintPenaltySeconds: number;
   startWindowSecondsLeft: number | null;
+  timerRunning: boolean;
   canUseHint: boolean;
   onUseHint: () => void;
   onStart: () => void;
@@ -2688,14 +2837,15 @@ function MediaStartOverlay({
 
           {!mediaStarting && !hintPending ? (
             <div className="mt-6 text-center">
-              {startWindowSecondsLeft !==
-                null && (
-                <p className="text-sm font-bold text-zinc-300">
-                  Round auto-ends in{" "}
-                  {startWindowSecondsLeft}s if
-                  you do not start or answer.
+              {timerRunning ? (
+                <p className="text-sm font-bold text-yellow-200">
+                  Your timer is running. Start playback when the clip is ready.
                 </p>
-              )}
+              ) : startWindowSecondsLeft !== null ? (
+                  <p className="text-sm font-bold text-zinc-300">
+                    Your clip auto-starts in {startWindowSecondsLeft}s if you do not start it.
+                  </p>
+              ) : null}
 
               {canUseHint && (
                 <button
@@ -2747,14 +2897,15 @@ function MediaStartOverlay({
             Playback is available once.
           </p>
 
-          {startWindowSecondsLeft !==
-            null && (
-            <p className="mt-3 text-sm font-bold text-zinc-400">
-              Round auto-ends in{" "}
-              {startWindowSecondsLeft}s if
-              you do not start or answer.
+          {timerRunning ? (
+            <p className="mt-3 text-sm font-bold text-yellow-200">
+              Your timer is running. Start playback now.
             </p>
-          )}
+          ) : startWindowSecondsLeft !== null ? (
+              <p className="mt-3 text-sm font-bold text-zinc-400">
+                Your clip auto-starts in {startWindowSecondsLeft}s if you do not start it.
+              </p>
+          ) : null}
 
           {canUseHint && (
             <button

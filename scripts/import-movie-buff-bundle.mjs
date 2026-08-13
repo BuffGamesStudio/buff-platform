@@ -259,10 +259,7 @@ function resolvePublicAssetPath(publicUrl) {
   );
 }
 
-function hasBuiltAsset(
-  mediaUrl,
-  thumbnailUrl = null,
-) {
+function hasBuiltAsset(mediaUrl) {
   const resolvedPath =
     resolvePublicAssetPath(mediaUrl);
 
@@ -742,7 +739,6 @@ async function main() {
       (entry.media ?? []).some((media) =>
         hasBuiltAsset(
           media?.mediaUrl,
-          media?.thumbnailUrl ?? null,
         ),
       );
     const effectivePublicationStatus =
@@ -871,7 +867,6 @@ async function main() {
         args.activateBuiltAssets &&
         hasBuiltAsset(
           media.mediaUrl,
-          media.thumbnailUrl ?? null,
         );
       const startSeconds =
         toNullableNumber(

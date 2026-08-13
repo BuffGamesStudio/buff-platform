@@ -97,8 +97,13 @@ function runCommand(command, args, options = {}) {
 }
 
 function resolveDbContainerName() {
+  const projectId =
+    process.env.SUPABASE_LOCAL_PROJECT_ID ??
+    "buff-platform";
   const output = runCommand("docker", [
     "ps",
+    "--filter",
+    `label=com.supabase.cli.project=${projectId}`,
     "--format",
     "{{.Names}}",
   ]);
@@ -112,7 +117,7 @@ function resolveDbContainerName() {
 
   if (!containerName) {
     throw new Error(
-      "Could not find a running Supabase DB container.",
+      `Could not find a running Supabase DB container for local project "${projectId}".`,
     );
   }
 
@@ -206,22 +211,6 @@ async function clickUnique(page, role, name) {
       ", ",
     )}.`,
   );
-}
-
-async function fillUnique(page, placeholder, value) {
-  const locator = page.getByPlaceholder(
-    placeholder,
-    { exact: true },
-  );
-  const count = await locator.count();
-  assert(
-    count === 1,
-    `Expected one input with placeholder "${placeholder}", found ${count}.`,
-  );
-  await locator.click();
-  await locator.press("ControlOrMeta+A");
-  await locator.press("Backspace");
-  await locator.type(value);
 }
 
 async function waitForEitherUrl(page, patterns) {
@@ -491,6 +480,15 @@ async function verifyHostedLeaveState(roomId) {
   };
 }
 
+async function verifySupabaseLeaveState(roomId) {
+  const verification = await verifyHostedLeaveState(roomId);
+
+  return {
+    verificationMode: "supabase-api",
+    ...verification,
+  };
+}
+
 function buildLeaveVerificationSql(roomId) {
   return `
 select json_build_object(
@@ -595,14 +593,16 @@ try {
     page: page.url(),
   };
 
-  const verification = isLocalBaseUrl(APP_URL)
-    ? extractJsonLine(
-        runSql(
-          resolveDbContainerName(),
-          buildLeaveVerificationSql(roomId),
-        ),
-      )
-    : await verifyHostedLeaveState(roomId);
+  const verification = adminSupabase
+    ? await verifySupabaseLeaveState(roomId)
+    : isLocalBaseUrl(APP_URL)
+      ? extractJsonLine(
+          runSql(
+            resolveDbContainerName(),
+            buildLeaveVerificationSql(roomId),
+          ),
+        )
+      : await verifyHostedLeaveState(roomId);
 
   assert(
     verification.roomStatus === "cancelled",

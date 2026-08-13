@@ -157,7 +157,7 @@ export default function WaitingRoomPage() {
       cancelled = true;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [navigateTo]);
 
   const loadLobby = useCallback(async () => {
     if (!roomId) {
