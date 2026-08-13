@@ -751,9 +751,10 @@ branch and the current workspace candidate is uncommitted.
 
 ## Superseding source and advisor recheck — 2026-08-13
 
-The source candidate is no longer uncommitted. `main` and `origin/main` both
-point to `699d7b2a1cd57e59e485da46124af2f977d5c6d9`, and Vercel deployment
-`dpl_2i5rxw6CnTMvZVe9mfhwBsaf6oCt` is READY on the public production alias.
+The gameplay source candidate is committed as
+`699d7b2a1cd57e59e485da46124af2f977d5c6d9`, with the follow-up documentation
+pushed separately. Vercel deployment `dpl_2i5rxw6CnTMvZVe9mfhwBsaf6oCt` is
+READY on the public production alias.
 Its compiled client targets `yfatwreicmiocdxzyznd`.
 
 The production migration ledger now includes the policy repair plus the six

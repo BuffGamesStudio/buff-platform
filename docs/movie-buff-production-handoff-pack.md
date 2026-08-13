@@ -338,9 +338,10 @@ the accepted gameplay behavior.
 
 ## Superseding release verification — 2026-08-13
 
-The source-control follow-up is complete. `main` and `origin/main` both point
-to commit `699d7b2a1cd57e59e485da46124af2f977d5c6d9` (`feat(movie-buff): ship
-per-player round flow`), and the worktree is clean.
+The gameplay release is committed as
+`699d7b2a1cd57e59e485da46124af2f977d5c6d9` (`feat(movie-buff): ship
+per-player round flow`). The follow-up documentation is also pushed, and the
+worktree was clean after both commits.
 
 Vercel automatically built that exact commit as READY production deployment
 `dpl_2i5rxw6CnTMvZVe9mfhwBsaf6oCt`, with aliases

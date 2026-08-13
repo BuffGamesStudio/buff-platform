@@ -902,9 +902,10 @@ Remaining operational follow-ups, not blockers for this gameplay contract:
 
 ## Superseding exact-commit verification — 2026-08-13
 
-The release is now reproducible from Git. `main` and `origin/main` point to
-`699d7b2a1cd57e59e485da46124af2f977d5c6d9`, and the worktree is clean. Vercel
-built that exact SHA as READY production deployment
+The gameplay release is reproducible from Git at
+`699d7b2a1cd57e59e485da46124af2f977d5c6d9`; the follow-up documentation was
+then pushed in a separate commit. Vercel built the gameplay SHA as READY
+production deployment
 `dpl_2i5rxw6CnTMvZVe9mfhwBsaf6oCt`; the `movie-buff-sigma.vercel.app` alias
 resolves to it and its compiled client targets production Supabase
 `yfatwreicmiocdxzyznd`.
