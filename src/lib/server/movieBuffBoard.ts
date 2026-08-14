@@ -868,6 +868,36 @@ async function loadPersistedBoardPreview(
   };
 }
 
+async function waitForPersistedBoardPreview(
+  roomId: string,
+  roomPlayers: RoomPlayerRow[],
+): Promise<{
+  boardId: string;
+  preview: MovieBuffBoardPreview;
+} | null> {
+  const maxAttempts = 8;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const persistedBoardPreview =
+      await loadPersistedBoardPreview(
+        roomId,
+        roomPlayers,
+      );
+
+    if (persistedBoardPreview) {
+      return persistedBoardPreview;
+    }
+
+    if (attempt < maxAttempts - 1) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, 250),
+      );
+    }
+  }
+
+  return null;
+}
+
 export async function createMovieBuffBoardDraft(): Promise<MovieBuffBoardDraft> {
   const [eligibleCategories, lobbyCategories] = await Promise.all([
     listEligibleBoardCategories().catch(() => []),
@@ -996,18 +1026,38 @@ export async function ensureMovieBuffBoardForRoom(
   try {
     const { data: insertedBoard, error: boardError } = await supabaseAdmin
       .from("movie_buff_boards")
-      .insert({
-        room_id: roomId,
-        status: "ready",
-        selector_player_id: selectorPlayerId,
-        tiles_used_count: 0,
-        total_tiles_count: draft.tileCount,
-      })
+      .upsert(
+        {
+          room_id: roomId,
+          status: "ready",
+          selector_player_id: selectorPlayerId,
+          tiles_used_count: 0,
+          total_tiles_count: draft.tileCount,
+        },
+        {
+          onConflict: "room_id",
+          ignoreDuplicates: true,
+        },
+      )
       .select("id")
-      .single();
+      .maybeSingle();
 
-    if (boardError || !insertedBoard) {
-      throw new Error(boardError?.message ?? "Failed to create board");
+    if (boardError) {
+      throw new Error(boardError.message);
+    }
+
+    if (!insertedBoard) {
+      const recoveredBoardPreview =
+        await waitForPersistedBoardPreview(
+          roomId,
+          roomPlayers,
+        );
+
+      if (recoveredBoardPreview) {
+        return recoveredBoardPreview;
+      }
+
+      throw new Error("Board already exists but could not be reloaded");
     }
 
     const boardId = insertedBoard.id as string;
@@ -1095,7 +1145,7 @@ export async function ensureMovieBuffBoardForRoom(
     return persistedBoardPreview;
   } catch (error) {
     const recoveredBoardPreview =
-      await loadPersistedBoardPreview(
+      await waitForPersistedBoardPreview(
         roomId,
         roomPlayers,
       ).catch(() => null);

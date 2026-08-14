@@ -88,8 +88,10 @@ export default function MovieBuffBoardPreviewClient({
     if (
       !roomId ||
       boardReloadRequestedRef.current ||
-      boardLoadError !==
-        "Board created but could not be reloaded"
+      (boardLoadError !==
+        "Board created but could not be reloaded" &&
+        boardLoadError !==
+          "Board already exists but could not be reloaded")
     ) {
       return;
     }
