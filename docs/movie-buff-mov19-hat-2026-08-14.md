@@ -35,10 +35,40 @@ Automated behavior: **PASS**.
 - Phase advancement: **PASS**. Both clients reached round results and the
   authoritative phase advanced from `playback` through `answer` to `results`.
 
-The room’s three recorded test runs were subsequently left through the normal
+The three earlier recorded test runs were subsequently left through the normal
 authenticated `leave_movie_buff_room` path. A read-back confirmed zero active
 players in each test room. Smoke accounts were retained because no account
 retention/deletion policy was supplied.
+
+## Final exact-production recheck
+
+Capture: 2026-08-14T19:06:56Z–2026-08-14T19:08:30Z (UTC)
+
+- Target binding: the same production alias, deployment
+  `dpl_3rLVt4ftZiXqa4erRsr9TwiXc3VX`, SHA
+  `ac7bd7c44d29a92a03864b9fe888d4a9a00c1e9a`, and Supabase ref
+  `yfatwreicmiocdxzyznd`.
+- Test room: `38d57936-b314-4886-9efd-8739703216e6`.
+- Independent starts: **PASS**. Player one manually started at
+  `2026-08-14T19:07:31.645349Z`; player two remained unstarted.
+- Automatic timer start: **PASS**. Player two auto-started at
+  `2026-08-14T19:07:51.495195Z`, 19.850 seconds after player one; the answer
+  input then unlocked.
+- Different answer times: **PASS**. Player one submitted at
+  `2026-08-14T19:07:52.933652Z`; player two submitted at
+  `2026-08-14T19:07:56.751397Z` (3.818 seconds apart).
+- Waiting states: **PASS**. Player two saw the automatic-launch countdown;
+  after player one answered, player one was locked while player two could
+  still answer.
+- Phase advancement: **PASS**. Both clients reached results and the
+  authoritative phase advanced from `playback` through `answer` to `results`.
+- Cleanup: the browser leave sub-check did not complete, so both identities
+  were signed in again and left through the normal authenticated
+  `leave_movie_buff_room` RPC. Read-back confirmed both `left_at` values are
+  set and zero active players remain; the room is cancelled. Smoke accounts
+  remain retained under the policy stated above.
+
+Final automated HAT result: **PASS**.
 
 ## Human signoff
 
