@@ -22,6 +22,7 @@
     "movie-buff:hosted-preflight": "node ./scripts/movie-buff-hosted-preflight.mjs",
     "movie-buff:local-launch-suite": "node ./scripts/movie-buff-local-launch-suite.mjs",
     "movie-buff:regression-board-concurrency": "node ./scripts/movie-buff-board-concurrency-regression.mjs",
+    "movie-buff:rpc-security-smoke": "node ./scripts/movie-buff-rpc-security-smoke.mjs",
     "movie-buff:pool-health": "node ./scripts/movie-buff-pool-health.mjs",
     "movie-buff:warm-pool": "node ./scripts/movie-buff-warm-pool.mjs",
     "movie-buff:promotable-pool-assets": "node ./scripts/movie-buff-promotable-pool-assets.mjs",
