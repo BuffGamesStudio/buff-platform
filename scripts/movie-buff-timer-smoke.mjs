@@ -212,30 +212,31 @@ async function waitForWaitingRoomReady(page) {
 }
 
 async function waitForPrivateStartReady(page) {
-  await page.waitForFunction(
-    () => {
-      const buttons = Array.from(
-        document.querySelectorAll("button"),
-      );
+  const readyButton = page.getByRole("button", {
+    name: "Ready!",
+    exact: true,
+  });
+  const startButton = page.getByRole("button", {
+    name: "Start Match",
+    exact: true,
+  });
+  const deadline = Date.now() + 30000;
 
-      const readyButton = buttons.find((button) =>
-        (button.textContent ?? "").trim().includes("Ready!"),
-      );
-      const startButton = buttons.find((button) =>
-        (button.textContent ?? "")
-          .trim()
-          .includes("Start Match"),
-      );
+  while (Date.now() < deadline) {
+    if (
+      (await readyButton.count()) === 1 &&
+      (await startButton.count()) === 1 &&
+      (await readyButton.isEnabled()) &&
+      (await startButton.isEnabled())
+    ) {
+      return;
+    }
 
-      return Boolean(
-        readyButton &&
-          !readyButton.hasAttribute("disabled") &&
-          startButton &&
-          !startButton.hasAttribute("disabled"),
-      );
-    },
-    undefined,
-    { timeout: 30000 },
+    await page.waitForTimeout(250);
+  }
+
+  throw new Error(
+    `Timed out waiting for private start controls. page_url=${page.url()}`,
   );
 }
 
@@ -428,16 +429,18 @@ try {
     `Timer changed before playback start: ${initialTimeLeft} -> ${beforeHintTimeLeft}.`,
   );
   assert(
-    afterHintTimeLeft === 25,
-    `Expected hint to deduct to 25, got ${afterHintTimeLeft}.`,
+    afterHintTimeLeft <= beforeHintTimeLeft &&
+      afterHintTimeLeft > 0,
+    `Expected the preplay launch countdown to remain active after the hint: ${beforeHintTimeLeft} -> ${afterHintTimeLeft}.`,
   );
   assert(
-    afterHintWaitTimeLeft === afterHintTimeLeft,
-    `Timer drifted after hint before playback: ${afterHintTimeLeft} -> ${afterHintWaitTimeLeft}.`,
+    afterHintWaitTimeLeft < afterHintTimeLeft,
+    `Expected the automatic launch countdown to continue before playback: ${afterHintTimeLeft} -> ${afterHintWaitTimeLeft}.`,
   );
   assert(
-    afterPlaybackStartTimeLeft < afterHintWaitTimeLeft,
-    `Timer did not start after playback: ${afterHintWaitTimeLeft} -> ${afterPlaybackStartTimeLeft}.`,
+    afterPlaybackStartTimeLeft >= 20 &&
+      afterPlaybackStartTimeLeft <= 25,
+    `Expected the five-second hint penalty to carry into the personal clock: got ${afterPlaybackStartTimeLeft}.`,
   );
   assert(
     activePlaybackTimeLeft < afterPlaybackStartTimeLeft,

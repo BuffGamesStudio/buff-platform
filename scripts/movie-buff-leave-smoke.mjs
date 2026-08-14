@@ -243,32 +243,31 @@ async function waitForWaitingRoomReady(page) {
 }
 
 async function waitForPrivateStartReady(page) {
-  await page.waitForFunction(
-    () => {
-      const buttons = Array.from(
-        document.querySelectorAll("button"),
-      );
+  const readyButton = page.getByRole("button", {
+    name: "Ready!",
+    exact: true,
+  });
+  const startButton = page.getByRole("button", {
+    name: "Start Match",
+    exact: true,
+  });
+  const deadline = Date.now() + 30000;
 
-      const readyButton = buttons.find((button) =>
-        (button.textContent ?? "")
-          .trim()
-          .includes("Ready!"),
-      );
-      const startButton = buttons.find((button) =>
-        (button.textContent ?? "")
-          .trim()
-          .includes("Start Match"),
-      );
+  while (Date.now() < deadline) {
+    if (
+      (await readyButton.count()) === 1 &&
+      (await startButton.count()) === 1 &&
+      (await readyButton.isEnabled()) &&
+      (await startButton.isEnabled())
+    ) {
+      return;
+    }
 
-      return Boolean(
-        readyButton &&
-          !readyButton.hasAttribute("disabled") &&
-          startButton &&
-          !startButton.hasAttribute("disabled"),
-      );
-    },
-    undefined,
-    { timeout: 30000 },
+    await page.waitForTimeout(250);
+  }
+
+  throw new Error(
+    `Timed out waiting for private start controls. page_url=${page.url()}`,
   );
 }
 
