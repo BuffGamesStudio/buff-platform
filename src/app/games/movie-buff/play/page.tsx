@@ -279,7 +279,7 @@ export default function MovieBuffPlayPage() {
   const playbackSyncRoundRef = useRef<
     string | null
   >(null);
-  const beginMediaRef = useRef<
+  const startAutomaticMediaRef = useRef<
     () => Promise<void>
   >(async () => {});
   const autoPlaybackAttemptedRoundRef = useRef<
@@ -1864,8 +1864,54 @@ export default function MovieBuffPlayPage() {
     }
   }
 
+  async function startAutomaticMedia() {
+    const media = mediaRef.current;
+    const activeRoundId =
+      roundData?.roundId ?? null;
+
+    if (
+      !roomId ||
+      !roundData?.playbackStartedAt ||
+      !media ||
+      !activeRoundId ||
+      mediaStarted ||
+      mediaStarting ||
+      playerFinished
+    ) {
+      return;
+    }
+
+    setMediaStarting(true);
+    setError("");
+
+    try {
+      // The server has already recorded this player's automatic start. Do
+      // not call the manual prepare/start RPCs here: doing so creates a
+      // second play request and makes an automatic start look manual.
+      await media.play();
+      setMediaStarted(true);
+      setMediaStarting(false);
+
+      queueMovieBuffEvent({
+        eventType: "clip_started",
+        roomId,
+        matchId: roundData.matchId,
+        roundId: activeRoundId,
+        payload: {
+          clipType,
+          automatic: true,
+        },
+      });
+    } catch (playbackError) {
+      handlePlaybackStartFailure(
+        playbackError
+      );
+    }
+  }
+
   useEffect(() => {
-    beginMediaRef.current = beginMedia;
+    startAutomaticMediaRef.current =
+      startAutomaticMedia;
   });
 
   useEffect(() => {
@@ -1880,6 +1926,8 @@ export default function MovieBuffPlayPage() {
       mediaStarting ||
       mediaFailed ||
       playerFinished ||
+      playbackPreparedRoundRef.current ===
+        activeRoundId ||
       autoPlaybackAttemptedRoundRef.current ===
         activeRoundId
     ) {
@@ -1888,7 +1936,7 @@ export default function MovieBuffPlayPage() {
 
     autoPlaybackAttemptedRoundRef.current =
       activeRoundId;
-    void beginMediaRef.current();
+    void startAutomaticMediaRef.current();
   }, [
     mediaFailed,
     mediaReady,

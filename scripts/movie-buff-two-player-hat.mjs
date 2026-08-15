@@ -729,6 +729,11 @@ try {
     (snapshot) =>
       Boolean(
         rowFor(snapshot.playback, playerTwoId)?.playback_started_at,
+      ) &&
+      snapshot.roundEvents.some(
+        (event) =>
+          event.player_id === playerOneId &&
+          event.event_type === "clip_start_requested",
       ),
     60000,
   );
@@ -736,9 +741,18 @@ try {
     automaticStartSnapshot.playback,
     playerTwoId,
   );
+  const playerTwoClipStartRequests = automaticStartSnapshot.roundEvents.filter(
+    (event) =>
+      event.player_id === playerTwoId &&
+      event.event_type === "clip_start_requested",
+  );
   assert(
     playerTwoPlayback?.playback_started_at,
     "Automatic launch did not start the waiting player's clock.",
+  );
+  assert(
+    playerTwoClipStartRequests.length === 0,
+    "The automatically launched player emitted a manual clip-start request.",
   );
   assert(
     secondsBetween(
@@ -758,6 +772,7 @@ try {
       playerOnePlayback.playback_started_at,
       playerTwoPlayback.playback_started_at,
     ),
+    playerTwoManualClipStartRequests: playerTwoClipStartRequests.length,
     automatic: true,
     answerInputUnlocked: true,
   };
