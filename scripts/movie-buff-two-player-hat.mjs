@@ -632,10 +632,6 @@ try {
     // players before this test clicks Player 1.
     await waitForPlayReady(pageOne);
 
-    const initialSnapshot = await waitForSnapshot(
-      roomId,
-      (snapshot) => snapshot.phase?.phase === "playback",
-    );
     const playerOnePlayButton = playButton(pageOne);
     assert(
       (await playerOnePlayButton.count()) === 1,
@@ -656,15 +652,6 @@ try {
       "Player 2 must have an independent clip-start control.",
     );
 
-    result.checkpoints.waitingStates = {
-      beforeManualStart: true,
-      phaseBeforeManualStart: initialSnapshot.phase?.phase ?? null,
-      playerTwoAutomaticLaunchCountdownVisible: true,
-      playerTwoBodyExcerpt: (await readBody(pageTwo))
-        .replace(/\s+/g, " ")
-        .slice(0, 1000),
-    };
-
     const manualStartSnapshot = await waitForSnapshot(
       roomId,
       (snapshot) =>
@@ -680,22 +667,56 @@ try {
       manualStartSnapshot.playback,
       playerTwoId,
     );
+    const launchDeadlineAt = manualStartSnapshot.phase?.phase_ends_at;
     assert(
       playerOnePlayback?.playback_started_at,
       "Manual player did not receive an authoritative playback start.",
+    );
+    assert(
+      playerOnePlayback?.play_requested_at,
+      "Manual player did not record an authoritative play request.",
+    );
+    assert(
+      launchDeadlineAt,
+      "The playback phase did not expose an automatic launch deadline.",
+    );
+    const secondsBeforeLaunchDeadline = secondsBetween(
+      playerOnePlayback.play_requested_at,
+      launchDeadlineAt,
+    );
+    assert(
+      Number.isFinite(secondsBeforeLaunchDeadline) &&
+        secondsBeforeLaunchDeadline > 0,
+      `Player 1 manual start missed the automatic launch deadline: request=${playerOnePlayback.play_requested_at}, deadline=${launchDeadlineAt}.`,
+    );
+    assert(
+      !playerTwoBeforeAutomatic?.play_requested_at,
+      "The waiting player received a play request before automatic launch.",
     );
     assert(
       !playerTwoBeforeAutomatic?.playback_started_at,
       "The waiting player started before the launch window expired.",
     );
 
+    result.checkpoints.waitingStates = {
+      beforeManualStart: true,
+      phaseAtManualStart: manualStartSnapshot.phase?.phase ?? null,
+      playerTwoAutomaticLaunchCountdownVisible: true,
+      playerTwoBodyExcerpt: (await readBody(pageTwo))
+        .replace(/\s+/g, " ")
+        .slice(0, 1000),
+    };
+
     result.checkpoints.independentStarts = {
       playerOne: {
         action: "manual click",
+        playRequestedAt: playerOnePlayback.play_requested_at,
         playbackStartedAt: playerOnePlayback.playback_started_at,
+        secondsBeforeAutomaticDeadline: secondsBeforeLaunchDeadline,
       },
       playerTwo: {
         action: "still waiting",
+        playRequestedAt: null,
         playbackStartedAt: null,
       },
       independent: true,
