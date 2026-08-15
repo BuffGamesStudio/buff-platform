@@ -474,6 +474,10 @@ async function waitForNoActiveRoomPlayers(roomId, timeout = 15000) {
 const browser = await chromium.launch({
   headless: true,
   executablePath: CHROME_EXECUTABLE,
+  // The HAT must exercise the app's automatic launch path. Without this
+  // explicit policy, headless Chrome rejects audible media playback before
+  // the app can record the authoritative clip-start event.
+  args: ["--autoplay-policy=no-user-gesture-required"],
 });
 const contextOne = await browser.newContext();
 const contextTwo = await browser.newContext();
@@ -490,6 +494,7 @@ const result = {
   expectedDeploymentSha: EXPECTED_DEPLOYMENT_SHA,
   expectedSupabaseRef: EXPECTED_SUPABASE_REF,
   testMode: ENTRY_ONLY ? "automatic-entry-only" : "full-two-player-hat",
+  browserPlaybackPolicy: "autoplay-policy=no-user-gesture-required",
   supabaseUrl,
   automatedWitness: "Codex automated two-client browser witness",
   namedReviewer: null,

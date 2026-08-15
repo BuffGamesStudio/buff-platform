@@ -150,7 +150,6 @@ type MovieBuffPlaybackRepairPayload = {
   error?: string;
 };
 
-const CLIP_PLAYBACK_DELAY_MS = 180;
 const HINT_TIME_PENALTY_SECONDS = 5;
 const PLAY_PAGE_INIT_TIMEOUT_MS = 8_000;
 
@@ -1790,61 +1789,79 @@ export default function MovieBuffPlayPage() {
       window.clearTimeout(
         clipStartTimeoutRef.current
       );
+      clipStartTimeoutRef.current = null;
     }
 
-    clipStartTimeoutRef.current =
-      window.setTimeout(async () => {
-        clipStartTimeoutRef.current = null;
+    // Call play() before awaiting the preparation RPC. Browsers attach
+    // transient user activation to this synchronous call; waiting for the
+    // RPC (or a timer) first causes an otherwise valid click to be rejected
+    // as autoplay. The preparation request is started in the same task so
+    // the authoritative request row is still created for this round.
+    const shouldPrepareRound =
+      Boolean(activeRoundId) &&
+      playbackPreparedRoundRef.current !==
+        activeRoundId;
+    const preparePlaybackPromise =
+      shouldPrepareRound
+        ? prepareMovieBuffRoundPlayback(roomId)
+        : Promise.resolve(null);
 
-        try {
+    try {
+      const mediaPlayPromise = media.play();
+      const preparedRound =
+        await mediaPlayPromise.then(
+          async () =>
+            await preparePlaybackPromise
+        );
+
+      if (
+        preparedRound &&
+        playbackPreparedRoundRef.current !==
+          preparedRound.roundId
+      ) {
+        playbackPreparedRoundRef.current =
+          preparedRound.roundId;
+
+        setRoundData((currentRound) => {
           if (
-            activeRoundId &&
-            playbackPreparedRoundRef.current !==
-              activeRoundId
+            !currentRound ||
+            currentRound.roundId !==
+              preparedRound.roundId ||
+            currentRound.playbackStartedAt ||
+            playbackSyncRoundRef.current ===
+              preparedRound.roundId
           ) {
-            const preparedRound =
-              await prepareMovieBuffRoundPlayback(
-                roomId
-              );
-
-            playbackPreparedRoundRef.current =
-              preparedRound.roundId;
-            setRoundData(preparedRound);
-            setTimeLeft(
-              Math.max(
-                preparedRound.timeLeftSeconds,
-                0
-              )
-            );
-
-            queueMovieBuffEvent({
-              eventType:
-                "clip_start_requested",
-              roomId,
-              matchId:
-                preparedRound.matchId,
-              roundId:
-                preparedRound.roundId,
-              payload: {
-                clipType,
-                },
-              });
+            return currentRound;
           }
 
-          await media.play();
+          return preparedRound;
+        });
+        setTimeLeft(
+          Math.max(
+            preparedRound.timeLeftSeconds,
+            0
+          )
+        );
 
-          if (
-            !media.paused &&
-            media.currentTime > 0
-          ) {
-            void syncPlaybackStarted();
-          }
-        } catch (playbackError) {
-          handlePlaybackStartFailure(
-            playbackError
-          );
-        }
-      }, CLIP_PLAYBACK_DELAY_MS);
+        queueMovieBuffEvent({
+          eventType: "clip_start_requested",
+          roomId,
+          matchId: preparedRound.matchId,
+          roundId: preparedRound.roundId,
+          payload: {
+            clipType,
+          },
+        });
+      }
+
+      if (!media.paused) {
+        void syncPlaybackStarted();
+      }
+    } catch (playbackError) {
+      handlePlaybackStartFailure(
+        playbackError
+      );
+    }
   }
 
   useEffect(() => {
