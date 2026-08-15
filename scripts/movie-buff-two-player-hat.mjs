@@ -630,21 +630,36 @@ try {
       "Reloading the player created a duplicate playback row.",
     );
   } else {
-    await Promise.all([waitForPlayReady(pageOne), waitForPlayReady(pageTwo)]);
+    // Do not wait for the second browser before exercising the first
+    // browser's manual-start path. The production launch window is finite;
+    // waiting for both media controls can let the server auto-launch both
+    // players before this test clicks Player 1.
+    await waitForPlayReady(pageOne);
 
     const initialSnapshot = await waitForSnapshot(
       roomId,
       (snapshot) => snapshot.phase?.phase === "playback",
     );
     const playerOnePlayButton = playButton(pageOne);
-    const playerTwoPlayButton = playButton(pageTwo);
     assert(
-      (await playerOnePlayButton.count()) === 1 &&
-        (await playerTwoPlayButton.count()) === 1,
-      "Both players must have an independent clip-start control.",
+      (await playerOnePlayButton.count()) === 1,
+      "Player 1 must have an independent clip-start control.",
     );
 
-    await waitForBodyText(pageTwo, "auto-starts in");
+    // Start these waits without awaiting them so Player 1 can act immediately
+    // while Player 2 is still loading its own waiting surface.
+    const playerTwoReady = waitForPlayReady(pageTwo);
+    const playerTwoCountdown = waitForBodyText(pageTwo, "auto-starts in");
+
+    await playerOnePlayButton.click();
+    await Promise.all([playerTwoReady, playerTwoCountdown]);
+
+    const playerTwoPlayButton = playButton(pageTwo);
+    assert(
+      (await playerTwoPlayButton.count()) === 1,
+      "Player 2 must have an independent clip-start control.",
+    );
+
     result.checkpoints.waitingStates = {
       beforeManualStart: true,
       phaseBeforeManualStart: initialSnapshot.phase?.phase ?? null,
@@ -654,7 +669,6 @@ try {
         .slice(0, 1000),
     };
 
-    await playerOnePlayButton.click();
     const manualStartSnapshot = await waitForSnapshot(
       roomId,
       (snapshot) =>
