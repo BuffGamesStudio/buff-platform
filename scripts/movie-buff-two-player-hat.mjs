@@ -279,19 +279,17 @@ async function waitForPlayReady(page) {
   await page.waitForURL("**/games/movie-buff/play?", {
     timeout: 60000,
   });
-  await page
-    .getByRole("button", {
-      name: /^Play (Movie Clip|Audio Clip)$/,
-    })
-    .first()
-    .waitFor({ state: "visible", timeout: 60000 });
+  await playButton(page).waitFor({
+    state: "visible",
+    timeout: 60000,
+  });
 }
 
 function playButton(page) {
   return page
-    .getByRole("button", {
-      name: /^Play (Movie Clip|Audio Clip)$/,
-    })
+    .locator(
+      'button[aria-label="Play Movie Clip"], button[aria-label="Play Audio Clip"]',
+    )
     .first();
 }
 
