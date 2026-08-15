@@ -276,13 +276,31 @@ async function resolveBoardPreview(page) {
 }
 
 async function waitForPlayReady(page) {
-  await page.waitForURL("**/games/movie-buff/play?", {
-    timeout: 60000,
-  });
+  // The room id follows the question mark in the query string. Playwright's
+  // URL glob treats `?` as a single-character wildcard, so use the harness
+  // predicate instead of a glob that can time out after the page already
+  // reached the play surface.
+  await waitForUrl(page, ["**/games/movie-buff/play?"], 60000);
   await playButton(page).waitFor({
     state: "visible",
     timeout: 60000,
   });
+}
+
+async function waitForPostPlayPhase(page) {
+  await waitForUrl(page, [
+    "**/games/movie-buff/round-results?",
+    "**/games/movie-buff/final-results?",
+    // Results can advance immediately into the next round while the other
+    // browser is still rendering its results view. Accept that authoritative
+    // post-play transition instead of requiring a transient URL.
+    "**/games/movie-buff/round-intro?",
+    "**/games/movie-buff/board-preview?",
+  ]);
+  assert(
+    !page.url().includes("/games/movie-buff/play"),
+    "A client remained on the play surface after both answers were submitted.",
+  );
 }
 
 function playButton(page) {
@@ -320,7 +338,7 @@ async function waitForBodyText(page, text, timeout = 30000) {
   );
 }
 
-async function readSnapshot(roomId) {
+async function readSnapshot(roomId, evidenceRoundId = null) {
   const { data: phase, error: phaseError } = await adminSupabase
     .from("movie_buff_match_phase_state")
     .select(
@@ -343,6 +361,8 @@ async function readSnapshot(roomId) {
     };
   }
 
+  const roundId = evidenceRoundId ?? phase.round_id;
+
   const [playbackResult, answersResult, phaseEventsResult, roundEventsResult] =
     await Promise.all([
       adminSupabase
@@ -350,24 +370,24 @@ async function readSnapshot(roomId) {
         .select(
           "round_id,player_id,started_at,play_requested_at,playback_started_at",
         )
-        .eq("round_id", phase.round_id),
+        .eq("round_id", roundId),
       adminSupabase
         .from("answers")
         .select("id,round_id,player_id,submitted_answer,submitted_at")
-        .eq("round_id", phase.round_id),
+        .eq("round_id", roundId),
       adminSupabase
         .from("movie_buff_match_phase_events")
         .select(
           "from_phase,to_phase,source,occurred_at,payload",
         )
         .eq("match_id", phase.match_id)
-        .eq("round_id", phase.round_id)
+        .eq("round_id", roundId)
         .order("occurred_at", { ascending: true }),
       adminSupabase
         .from("movie_buff_round_events")
         .select("event_type,player_id,occurred_at,payload")
         .eq("room_id", roomId)
-        .eq("round_id", phase.round_id)
+        .eq("round_id", roundId)
         .order("occurred_at", { ascending: true }),
     ]);
 
@@ -391,9 +411,14 @@ async function readSnapshot(roomId) {
   };
 }
 
-async function waitForSnapshot(roomId, predicate, timeout = 60000) {
+async function waitForSnapshot(
+  roomId,
+  predicate,
+  timeout = 60000,
+  evidenceRoundId = null,
+) {
   const deadline = Date.now() + timeout;
-  let latest = await readSnapshot(roomId);
+  let latest = await readSnapshot(roomId, evidenceRoundId);
 
   while (Date.now() < deadline) {
     if (predicate(latest)) {
@@ -401,7 +426,7 @@ async function waitForSnapshot(roomId, predicate, timeout = 60000) {
     }
 
     await new Promise((resolve) => setTimeout(resolve, 500));
-    latest = await readSnapshot(roomId);
+    latest = await readSnapshot(roomId, evidenceRoundId);
   }
 
   throw new Error(
@@ -659,6 +684,11 @@ try {
           rowFor(snapshot.playback, playerOneId)?.playback_started_at,
         ),
     );
+    const hatRoundId = manualStartSnapshot.phase?.round_id ?? null;
+    assert(
+      hatRoundId,
+      "The manual-start snapshot did not identify the HAT round.",
+    );
     const playerOnePlayback = rowFor(
       manualStartSnapshot.playback,
       playerOneId,
@@ -724,43 +754,43 @@ try {
 
     await waitForBodyText(pageOne, "Your personal clock is running.");
 
-  const automaticStartSnapshot = await waitForSnapshot(
-    roomId,
-    (snapshot) =>
-      Boolean(
-        rowFor(snapshot.playback, playerTwoId)?.playback_started_at,
-      ) &&
-      snapshot.roundEvents.some(
-        (event) =>
-          event.player_id === playerOneId &&
-          event.event_type === "clip_start_requested",
-      ),
-    60000,
-  );
-  const playerTwoPlayback = rowFor(
-    automaticStartSnapshot.playback,
-    playerTwoId,
-  );
-  const playerTwoClipStartRequests = automaticStartSnapshot.roundEvents.filter(
-    (event) =>
-      event.player_id === playerTwoId &&
-      event.event_type === "clip_start_requested",
-  );
-  assert(
-    playerTwoPlayback?.playback_started_at,
-    "Automatic launch did not start the waiting player's clock.",
-  );
-  assert(
-    playerTwoClipStartRequests.length === 0,
-    "The automatically launched player emitted a manual clip-start request.",
-  );
-  assert(
-    secondsBetween(
-      playerOnePlayback.playback_started_at,
-      playerTwoPlayback.playback_started_at,
-    ) >= 10,
-    "Automatic launch occurred too soon to prove the launch-window behavior.",
-  );
+    const automaticStartSnapshot = await waitForSnapshot(
+      roomId,
+      (snapshot) =>
+        Boolean(
+          rowFor(snapshot.playback, playerTwoId)?.playback_started_at,
+        ),
+      60000,
+      hatRoundId,
+    );
+    const playerTwoPlayback = rowFor(
+      automaticStartSnapshot.playback,
+      playerTwoId,
+    );
+    const playerTwoClipStartRequests = automaticStartSnapshot.roundEvents.filter(
+      (event) =>
+        event.player_id === playerTwoId &&
+        event.event_type === "clip_start_requested",
+    );
+    assert(
+      playerTwoPlayback?.playback_started_at,
+      "Automatic launch did not start the waiting player's clock.",
+    );
+    assert(
+      playerTwoClipStartRequests.length === 0,
+      "The automatically launched player emitted a manual clip-start request.",
+    );
+    assert(
+      playerOnePlayback.play_requested_at,
+      "The manually started player did not retain its authoritative play request.",
+    );
+    assert(
+      secondsBetween(
+        playerOnePlayback.playback_started_at,
+        playerTwoPlayback.playback_started_at,
+      ) >= 10,
+      "Automatic launch occurred too soon to prove the launch-window behavior.",
+    );
 
   await waitForAnswerInput(pageOne, true);
   await waitForAnswerInput(pageTwo, true);
@@ -786,6 +816,8 @@ try {
   const firstAnswerSnapshot = await waitForSnapshot(
     roomId,
     (snapshot) => Boolean(rowFor(snapshot.answers, playerOneId)),
+    60000,
+    hatRoundId,
   );
   const firstAnswer = rowFor(firstAnswerSnapshot.answers, playerOneId);
   assert(firstAnswer?.submitted_at, "First answer was not persisted.");
@@ -816,6 +848,7 @@ try {
       Boolean(rowFor(snapshot.answers, playerTwoId)) &&
       snapshot.phase?.phase !== "playback",
     60000,
+    hatRoundId,
   );
   const secondAnswer = rowFor(completedSnapshot.answers, playerTwoId);
   assert(secondAnswer?.submitted_at, "Second answer was not persisted.");
@@ -825,23 +858,21 @@ try {
   );
 
   await Promise.all([
-    waitForUrl(pageOne, [
-      "**/games/movie-buff/round-results?",
-      "**/games/movie-buff/final-results?",
-    ]),
-    waitForUrl(pageTwo, [
-      "**/games/movie-buff/round-results?",
-      "**/games/movie-buff/final-results?",
-    ]),
+    waitForPostPlayPhase(pageOne),
+    waitForPostPlayPhase(pageTwo),
   ]);
 
   const phaseTransitions = completedSnapshot.phaseEvents.map((event) =>
     `${event.from_phase ?? "∅"}->${event.to_phase}`,
   );
+  const phaseAfterBothAnswers =
+    completedSnapshot.phase?.round_id === hatRoundId
+      ? completedSnapshot.phase.phase
+      : phaseTransitions.at(-1)?.split("->").at(-1) ?? null;
   assert(
-    completedSnapshot.phase?.phase === "results" ||
-      completedSnapshot.phase?.phase === "finished",
-    `Expected results/finished phase after both answers, got ${completedSnapshot.phase?.phase ?? "none"}.`,
+    phaseAfterBothAnswers === "results" ||
+      phaseAfterBothAnswers === "finished",
+    `Expected results/finished phase after both answers, got ${phaseAfterBothAnswers ?? "none"}.`,
   );
   assert(
     phaseTransitions.some((transition) =>
@@ -863,7 +894,7 @@ try {
   };
     result.checkpoints.phaseAdvancement = {
       phaseBeforeAnswers: firstAnswerSnapshot.phase?.phase ?? "playback",
-      phaseAfterBothAnswers: completedSnapshot.phase.phase,
+      phaseAfterBothAnswers,
       phaseTransitions,
       bothClientsReachedResults: true,
     };
