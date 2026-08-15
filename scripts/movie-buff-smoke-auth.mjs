@@ -91,7 +91,8 @@ export async function provisionLocalSmokeAccount(label) {
 
   const shouldPreferAdminProvisioning =
     Boolean(adminSupabase) &&
-    isHostedSupabaseUrl(supabaseUrl);
+    (isHostedSupabaseUrl(supabaseUrl) ||
+      process.env.MOVIE_BUFF_PREFER_ADMIN_SMOKE === "1");
 
   let error = null;
 

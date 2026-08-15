@@ -28,12 +28,57 @@ import {
   getCurrentUserId,
   loadGameState,
 } from "@/lib/game/gameState";
-import { getCurrentMovieBuffRound } from "@/lib/game/roundService";
+import {
+  buildMovieBuffPhaseRouteHref,
+  getMovieBuffMatchPhaseView,
+  type MovieBuffMatchPhaseView,
+} from "@/lib/game/movieBuffPhaseService";
+import {
+  enterMovieBuffRound,
+  getCurrentMovieBuffRound,
+} from "@/lib/game/roundService";
 import { supabase } from "@/lib/supabase";
+
+function getCountdownSeconds(
+  deadline: string | null | undefined,
+) {
+  if (!deadline) {
+    return null;
+  }
+
+  const milliseconds =
+    new Date(deadline).getTime() - Date.now();
+
+  if (!Number.isFinite(milliseconds)) {
+    return null;
+  }
+
+  return Math.max(0, Math.ceil(milliseconds / 1000));
+}
+
+function formatRoundPhaseError(
+  error: unknown,
+  fallback: string,
+) {
+  const message =
+    error instanceof Error ? error.message : String(error ?? "");
+
+  if (
+    /active movie buff room membership required|not an active player|membership/i.test(
+      message,
+    )
+  ) {
+    return "Your Movie Buff room membership is no longer active. Return to the lobby and rejoin the room.";
+  }
+
+  return message || fallback;
+}
 
 export default function RoundIntroPage() {
   const router = useRouter();
   const isMountedRef = useRef(false);
+  const phaseNavigationStartedRef = useRef(false);
+  const automaticEntryRoundRef = useRef<string | null>(null);
   const [roomId, setRoomId] = useState("");
   const [round, setRound] = useState(1);
   const [totalRounds, setTotalRounds] = useState(10);
@@ -41,6 +86,10 @@ export default function RoundIntroPage() {
   const [loading, setLoading] = useState(true);
   const [leaving, setLeaving] = useState(false);
   const [error, setError] = useState("");
+  const [phaseView, setPhaseView] =
+    useState<MovieBuffMatchPhaseView | null>(null);
+  const [phaseError, setPhaseError] = useState("");
+  const [, setNowTick] = useState(() => Date.now());
 
   const navigateTo = useCallback((
     destination: string,
@@ -57,6 +106,53 @@ export default function RoundIntroPage() {
 
     router.push(destination);
   }, [router]);
+
+  const navigateToPhaseRoute = useCallback(
+    async (nextPhaseView: MovieBuffMatchPhaseView) => {
+      const destination = buildMovieBuffPhaseRouteHref(
+        nextPhaseView,
+        roomId || undefined,
+      );
+
+      if (!destination || !nextPhaseView.phaseRoute) {
+        return false;
+      }
+
+      // Enter the caller's playback row before leaving the intro surface. The
+      // RPC is authenticated, membership-checked, and idempotent, so a player
+      // who waits for the server transition receives the same row as a player
+      // who clicks Start Round.
+      if (
+        nextPhaseView.phaseRoute === "/games/movie-buff/play" &&
+        automaticEntryRoundRef.current !== nextPhaseView.roundId
+      ) {
+        automaticEntryRoundRef.current = nextPhaseView.roundId;
+
+        try {
+          await enterMovieBuffRound(roomId);
+        } catch (entryError) {
+          automaticEntryRoundRef.current = null;
+          throw entryError;
+        }
+      }
+
+      if (
+        typeof window !== "undefined" &&
+        window.location.pathname === nextPhaseView.phaseRoute
+      ) {
+        return false;
+      }
+
+      if (phaseNavigationStartedRef.current) {
+        return true;
+      }
+
+      phaseNavigationStartedRef.current = true;
+      router.replace(destination);
+      return true;
+    },
+    [roomId, router],
+  );
 
   const playRoundHref = useMemo(() => {
     if (!roomId) {
@@ -181,9 +277,10 @@ export default function RoundIntroPage() {
 
         console.error(loadError);
         setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Unable to prepare the round."
+          formatRoundPhaseError(
+            loadError,
+            "Unable to prepare the round.",
+          ),
         );
       } finally {
         if (active && isMountedRef.current) {
@@ -199,6 +296,71 @@ export default function RoundIntroPage() {
       void supabase.removeAllChannels();
     };
   }, [navigateTo]);
+
+  const refreshPhaseView = useCallback(async () => {
+    if (!roomId) {
+      return null;
+    }
+
+    // Presence is intentionally best-effort here. The authoritative phase RPC
+    // below performs the fail-closed active-membership check and gives the UI a
+    // useful error instead of silently leaving the player on the intro screen.
+    await touchMovieBuffRoomPresence(roomId).catch(() => {});
+
+    const nextPhaseView =
+      await getMovieBuffMatchPhaseView(roomId);
+
+    if (!isMountedRef.current) {
+      return nextPhaseView;
+    }
+
+    setPhaseView(nextPhaseView);
+    setPhaseError("");
+    setRound(nextPhaseView.roundNumber);
+    setTotalRounds(nextPhaseView.totalRounds);
+
+    await navigateToPhaseRoute(nextPhaseView);
+
+    return nextPhaseView;
+  }, [navigateToPhaseRoute, roomId]);
+
+  useEffect(() => {
+    if (!roomId) {
+      return;
+    }
+
+    let active = true;
+
+    const refresh = () => {
+      void refreshPhaseView().catch((phaseLoadError) => {
+        if (!active || !isMountedRef.current) {
+          return;
+        }
+
+        setPhaseError(
+          formatRoundPhaseError(
+            phaseLoadError,
+            "Unable to refresh the live Movie Buff phase.",
+          ),
+        );
+      });
+    };
+
+    const initialRefresh = window.setTimeout(refresh, 0);
+    const phaseTimer = window.setInterval(refresh, 1500);
+    const countdownTimer = window.setInterval(() => {
+      if (active) {
+        setNowTick(Date.now());
+      }
+    }, 1000);
+
+    return () => {
+      active = false;
+      window.clearTimeout(initialRefresh);
+      window.clearInterval(phaseTimer);
+      window.clearInterval(countdownTimer);
+    };
+  }, [refreshPhaseView, roomId]);
 
   useEffect(() => {
     if (!roomId) {
@@ -261,6 +423,23 @@ export default function RoundIntroPage() {
     }
   }
 
+  const phaseCountdown =
+    phaseView?.phase === "round_intro" ||
+    phaseView?.phase === "vip_lock"
+      ? getCountdownSeconds(phaseView.phaseEndsAt)
+      : null;
+
+  const automaticEntryMessage =
+    phaseView?.phase === "round_intro"
+      ? phaseCountdown === null
+        ? "Round intro is live. Your round entry will continue automatically."
+        : `Round intro is live. Your round entry continues in ${phaseCountdown}s.`
+      : phaseView?.phase === "vip_lock"
+        ? phaseCountdown === null
+          ? "VIP lock is in progress. Your round entry will continue automatically."
+          : `VIP lock is in progress. Your round entry continues in ${phaseCountdown}s.`
+        : null;
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-black text-white">
@@ -301,6 +480,18 @@ export default function RoundIntroPage() {
         {error ? (
           <div className="mx-auto mb-8 max-w-2xl rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm font-bold text-red-200">
             {error}
+          </div>
+        ) : null}
+
+        {phaseError ? (
+          <div className="mx-auto mb-8 max-w-2xl rounded-2xl border border-amber-500/40 bg-amber-500/10 px-5 py-4 text-sm font-bold text-amber-100">
+            {phaseError}
+          </div>
+        ) : null}
+
+        {automaticEntryMessage ? (
+          <div className="mx-auto mb-8 max-w-2xl rounded-2xl border border-amber-500/40 bg-amber-500/10 px-5 py-4 text-sm font-bold text-amber-100">
+            {automaticEntryMessage}
           </div>
         ) : null}
 
@@ -377,6 +568,11 @@ export default function RoundIntroPage() {
             <ArrowRight size={24} />
           </Link>
         </div>
+
+        <p className="mx-auto mt-4 max-w-xl text-sm text-zinc-500">
+          Start your round when you are ready. If you wait, the server will
+          enter your player automatically when the launch window closes.
+        </p>
       </section>
     </main>
   );

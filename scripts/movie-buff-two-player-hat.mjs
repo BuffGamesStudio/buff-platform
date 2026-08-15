@@ -25,6 +25,9 @@ const EXPECTED_DEPLOYMENT_SHA =
   process.env.MOVIE_BUFF_EXPECTED_DEPLOYMENT_SHA ?? null;
 const EXPECTED_SUPABASE_REF =
   process.env.MOVIE_BUFF_EXPECTED_SUPABASE_REF ?? null;
+const ENTRY_ONLY =
+  process.argv.includes("--entry-only") ||
+  process.env.MOVIE_BUFF_HAT_ENTRY_ONLY === "1";
 
 const smokeEnvironment = resolveSmokeEnvironment({
   baseUrl: APP_URL,
@@ -276,16 +279,11 @@ async function waitForPlayReady(page) {
   await page.waitForFunction(
     () =>
       window.location.pathname.includes("/games/movie-buff/play") &&
-      (Array.from(document.querySelectorAll("button")).some((button) =>
+      Array.from(document.querySelectorAll("button")).some((button) =>
         /Play (Movie Clip|Audio Clip)/.test(
           (button.textContent ?? "").trim(),
         ),
-      ) ||
-        Array.from(document.querySelectorAll("input")).some(
-          (input) =>
-            input.getAttribute("placeholder") ===
-            "Enter the movie title",
-        )),
+      ),
     undefined,
     { timeout: 60000 },
   );
@@ -491,6 +489,7 @@ const result = {
   expectedDeploymentId: EXPECTED_DEPLOYMENT_ID,
   expectedDeploymentSha: EXPECTED_DEPLOYMENT_SHA,
   expectedSupabaseRef: EXPECTED_SUPABASE_REF,
+  testMode: ENTRY_ONLY ? "automatic-entry-only" : "full-two-player-hat",
   supabaseUrl,
   automatedWitness: "Codex automated two-client browser witness",
   namedReviewer: null,
@@ -549,70 +548,145 @@ try {
   await clickUnique(pageOne, "button", "Start Match");
   await Promise.all([waitForRoundIntro(pageOne), waitForRoundIntro(pageTwo)]);
 
-  await Promise.all([clickStartRound(pageOne), clickStartRound(pageTwo)]);
-  await Promise.all([resolveBoardPreview(pageOne), resolveBoardPreview(pageTwo)]);
-  await Promise.all([waitForPlayReady(pageOne), waitForPlayReady(pageTwo)]);
-
-  const initialSnapshot = await waitForSnapshot(
-    roomId,
-    (snapshot) => snapshot.phase?.phase === "playback",
-  );
-  const playerOnePlayButton = playButton(pageOne);
-  const playerTwoPlayButton = playButton(pageTwo);
+  // Player two intentionally stays on the round-intro surface. The
+  // authoritative phase poll must expose the VIP countdown and move that
+  // client into the round without a second manual Start Round click.
+  await clickStartRound(pageOne);
+  await waitForBodyText(pageTwo, "VIP lock is in progress");
   assert(
-    (await playerOnePlayButton.count()) === 1 &&
-      (await playerTwoPlayButton.count()) === 1,
-    "Both players must have an independent clip-start control.",
+    !(await readBody(pageTwo)).includes(
+      "Active Movie Buff room membership required",
+    ),
+    "The idle player lost active room membership while waiting for automatic round entry.",
   );
 
-  await waitForBodyText(pageTwo, "auto-starts in");
-  result.checkpoints.waitingStates = {
-    beforeManualStart: true,
-    phaseBeforeManualStart: initialSnapshot.phase?.phase ?? null,
-    playerTwoAutomaticLaunchCountdownVisible: true,
-    playerTwoBodyExcerpt: (await readBody(pageTwo))
-      .replace(/\s+/g, " ")
-      .slice(0, 1000),
-  };
-
-  await playerOnePlayButton.click();
-  const manualStartSnapshot = await waitForSnapshot(
-    roomId,
-    (snapshot) =>
-      Boolean(
-        rowFor(snapshot.playback, playerOneId)?.playback_started_at,
-      ),
-  );
-  const playerOnePlayback = rowFor(
-    manualStartSnapshot.playback,
-    playerOneId,
-  );
-  const playerTwoBeforeAutomatic = rowFor(
-    manualStartSnapshot.playback,
-    playerTwoId,
-  );
-  assert(
-    playerOnePlayback?.playback_started_at,
-    "Manual player did not receive an authoritative playback start.",
-  );
-  assert(
-    !playerTwoBeforeAutomatic?.playback_started_at,
-    "The waiting player started before the launch window expired.",
-  );
-
-  result.checkpoints.independentStarts = {
+  result.checkpoints.automaticRoundEntry = {
     playerOne: {
-      action: "manual click",
-      playbackStartedAt: playerOnePlayback.playback_started_at,
+      action: "manual Start Round click",
     },
     playerTwo: {
-      action: "still waiting",
-      playbackStartedAt: null,
+      action: "no manual Start Round click",
+      vipCountdownVisible: true,
+      remainedOnRoundIntroBeforeAutomaticEntry: true,
     },
-    independent: true,
+    membershipFailure: false,
   };
 
-  await waitForBodyText(pageOne, "Your personal clock is running.");
+  await Promise.all([resolveBoardPreview(pageOne), resolveBoardPreview(pageTwo)]);
+  await Promise.all([
+    waitForUrl(pageOne, ["**/games/movie-buff/play?"]),
+    waitForUrl(pageTwo, ["**/games/movie-buff/play?"]),
+  ]);
+
+  assert(
+    !(await readBody(pageTwo)).includes(
+      "Active Movie Buff room membership required",
+    ),
+    "The automatically entered player reached play with a membership failure.",
+  );
+  result.checkpoints.automaticRoundEntry.playerTwo.reachedPlayWithoutClick =
+    true;
+
+  if (ENTRY_ONLY) {
+    // Reload the same authenticated client to exercise the idempotent entry
+    // path, rather than relying only on the first navigation.
+    await pageTwo.reload({ waitUntil: "domcontentloaded" });
+    await waitForUrl(pageTwo, ["**/games/movie-buff/play?"]);
+    assert(
+      !(await readBody(pageTwo)).includes(
+        "Active Movie Buff room membership required",
+      ),
+      "Reloading the automatically entered player produced a membership failure.",
+    );
+
+    const entrySnapshot = await waitForSnapshot(
+      roomId,
+      (snapshot) =>
+        (snapshot.phase?.phase === "transition" ||
+          snapshot.phase?.phase === "playback") &&
+        Boolean(rowFor(snapshot.playback, playerOneId)) &&
+        Boolean(rowFor(snapshot.playback, playerTwoId)),
+    );
+
+    result.checkpoints.automaticRoundEntry.authoritative = {
+      phase: entrySnapshot.phase?.phase ?? null,
+      playerOnePlaybackRow: Boolean(rowFor(entrySnapshot.playback, playerOneId)),
+      playerTwoPlaybackRow: Boolean(rowFor(entrySnapshot.playback, playerTwoId)),
+      playerTwoPlaybackRowCount: entrySnapshot.playback.filter(
+        (row) => row.player_id === playerTwoId,
+      ).length,
+      idempotentReload: true,
+      noMembershipFailure: true,
+    };
+    assert(
+      entrySnapshot.playback.filter(
+        (row) => row.player_id === playerTwoId,
+      ).length === 1,
+      "Reloading the player created a duplicate playback row.",
+    );
+  } else {
+    await Promise.all([waitForPlayReady(pageOne), waitForPlayReady(pageTwo)]);
+
+    const initialSnapshot = await waitForSnapshot(
+      roomId,
+      (snapshot) => snapshot.phase?.phase === "playback",
+    );
+    const playerOnePlayButton = playButton(pageOne);
+    const playerTwoPlayButton = playButton(pageTwo);
+    assert(
+      (await playerOnePlayButton.count()) === 1 &&
+        (await playerTwoPlayButton.count()) === 1,
+      "Both players must have an independent clip-start control.",
+    );
+
+    await waitForBodyText(pageTwo, "auto-starts in");
+    result.checkpoints.waitingStates = {
+      beforeManualStart: true,
+      phaseBeforeManualStart: initialSnapshot.phase?.phase ?? null,
+      playerTwoAutomaticLaunchCountdownVisible: true,
+      playerTwoBodyExcerpt: (await readBody(pageTwo))
+        .replace(/\s+/g, " ")
+        .slice(0, 1000),
+    };
+
+    await playerOnePlayButton.click();
+    const manualStartSnapshot = await waitForSnapshot(
+      roomId,
+      (snapshot) =>
+        Boolean(
+          rowFor(snapshot.playback, playerOneId)?.playback_started_at,
+        ),
+    );
+    const playerOnePlayback = rowFor(
+      manualStartSnapshot.playback,
+      playerOneId,
+    );
+    const playerTwoBeforeAutomatic = rowFor(
+      manualStartSnapshot.playback,
+      playerTwoId,
+    );
+    assert(
+      playerOnePlayback?.playback_started_at,
+      "Manual player did not receive an authoritative playback start.",
+    );
+    assert(
+      !playerTwoBeforeAutomatic?.playback_started_at,
+      "The waiting player started before the launch window expired.",
+    );
+
+    result.checkpoints.independentStarts = {
+      playerOne: {
+        action: "manual click",
+        playbackStartedAt: playerOnePlayback.playback_started_at,
+      },
+      playerTwo: {
+        action: "still waiting",
+        playbackStartedAt: null,
+      },
+      independent: true,
+    };
+
+    await waitForBodyText(pageOne, "Your personal clock is running.");
 
   const automaticStartSnapshot = await waitForSnapshot(
     roomId,
@@ -736,12 +810,13 @@ try {
       secondAnswer.submitted_at,
     ),
   };
-  result.checkpoints.phaseAdvancement = {
-    phaseBeforeAnswers: firstAnswerSnapshot.phase?.phase ?? "playback",
-    phaseAfterBothAnswers: completedSnapshot.phase.phase,
-    phaseTransitions,
-    bothClientsReachedResults: true,
-  };
+    result.checkpoints.phaseAdvancement = {
+      phaseBeforeAnswers: firstAnswerSnapshot.phase?.phase ?? "playback",
+      phaseAfterBothAnswers: completedSnapshot.phase.phase,
+      phaseTransitions,
+      bothClientsReachedResults: true,
+    };
+  }
 
   await Promise.all([leaveThroughUi(pageOne), leaveThroughUi(pageTwo)]);
   result.cleanup.roomLeftThroughUi = await waitForNoActiveRoomPlayers(

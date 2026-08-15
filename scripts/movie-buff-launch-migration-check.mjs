@@ -44,6 +44,8 @@ const requiredMigrations = [
   "20260807010000_movie_buff_production_security_manifest_reconciliation.sql",
   "20260807014500_movie_buff_rls_helper_execute_repair.sql",
   "20260812130000_movie_buff_match_visibility_policy_repair.sql",
+  "20260814031456_movie_buff_authenticated_rpc_allowlist.sql",
+  "20260814235757_movie_buff_per_player_automatic_entry.sql",
 ];
 
 const result = {
