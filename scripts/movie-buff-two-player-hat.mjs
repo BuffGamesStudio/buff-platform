@@ -276,17 +276,15 @@ async function resolveBoardPreview(page) {
 }
 
 async function waitForPlayReady(page) {
-  await page.waitForFunction(
-    () =>
-      window.location.pathname.includes("/games/movie-buff/play") &&
-      Array.from(document.querySelectorAll("button")).some((button) =>
-        /Play (Movie Clip|Audio Clip)/.test(
-          (button.textContent ?? "").trim(),
-        ),
-      ),
-    undefined,
-    { timeout: 60000 },
-  );
+  await page.waitForURL("**/games/movie-buff/play?", {
+    timeout: 60000,
+  });
+  await page
+    .getByRole("button", {
+      name: /^Play (Movie Clip|Audio Clip)$/,
+    })
+    .first()
+    .waitFor({ state: "visible", timeout: 60000 });
 }
 
 function playButton(page) {
