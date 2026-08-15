@@ -53,10 +53,18 @@ const adminSupabase = usableServiceRoleKey
   : null;
 
 export async function provisionLocalSmokeAccount(label) {
-  const uniqueId = `${Date.now()}-${Math.random()
+  // Supabase Auth enforces the RFC local-part length limit. Keep the label
+  // recognizable for diagnostics while bounding the generated address so
+  // hosted smoke provisioning does not fail before the browser starts.
+  const normalizedLabel = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 20) || "smoke";
+  const uniqueId = `${Date.now().toString(36)}${Math.random()
     .toString(36)
     .slice(2, 8)}`;
-  const email = `moviebuff-${label}-${uniqueId}@${smokeEmailDomain}`;
+  const email = `mb-${normalizedLabel}-${uniqueId}@${smokeEmailDomain}`;
   const password = "MovieBuffLocal123!";
 
   const createViaSignup = async () =>
