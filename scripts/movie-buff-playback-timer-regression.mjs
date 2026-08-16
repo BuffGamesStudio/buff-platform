@@ -17,7 +17,7 @@ const playPage = fs.readFileSync(
 const timerMigration = fs.readFileSync(
   path.join(
     repoRoot,
-    "supabase/migrations/20260816140000_movie_buff_playback_timer_gate.sql",
+    "supabase/migrations/20260816232539_movie_buff_playback_timer_gate.sql",
   ),
   "utf8",
 );
