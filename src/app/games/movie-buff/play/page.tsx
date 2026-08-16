@@ -1418,18 +1418,34 @@ export default function MovieBuffPlayPage() {
     }
   }
 
+  const playerPlaybackStarted =
+    Boolean(roundData?.playbackStartedAt);
+
   const displayedTimeLeft =
     playerFinished
       ? 0
-      : roundData?.playbackStartedAt
+      : playerPlaybackStarted
         ? Math.max(timeLeft, 0)
         : Math.max(
-            launchWindowSecondsLeft ?? timeLeft,
+            launchWindowSecondsLeft ?? 0,
             0
           );
 
-  const playerPlaybackStarted =
-    Boolean(roundData?.playbackStartedAt);
+  const displayedTimeValue =
+    playerFinished
+      ? "0 seconds"
+      : playerPlaybackStarted
+        ? `${displayedTimeLeft} seconds`
+        : launchWindowSecondsLeft !== null
+          ? `Starts in ${launchWindowSecondsLeft}s`
+          : "Waiting for playback";
+
+  const displayedTimerValue =
+    playerFinished || playerPlaybackStarted
+      ? String(displayedTimeLeft)
+      : launchWindowSecondsLeft !== null
+        ? String(launchWindowSecondsLeft)
+        : "—";
 
   const automaticPlaybackRequested =
     currentPhase === "playback" &&
@@ -1915,11 +1931,6 @@ export default function MovieBuffPlayPage() {
         });
       }
 
-      if (!media.paused) {
-        void syncPlaybackStarted(
-          automaticPlaybackRequested,
-        );
-      }
     } catch (playbackError) {
       handlePlaybackStartFailure(
         playbackError
@@ -1951,9 +1962,9 @@ export default function MovieBuffPlayPage() {
 
     try {
       await media.play();
-      // Automatic entry is a request, not playback. The answer clock starts
-      // only after the browser accepts this play() call.
-      await syncPlaybackStarted(true);
+      // A resolved play() promise means the request was accepted, not that a
+      // playable frame has started. The playing event owns the answer-clock
+      // transition; timeupdate is the delayed-media fallback.
     } catch (playbackError) {
       handlePlaybackStartFailure(
         playbackError
@@ -2065,6 +2076,8 @@ export default function MovieBuffPlayPage() {
     if (
       !mediaStarted &&
       !media.paused &&
+      media.readyState >=
+        HTMLMediaElement.HAVE_CURRENT_DATA &&
       media.currentTime > 0 &&
       !roundData?.playbackStartedAt
     ) {
@@ -2282,7 +2295,7 @@ export default function MovieBuffPlayPage() {
               <Clock3 className="text-red-500" />
             }
             label="Time Left"
-            value={`${displayedTimeLeft} seconds`}
+            value={displayedTimeValue}
           />
 
           <StatCard
@@ -2320,7 +2333,7 @@ export default function MovieBuffPlayPage() {
           <div className="space-y-6">
             <div className="relative min-h-[420px] overflow-hidden rounded-3xl border border-zinc-800 bg-gradient-to-br from-zinc-950 to-black">
               <div className="absolute right-5 top-5 z-30 flex h-16 w-16 items-center justify-center rounded-full border-4 border-red-600 bg-black/90 text-xl font-black shadow-xl">
-                {displayedTimeLeft}
+                {displayedTimerValue}
               </div>
 
               {isVideo &&
@@ -2986,13 +2999,17 @@ function MediaStartOverlay({
                 </p>
               ) : timerRunning ? (
                 <p className="text-sm font-bold text-yellow-200">
-                  Your timer is running. Start playback when the clip is ready.
+                  Your answer clock is running. Playback is catching up.
                 </p>
               ) : startWindowSecondsLeft !== null ? (
                 <p className="text-sm font-bold text-zinc-300">
                   Your clip auto-starts in {startWindowSecondsLeft}s if you do not start it.
                 </p>
-              ) : null}
+              ) : (
+                <p className="text-sm font-bold text-zinc-300">
+                  Your answer clock starts when playback becomes playable.
+                </p>
+              )}
 
               {canUseHint && (
                 <button
@@ -3051,7 +3068,7 @@ function MediaStartOverlay({
 
           <p className="mt-2 text-sm font-bold text-zinc-500">
             {autoplayBlocked
-              ? "Your browser blocked automatic playback. Tap once to start the clip and your answer clock."
+              ? "Your browser blocked automatic playback. Tap once to start the clip and begin your answer clock."
               : "Playback is available once."}
           </p>
 
@@ -3061,13 +3078,17 @@ function MediaStartOverlay({
             </p>
           ) : timerRunning ? (
             <p className="mt-3 text-sm font-bold text-yellow-200">
-              Your timer is running. Start playback now.
+              Your answer clock is running. Playback is catching up.
             </p>
           ) : startWindowSecondsLeft !== null ? (
             <p className="mt-3 text-sm font-bold text-zinc-400">
               Your clip auto-starts in {startWindowSecondsLeft}s if you do not start it.
             </p>
-          ) : null}
+          ) : (
+            <p className="mt-3 text-sm font-bold text-zinc-400">
+              Your answer clock starts when playback begins.
+            </p>
+          )}
 
           {canUseHint && (
             <button

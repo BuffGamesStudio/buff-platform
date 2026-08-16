@@ -668,6 +668,17 @@ try {
     const playerTwoReady = waitForPlayReady(pageTwo);
     const playerTwoCountdown = waitForBodyText(pageTwo, "auto-starts in");
 
+    const playerOneBeforePlayback = await readBody(pageOne);
+    const playerTwoBeforePlayback = await readBody(pageTwo);
+    assert(
+      !/Time Left\s*\d+ seconds/.test(playerOneBeforePlayback),
+      "Player 1 answer clock was displayed before playback became playable.",
+    );
+    assert(
+      !/Time Left\s*\d+ seconds/.test(playerTwoBeforePlayback),
+      "Player 2 answer clock was displayed before playback became playable.",
+    );
+
     await playerOnePlayButton.click();
     await Promise.all([playerTwoReady, playerTwoCountdown]);
 
@@ -730,6 +741,7 @@ try {
 
     result.checkpoints.waitingStates = {
       beforeManualStart: true,
+      answerClockHeldUntilPlayback: true,
       phaseAtManualStart: manualStartSnapshot.phase?.phase ?? null,
       playerTwoAutomaticLaunchCountdownVisible: true,
       playerTwoBodyExcerpt: (await readBody(pageTwo))
