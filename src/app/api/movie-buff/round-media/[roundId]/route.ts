@@ -8,6 +8,11 @@ import { getRoundGeneratedClip } from "@/lib/server/movieClipper";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const CACHE_CONTROL =
+  "public, max-age=60, s-maxage=86400, stale-while-revalidate=604800";
+const CDN_CACHE_CONTROL =
+  "public, max-age=86400, stale-while-revalidate=604800";
+
 type RouteContext = {
   params: Promise<{
     roundId: string;
@@ -29,8 +34,10 @@ async function buildRoundMediaResponse(
         {
           status: 307,
           headers: {
-            "Cache-Control":
-              "no-store, max-age=0",
+            "Cache-Control": CACHE_CONTROL,
+            "Access-Control-Allow-Origin": "*",
+            "Vercel-CDN-Cache-Control":
+              CDN_CACHE_CONTROL,
           },
         },
       );
@@ -43,11 +50,14 @@ async function buildRoundMediaResponse(
         : "video/mp4";
     const baseHeaders = {
       "Accept-Ranges": "bytes",
-      "Cache-Control": "no-store, max-age=0",
+      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": CACHE_CONTROL,
       "Content-Length": stats.size.toString(),
       "Content-Type": contentType,
       "X-Movie-Buff-Asset-Url":
         summary.assetUrl,
+      "Vercel-CDN-Cache-Control":
+        CDN_CACHE_CONTROL,
     };
 
     if (headOnly) {

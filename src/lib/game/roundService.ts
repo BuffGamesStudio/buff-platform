@@ -87,6 +87,44 @@ export interface MovieBuffFinalResults {
   standings: MovieBuffFinalStanding[];
 }
 
+type MovieBuffRoundRpcRow = {
+  result_match_id: string;
+  result_round_id: string;
+  result_round_number: number;
+  result_total_rounds: number;
+  result_time_limit_seconds: number;
+  result_started_at: string | null;
+  result_time_left_seconds: number;
+  result_clip_type: string;
+  result_prompt: string | null;
+  result_quote_text: string | null;
+  result_media_url: string | null;
+  result_playback_started_at: string | null;
+  result_hint_text: string | null;
+  result_hint_used: boolean | null;
+  result_hint_penalty_seconds: number | null;
+};
+
+export function isCacheableMovieBuffMediaUrl(
+  value: string | null | undefined,
+) {
+  const trimmed = String(value ?? "").trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return true;
+  }
+
+  return (
+    trimmed.startsWith("/media/movie-buff/") &&
+    !trimmed.includes("..") &&
+    !/%2e/i.test(trimmed)
+  );
+}
+
 function resolveRoundMediaUrl(row: {
   result_clip_type?: string | null;
   result_media_url?: string | null;
@@ -101,6 +139,14 @@ function resolveRoundMediaUrl(row: {
   const storedMediaUrl = String(
     row.result_media_url ?? "",
   ).trim();
+
+  if (
+    (clipType === "video" || clipType === "audio") &&
+    isCacheableMovieBuffMediaUrl(storedMediaUrl)
+  ) {
+    return storedMediaUrl;
+  }
+
   if (
     (clipType === "video" || clipType === "audio") &&
     roundId.length > 0
@@ -109,6 +155,34 @@ function resolveRoundMediaUrl(row: {
   }
 
   return storedMediaUrl;
+}
+
+function mapMovieBuffRoundRow(
+  row: MovieBuffRoundRpcRow,
+): MovieBuffRound {
+  return {
+    matchId: row.result_match_id,
+    roundId: row.result_round_id,
+    roundNumber: row.result_round_number,
+    totalRounds: row.result_total_rounds,
+    timeLimitSeconds:
+      row.result_time_limit_seconds,
+    startedAt: row.result_started_at,
+    timeLeftSeconds:
+      row.result_time_left_seconds,
+    clipType: row.result_clip_type,
+    prompt: row.result_prompt,
+    quoteText: row.result_quote_text,
+    mediaUrl: resolveRoundMediaUrl(row),
+    playbackStartedAt:
+      row.result_playback_started_at,
+    hintText: row.result_hint_text,
+    hintUsed:
+      row.result_hint_used === true,
+    hintPenaltySeconds:
+      row.result_hint_penalty_seconds ??
+      0,
+  };
 }
 
 export async function getCurrentMovieBuffRound(
@@ -133,29 +207,7 @@ export async function getCurrentMovieBuffRound(
     );
   }
 
-  return {
-    matchId: row.result_match_id,
-    roundId: row.result_round_id,
-    roundNumber: row.result_round_number,
-    totalRounds: row.result_total_rounds,
-    timeLimitSeconds:
-      row.result_time_limit_seconds,
-    startedAt: row.result_started_at,
-    timeLeftSeconds:
-      row.result_time_left_seconds,
-    clipType: row.result_clip_type,
-    prompt: row.result_prompt,
-    quoteText: row.result_quote_text,
-    mediaUrl: resolveRoundMediaUrl(row),
-    playbackStartedAt:
-      row.result_playback_started_at,
-    hintText: row.result_hint_text,
-    hintUsed:
-      row.result_hint_used === true,
-    hintPenaltySeconds:
-      row.result_hint_penalty_seconds ??
-      0,
-  };
+  return mapMovieBuffRoundRow(row);
 }
 
 export async function enterMovieBuffRound(
@@ -180,29 +232,7 @@ export async function enterMovieBuffRound(
     );
   }
 
-  return {
-    matchId: row.result_match_id,
-    roundId: row.result_round_id,
-    roundNumber: row.result_round_number,
-    totalRounds: row.result_total_rounds,
-    timeLimitSeconds:
-      row.result_time_limit_seconds,
-    startedAt: row.result_started_at,
-    timeLeftSeconds:
-      row.result_time_left_seconds,
-    clipType: row.result_clip_type,
-    prompt: row.result_prompt,
-    quoteText: row.result_quote_text,
-    mediaUrl: resolveRoundMediaUrl(row),
-    playbackStartedAt:
-      row.result_playback_started_at,
-    hintText: row.result_hint_text,
-    hintUsed:
-      row.result_hint_used === true,
-    hintPenaltySeconds:
-      row.result_hint_penalty_seconds ??
-      0,
-  };
+  return mapMovieBuffRoundRow(row);
 }
 
 export async function markMovieBuffRoundMediaReady(
@@ -227,29 +257,7 @@ export async function markMovieBuffRoundMediaReady(
     );
   }
 
-  return {
-    matchId: row.result_match_id,
-    roundId: row.result_round_id,
-    roundNumber: row.result_round_number,
-    totalRounds: row.result_total_rounds,
-    timeLimitSeconds:
-      row.result_time_limit_seconds,
-    startedAt: row.result_started_at,
-    timeLeftSeconds:
-      row.result_time_left_seconds,
-    clipType: row.result_clip_type,
-    prompt: row.result_prompt,
-    quoteText: row.result_quote_text,
-    mediaUrl: resolveRoundMediaUrl(row),
-    playbackStartedAt:
-      row.result_playback_started_at,
-    hintText: row.result_hint_text,
-    hintUsed:
-      row.result_hint_used === true,
-    hintPenaltySeconds:
-      row.result_hint_penalty_seconds ??
-      0,
-  };
+  return mapMovieBuffRoundRow(row);
 }
 
 export async function prepareMovieBuffRoundPlayback(
@@ -274,29 +282,7 @@ export async function prepareMovieBuffRoundPlayback(
     );
   }
 
-  return {
-    matchId: row.result_match_id,
-    roundId: row.result_round_id,
-    roundNumber: row.result_round_number,
-    totalRounds: row.result_total_rounds,
-    timeLimitSeconds:
-      row.result_time_limit_seconds,
-    startedAt: row.result_started_at,
-    timeLeftSeconds:
-      row.result_time_left_seconds,
-    clipType: row.result_clip_type,
-    prompt: row.result_prompt,
-    quoteText: row.result_quote_text,
-    mediaUrl: resolveRoundMediaUrl(row),
-    playbackStartedAt:
-      row.result_playback_started_at,
-    hintText: row.result_hint_text,
-    hintUsed:
-      row.result_hint_used === true,
-    hintPenaltySeconds:
-      row.result_hint_penalty_seconds ??
-      0,
-  };
+  return mapMovieBuffRoundRow(row);
 }
 
 export async function startMovieBuffRoundPlayback(
@@ -321,29 +307,7 @@ export async function startMovieBuffRoundPlayback(
     );
   }
 
-  return {
-    matchId: row.result_match_id,
-    roundId: row.result_round_id,
-    roundNumber: row.result_round_number,
-    totalRounds: row.result_total_rounds,
-    timeLimitSeconds:
-      row.result_time_limit_seconds,
-    startedAt: row.result_started_at,
-    timeLeftSeconds:
-      row.result_time_left_seconds,
-    clipType: row.result_clip_type,
-    prompt: row.result_prompt,
-    quoteText: row.result_quote_text,
-    mediaUrl: resolveRoundMediaUrl(row),
-    playbackStartedAt:
-      row.result_playback_started_at,
-    hintText: row.result_hint_text,
-    hintUsed:
-      row.result_hint_used === true,
-    hintPenaltySeconds:
-      row.result_hint_penalty_seconds ??
-      0,
-  };
+  return mapMovieBuffRoundRow(row);
 }
 
 export async function requestMovieBuffRoundHint(
@@ -370,29 +334,7 @@ export async function requestMovieBuffRoundHint(
     );
   }
 
-  return {
-    matchId: row.result_match_id,
-    roundId: row.result_round_id,
-    roundNumber: row.result_round_number,
-    totalRounds: row.result_total_rounds,
-    timeLimitSeconds:
-      row.result_time_limit_seconds,
-    startedAt: row.result_started_at,
-    timeLeftSeconds:
-      row.result_time_left_seconds,
-    clipType: row.result_clip_type,
-    prompt: row.result_prompt,
-    quoteText: row.result_quote_text,
-    mediaUrl: resolveRoundMediaUrl(row),
-    playbackStartedAt:
-      row.result_playback_started_at,
-    hintText: row.result_hint_text,
-    hintUsed:
-      row.result_hint_used === true,
-    hintPenaltySeconds:
-      row.result_hint_penalty_seconds ??
-      0,
-  };
+  return mapMovieBuffRoundRow(row);
 }
 
 export async function submitMovieBuffAnswer(

@@ -198,6 +198,32 @@ function getSpeechRecognitionErrorMessage(
   }
 }
 
+function isAutoplayBlockedError(
+  playbackError: unknown,
+) {
+  const errorName =
+    typeof playbackError === "object" &&
+    playbackError !== null &&
+    "name" in playbackError
+      ? String(
+          (playbackError as { name?: unknown })
+            .name ??
+            "",
+        )
+      : "";
+  const errorMessage =
+    playbackError instanceof Error
+      ? playbackError.message
+      : String(playbackError ?? "");
+
+  return (
+    errorName === "NotAllowedError" ||
+    /autoplay|user.?interaction|not allowed|play\(\) failed/i.test(
+      `${errorName} ${errorMessage}`,
+    )
+  );
+}
+
 type RoundScopedStateSetter<T> = (
   value: T | ((currentValue: T) => T)
 ) => void;
@@ -359,6 +385,8 @@ export default function MovieBuffPlayPage() {
   const [mediaStarted, setMediaStarted] =
     useRoundScopedFlag(currentRoundId);
   const [mediaFailed, setMediaFailed] =
+    useRoundScopedFlag(currentRoundId);
+  const [autoplayBlocked, setAutoplayBlocked] =
     useRoundScopedFlag(currentRoundId);
   const [mediaStarting, setMediaStarting] =
     useRoundScopedFlag(currentRoundId);
@@ -1331,6 +1359,14 @@ export default function MovieBuffPlayPage() {
     if (
       (clipType === "video" ||
         clipType === "audio") &&
+      storedMediaUrl
+    ) {
+      return storedMediaUrl;
+    }
+
+    if (
+      (clipType === "video" ||
+        clipType === "audio") &&
       roundData?.roundId
     ) {
       return `/api/movie-buff/round-media/${roundData.roundId}`;
@@ -1394,6 +1430,11 @@ export default function MovieBuffPlayPage() {
 
   const playerPlaybackStarted =
     Boolean(roundData?.playbackStartedAt);
+
+  const automaticPlaybackRequested =
+    currentPhase === "playback" &&
+    phaseViewForRound?.phaseEndsAt === null &&
+    !playerPlaybackStarted;
 
   const shouldUseTriviaFallback =
     mediaFailed ||
@@ -1666,6 +1707,12 @@ export default function MovieBuffPlayPage() {
     setMediaStarted(false);
     setMediaStarting(false);
 
+    if (isAutoplayBlockedError(playbackError)) {
+      setAutoplayBlocked(true);
+      setError("");
+      return;
+    }
+
     if (
       nextMessage ===
       "Time has expired for this round."
@@ -1694,10 +1741,13 @@ export default function MovieBuffPlayPage() {
 
   function handleMediaError() {
     setMediaFailed(true);
+    setAutoplayBlocked(false);
     logClipFailure("media_element_error");
   }
 
-  async function syncPlaybackStarted() {
+  async function syncPlaybackStarted(
+    automatic = false,
+  ) {
     const media = mediaRef.current;
     const activeRoundId =
       roundData?.roundId ?? null;
@@ -1715,6 +1765,7 @@ export default function MovieBuffPlayPage() {
     if (roundData.playbackStartedAt) {
       setMediaStarted(true);
       setMediaStarting(false);
+      setAutoplayBlocked(false);
       return;
     }
 
@@ -1742,6 +1793,7 @@ export default function MovieBuffPlayPage() {
         )
       );
       setMediaStarted(true);
+      setAutoplayBlocked(false);
 
       queueMovieBuffEvent({
         eventType: "clip_started",
@@ -1750,6 +1802,9 @@ export default function MovieBuffPlayPage() {
         roundId: nextRound.roundId,
         payload: {
           clipType,
+          ...(automatic
+            ? { automatic: true }
+            : {}),
         },
       });
     } catch (playbackError) {
@@ -1763,7 +1818,9 @@ export default function MovieBuffPlayPage() {
   }
 
   function handleMediaPlaying() {
-    void syncPlaybackStarted();
+    void syncPlaybackStarted(
+      automaticPlaybackRequested,
+    );
   }
 
   async function beginMedia() {
@@ -1785,6 +1842,8 @@ export default function MovieBuffPlayPage() {
     setMediaStarting(true);
     setError("");
 
+    setAutoplayBlocked(false);
+
     if (clipStartTimeoutRef.current) {
       window.clearTimeout(
         clipStartTimeoutRef.current
@@ -1799,6 +1858,8 @@ export default function MovieBuffPlayPage() {
     // the authoritative request row is still created for this round.
     const shouldPrepareRound =
       Boolean(activeRoundId) &&
+      !automaticPlaybackRequested &&
+      !roundData?.playbackStartedAt &&
       playbackPreparedRoundRef.current !==
         activeRoundId;
     const preparePlaybackPromise =
@@ -1855,7 +1916,9 @@ export default function MovieBuffPlayPage() {
       }
 
       if (!media.paused) {
-        void syncPlaybackStarted();
+        void syncPlaybackStarted(
+          automaticPlaybackRequested,
+        );
       }
     } catch (playbackError) {
       handlePlaybackStartFailure(
@@ -1871,7 +1934,8 @@ export default function MovieBuffPlayPage() {
 
     if (
       !roomId ||
-      !roundData?.playbackStartedAt ||
+      (!roundData?.playbackStartedAt &&
+        !automaticPlaybackRequested) ||
       !media ||
       !activeRoundId ||
       mediaStarted ||
@@ -1883,25 +1947,13 @@ export default function MovieBuffPlayPage() {
 
     setMediaStarting(true);
     setError("");
+    setAutoplayBlocked(false);
 
     try {
-      // The server has already recorded this player's automatic start. Do
-      // not call the manual prepare/start RPCs here: doing so creates a
-      // second play request and makes an automatic start look manual.
       await media.play();
-      setMediaStarted(true);
-      setMediaStarting(false);
-
-      queueMovieBuffEvent({
-        eventType: "clip_started",
-        roomId,
-        matchId: roundData.matchId,
-        roundId: activeRoundId,
-        payload: {
-          clipType,
-          automatic: true,
-        },
-      });
+      // Automatic entry is a request, not playback. The answer clock starts
+      // only after the browser accepts this play() call.
+      await syncPlaybackStarted(true);
     } catch (playbackError) {
       handlePlaybackStartFailure(
         playbackError
@@ -1917,10 +1969,13 @@ export default function MovieBuffPlayPage() {
   useEffect(() => {
     const activeRoundId =
       roundData?.roundId ?? null;
+    const autoStartReady =
+      Boolean(roundData?.playbackStartedAt) ||
+      automaticPlaybackRequested;
 
     if (
       !activeRoundId ||
-      !roundData?.playbackStartedAt ||
+      !autoStartReady ||
       !mediaReady ||
       mediaStarted ||
       mediaStarting ||
@@ -1943,6 +1998,7 @@ export default function MovieBuffPlayPage() {
     mediaStarted,
     mediaStarting,
     playerFinished,
+    automaticPlaybackRequested,
     roundData?.playbackStartedAt,
     roundData?.roundId,
   ]);
@@ -2280,23 +2336,26 @@ export default function MovieBuffPlayPage() {
                           element;
                       }}
                       src={mediaUrl}
-                      preload="metadata"
+                      preload="auto"
                       playsInline
                       controls={false}
                       disablePictureInPicture
                       controlsList="nodownload noplaybackrate noremoteplayback"
-                       onLoadedData={
-                         handleMediaLoaded
-                       }
-                       onCanPlay={
-                         handleMediaLoaded
-                       }
-                       onPlaying={
-                         handleMediaPlaying
-                       }
-                       onError={
-                         handleMediaError
-                       }
+                      onLoadedMetadata={
+                        handleMediaLoaded
+                      }
+                      onLoadedData={
+                        handleMediaLoaded
+                      }
+                      onCanPlay={
+                        handleMediaLoaded
+                      }
+                      onPlaying={
+                        handleMediaPlaying
+                      }
+                      onError={
+                        handleMediaError
+                      }
                       onTimeUpdate={
                         handleMediaTimeUpdate
                       }
@@ -2318,6 +2377,12 @@ export default function MovieBuffPlayPage() {
                         }
                         mediaStarting={
                           mediaStarting
+                        }
+                        autoplayBlocked={
+                          autoplayBlocked
+                        }
+                        automaticPlaybackRequested={
+                          automaticPlaybackRequested
                         }
                         hintPending={
                           hintPending
@@ -2366,21 +2431,24 @@ export default function MovieBuffPlayPage() {
                           element;
                       }}
                       src={mediaUrl}
-                      preload="metadata"
+                      preload="auto"
                       controls={false}
                       controlsList="nodownload noplaybackrate"
-                       onLoadedData={
-                         handleMediaLoaded
-                       }
-                       onCanPlay={
-                         handleMediaLoaded
-                       }
-                       onPlaying={
-                         handleMediaPlaying
-                       }
-                       onError={
-                         handleMediaError
-                       }
+                      onLoadedMetadata={
+                        handleMediaLoaded
+                      }
+                      onLoadedData={
+                        handleMediaLoaded
+                      }
+                      onCanPlay={
+                        handleMediaLoaded
+                      }
+                      onPlaying={
+                        handleMediaPlaying
+                      }
+                      onError={
+                        handleMediaError
+                      }
                       onTimeUpdate={
                         handleMediaTimeUpdate
                       }
@@ -2411,6 +2479,12 @@ export default function MovieBuffPlayPage() {
                         }
                         mediaStarting={
                           mediaStarting
+                        }
+                        autoplayBlocked={
+                          autoplayBlocked
+                        }
+                        automaticPlaybackRequested={
+                          automaticPlaybackRequested
                         }
                         hintPending={
                           hintPending
@@ -2842,6 +2916,8 @@ function TriviaChallenge({
 function MediaStartOverlay({
   mediaReady,
   mediaStarting,
+  autoplayBlocked,
+  automaticPlaybackRequested,
   hintPending,
   label,
   hintText,
@@ -2855,6 +2931,8 @@ function MediaStartOverlay({
 }: {
   mediaReady: boolean;
   mediaStarting: boolean;
+  autoplayBlocked: boolean;
+  automaticPlaybackRequested: boolean;
   hintPending: boolean;
   label: string;
   hintText: string | null;
@@ -2902,14 +2980,18 @@ function MediaStartOverlay({
 
           {!mediaStarting && !hintPending ? (
             <div className="mt-6 text-center">
-              {timerRunning ? (
+              {automaticPlaybackRequested ? (
+                <p className="text-sm font-bold text-yellow-200">
+                  Automatic start is waiting for this clip to become playable.
+                </p>
+              ) : timerRunning ? (
                 <p className="text-sm font-bold text-yellow-200">
                   Your timer is running. Start playback when the clip is ready.
                 </p>
               ) : startWindowSecondsLeft !== null ? (
-                  <p className="text-sm font-bold text-zinc-300">
-                    Your clip auto-starts in {startWindowSecondsLeft}s if you do not start it.
-                  </p>
+                <p className="text-sm font-bold text-zinc-300">
+                  Your clip auto-starts in {startWindowSecondsLeft}s if you do not start it.
+                </p>
               ) : null}
 
               {canUseHint && (
@@ -2947,6 +3029,11 @@ function MediaStartOverlay({
             type="button"
             onClick={onStart}
             disabled={mediaStarting}
+            data-testid={
+              autoplayBlocked
+                ? "movie-buff-tap-to-play"
+                : "movie-buff-play-clip"
+            }
             className="mx-auto flex h-28 w-28 items-center justify-center rounded-full bg-red-600 shadow-2xl shadow-red-600/30 transition hover:scale-105 hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
             aria-label={label}
           >
@@ -2956,20 +3043,30 @@ function MediaStartOverlay({
             />
           </button>
 
-          <p className="mt-6 text-xl font-black">{label}</p>
-
-          <p className="mt-2 text-sm font-bold text-zinc-500">
-            Playback is available once.
+          <p className="mt-6 text-xl font-black">
+            {autoplayBlocked
+              ? "Tap to play"
+              : label}
           </p>
 
-          {timerRunning ? (
+          <p className="mt-2 text-sm font-bold text-zinc-500">
+            {autoplayBlocked
+              ? "Your browser blocked automatic playback. Tap once to start the clip and your answer clock."
+              : "Playback is available once."}
+          </p>
+
+          {automaticPlaybackRequested ? (
+            <p className="mt-3 text-sm font-bold text-yellow-200">
+              Automatic start is waiting for this clip to become playable.
+            </p>
+          ) : timerRunning ? (
             <p className="mt-3 text-sm font-bold text-yellow-200">
               Your timer is running. Start playback now.
             </p>
           ) : startWindowSecondsLeft !== null ? (
-              <p className="mt-3 text-sm font-bold text-zinc-400">
-                Your clip auto-starts in {startWindowSecondsLeft}s if you do not start it.
-              </p>
+            <p className="mt-3 text-sm font-bold text-zinc-400">
+              Your clip auto-starts in {startWindowSecondsLeft}s if you do not start it.
+            </p>
           ) : null}
 
           {canUseHint && (

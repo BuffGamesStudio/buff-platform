@@ -20,6 +20,7 @@
     "movie-buff:check-bootstrap-artifacts": "node ./scripts/movie-buff-bootstrap-artifact-check.mjs",
     "movie-buff:smoke-policy-isolation": "node ./scripts/movie-buff-policy-isolation-smoke.mjs",
     "movie-buff:hosted-preflight": "node ./scripts/movie-buff-hosted-preflight.mjs",
+    "movie-buff:media-device-matrix": "node ./scripts/movie-buff-media-device-matrix.mjs",
     "movie-buff:local-launch-suite": "node ./scripts/movie-buff-local-launch-suite.mjs",
     "movie-buff:regression-board-concurrency": "node ./scripts/movie-buff-board-concurrency-regression.mjs",
     "movie-buff:hat-two-player": "node ./scripts/movie-buff-two-player-hat.mjs",

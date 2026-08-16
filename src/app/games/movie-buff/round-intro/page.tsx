@@ -233,22 +233,44 @@ export default function RoundIntroPage() {
             const nextMediaUrl =
               currentRound.mediaUrl?.trim() ??
               "";
+            const isStaticMediaUrl =
+              nextMediaUrl.startsWith(
+                "/media/movie-buff/"
+              );
 
             if (
               !nextMediaUrl ||
               !["video", "audio"].includes(
                 nextClipType
               ) ||
-              !nextMediaUrl.startsWith(
-                "/api/movie-buff/"
-              )
+              (!isStaticMediaUrl &&
+                !nextMediaUrl.startsWith(
+                  "/api/movie-buff/"
+                ))
             ) {
               return;
             }
 
+            document
+              .querySelectorAll(
+                'link[data-movie-buff-round-preload="true"]',
+              )
+              .forEach((link) => link.remove());
+
+            const preloadLink = document.createElement("link");
+            preloadLink.rel = "preload";
+            preloadLink.as = nextClipType;
+            preloadLink.href = nextMediaUrl;
+            preloadLink.crossOrigin = "anonymous";
+            preloadLink.dataset.movieBuffRoundPreload =
+              "true";
+            document.head.appendChild(preloadLink);
+
             return fetch(nextMediaUrl, {
               method: "HEAD",
-              cache: "no-store",
+              cache: isStaticMediaUrl
+                ? "force-cache"
+                : "no-store",
             });
           })
           .catch(() => {
