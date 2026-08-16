@@ -70,11 +70,26 @@ Capture: 2026-08-14T19:06:56Z–2026-08-14T19:08:30Z (UTC)
 
 Final automated HAT result: **PASS**.
 
-## Human signoff
+## Named independent human signoff for the current candidate
 
-- Named reviewer: **PENDING — no reviewer name and role were supplied**
-- Production acceptance status: **Automated HAT PASS; named human acceptance
-  not yet recorded**
+Recorded at: `2026-08-15T22:48:48-04:00` (America/New_York)
 
-Do not fill the reviewer field with an inferred operator or automation identity.
-Provide the reviewer’s name and role to finalize the independent MOV-19 signoff.
+- Named reviewer: `emperor9`
+- Role: `Independent QA reviewer`
+- Independence: **CONFIRMED**
+- Hosted production alias: <https://movie-buff-sigma.vercel.app>
+- Vercel deployment: `dpl_2HGWmvGoZ53DdfL1kSa2X91QcuvU`
+- Deployment Git SHA: `9077a7f1cb40f5a4d47ab8a742e205c56248aaa3`
+- Production Supabase ref: `yfatwreicmiocdxzyznd`
+- Test room: `a11a5368-0d82-40a2-85c2-f8e64e36db14`
+- Independent manual starts: **PASS**
+- Automatic timer start: **PASS**
+- Waiting states: **PASS**
+- Different answer times: **PASS**
+- Phase advancement: **PASS**
+- Production acceptance: **APPROVED**
+
+The named reviewer supplied the completed acceptance record after observing the
+two-client production run. This supersedes the pending-human status for the
+current candidate; the earlier automated captures above remain historical
+records for their respective deployment.
