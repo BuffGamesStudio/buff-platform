@@ -309,7 +309,7 @@ async function waitForBoardPreviewReady(page) {
         "/games/movie-buff/play",
       ) ||
       (document.body?.innerText?.includes(
-        "Prototype board",
+        "Live movie board",
       ) &&
         (Array.from(
           document.querySelectorAll("button"),
@@ -322,10 +322,10 @@ async function waitForBoardPreviewReady(page) {
             "Waiting for the current selector to choose a tile.",
           ) ||
           document.body?.innerText?.includes(
-            "Round intro is live. The board unlocks",
+            "Choose a category and point value",
           ) ||
           document.body?.innerText?.includes(
-            "VIP lock is in progress. The board opens",
+            "Preparing the round board",
           ) ||
           document.body?.innerText?.includes(
             "Checking the live Movie Buff phase for this room.",
@@ -495,9 +495,9 @@ async function waitForRoundIntroReady(page) {
         Array.from(
           document.querySelectorAll("button, a"),
         ).some((control) =>
-          (control.textContent ?? "")
-            .trim()
-            .includes("Start Round"),
+          ["Start Round", "Continue without VIP"].some((label) =>
+            (control.textContent ?? "").trim().includes(label),
+          ),
         )),
     undefined,
     { timeout: 30000 },
@@ -810,7 +810,11 @@ async function resolveIntoPlay(page) {
 
   if (page.url().includes("/round-intro")) {
     await waitForRoundIntroReady(page);
-    await clickUnique(page, "button", "Start Round");
+    await clickUnique(page, "link", "Start Round").catch(async () => {
+      await clickUnique(page, "button", "Start Round").catch(async () => {
+        await clickUnique(page, "button", "Continue without VIP");
+      });
+    });
     await waitForEitherUrl(page, [
       "**/games/movie-buff/board-preview?**",
       "**/games/movie-buff/play?**",

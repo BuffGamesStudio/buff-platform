@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
@@ -263,6 +262,21 @@ export default function MovieBuffBoardPreviewClient({
     [preview.categories],
   );
 
+  const playableTileCount = useMemo(
+    () =>
+      preview.categories.reduce(
+        (total, category) =>
+          total +
+          category.tiles.filter(
+            (tile) =>
+              tile.status === "available" &&
+              Boolean(tile.clipId),
+          ).length,
+        0,
+      ),
+    [preview.categories],
+  );
+
   const selectorName = useMemo(() => {
     if (!phaseView?.selectorPlayerId) {
       return null;
@@ -289,7 +303,7 @@ export default function MovieBuffBoardPreviewClient({
     }
 
     if (phaseView.phase === "vip_lock") {
-      return "VIP lock is in progress. The board opens after the lock window clears.";
+      return "Preparing the round board.";
     }
 
     if (phaseView.phase === "board_select") {
@@ -329,8 +343,7 @@ export default function MovieBuffBoardPreviewClient({
   ]);
 
   const boardPhaseCountdown =
-    phaseView?.phase === "round_intro" ||
-    phaseView?.phase === "vip_lock"
+    phaseView?.phase === "round_intro"
       ? getCountdownSeconds(
           phaseView.phaseEndsAt,
         )
@@ -393,10 +406,7 @@ export default function MovieBuffBoardPreviewClient({
     if (phaseView.phase === "vip_lock") {
       return {
         tone: "amber" as const,
-        message:
-          boardPhaseCountdown === null
-            ? "VIP lock is in progress. The board opens automatically."
-            : `VIP lock is in progress. The board opens in ${boardPhaseCountdown}s.`,
+        message: "Preparing the round board. The board will open automatically.",
       };
     }
 
@@ -502,7 +512,7 @@ export default function MovieBuffBoardPreviewClient({
       <section className="mx-auto max-w-[1600px] px-6 py-10">
         <div className="rounded-[2rem] border border-amber-500/25 bg-gradient-to-b from-red-950/55 via-[#140909] to-black p-8 shadow-[0_0_90px_rgba(239,68,68,0.14)]">
           <p className="text-sm font-black uppercase tracking-[0.35em] text-amber-300/90">
-            Board-first preview
+            Live match board
           </p>
           <div className="mt-4 flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
             <div className="max-w-4xl">
@@ -544,20 +554,33 @@ export default function MovieBuffBoardPreviewClient({
             </div>
           ) : null}
 
-          <div className="mt-8 flex flex-wrap gap-4">
-            <Link
-              href="/games/movie-buff/lobby"
-              className="rounded-xl border border-zinc-700 px-6 py-3 font-black text-zinc-200 transition hover:border-amber-400 hover:text-white"
-            >
-              Current live flow
-            </Link>
-            <Link
-              href="/games/movie-buff/how-to-play"
-              className="rounded-xl border border-zinc-700 px-6 py-3 font-black text-zinc-200 transition hover:border-amber-400 hover:text-white"
-            >
-              How to Play
-            </Link>
-          </div>
+        </div>
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <BoardMetricCard
+            label="Round"
+            value={
+              phaseView
+                ? `${phaseView.roundNumber} / ${phaseView.totalRounds}`
+                : "Preview"
+            }
+            detail="Current match round"
+          />
+          <BoardMetricCard
+            label="Tiles used"
+            value={`${usedTileCount} / ${totalTileCount}`}
+            detail="Board progress"
+          />
+          <BoardMetricCard
+            label="Next selector"
+            value={selectorName ?? "Preview mode"}
+            detail="Who chooses the next tile"
+          />
+          <BoardMetricCard
+            label="Playable tiles"
+            value={playableTileCount.toLocaleString()}
+            detail="Clips ready to launch"
+          />
         </div>
 
         <div className="mt-8 grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
@@ -626,24 +649,24 @@ export default function MovieBuffBoardPreviewClient({
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-black text-amber-300">
-                  Prototype board
+                  Live movie board
                 </h2>
                 <p className="mt-2 max-w-4xl text-sm leading-6 text-zinc-400">
-                  This board now waits on the authoritative rehearsal phase
-                  state instead of bypassing directly into the clip round.
+                  Choose a category and point value to launch the next
+                  synchronized clip.
                 </p>
                 {roomId ? (
                   <p className="mt-3 max-w-4xl text-sm leading-6 text-amber-200/85">
-                    Selectable tiles require a playable rehearsal clip. The app
-                    moves into the synchronized clip round only after a valid
-                    authoritative selection.
+                    Playable tiles unlock only for the current selector.
+                    Selecting a tile starts the authoritative round for every
+                    player.
                   </p>
                 ) : null}
               </div>
             </div>
 
             <div className="overflow-hidden rounded-[2rem] border border-zinc-800 bg-gradient-to-b from-[#111111] to-black p-4 shadow-[0_0_70px_rgba(120,0,0,0.14)] xl:p-5">
-              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-6">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
                 {preview.categories.map((category) => (
                   <section
                     key={category.id}
@@ -785,6 +808,30 @@ function BoardStatusCard({
       </p>
       <p className="mt-2 text-sm font-black leading-6 text-white">
         {value}
+      </p>
+    </div>
+  );
+}
+
+function BoardMetricCard({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-gradient-to-br from-zinc-900 to-black px-5 py-4 shadow-[0_0_35px_rgba(239,68,68,0.08)]">
+      <p className="text-[11px] font-black uppercase tracking-[0.22em] text-zinc-500">
+        {label}
+      </p>
+      <p className="mt-2 truncate text-2xl font-black text-white">
+        {value}
+      </p>
+      <p className="mt-1 text-xs font-bold text-zinc-500">
+        {detail}
       </p>
     </div>
   );

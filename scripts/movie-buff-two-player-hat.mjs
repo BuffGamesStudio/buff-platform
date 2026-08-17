@@ -214,9 +214,14 @@ async function waitForRoundIntro(page) {
       !document.body?.innerText?.includes(
         "Loading the next Movie Buff page.",
       ) &&
-      Array.from(document.querySelectorAll("button, a")).some((control) =>
-        (control.textContent ?? "").trim().includes("Start Round"),
-      ),
+      Array.from(document.querySelectorAll("button, a")).some((control) => {
+        const text = (control.textContent ?? "").trim();
+        return (
+          text.includes("Start Round") ||
+          text.includes("Choose your VIP") ||
+          text.includes("Continue without VIP")
+        );
+      }),
     undefined,
     { timeout: 60000 },
   );
@@ -225,7 +230,9 @@ async function waitForRoundIntro(page) {
 async function clickStartRound(page) {
   await waitForRoundIntro(page);
   await clickUnique(page, "link", "Start Round").catch(async () => {
-    await clickUnique(page, "button", "Start Round");
+    await clickUnique(page, "button", "Start Round").catch(async () => {
+      await clickUnique(page, "button", "Continue without VIP");
+    });
   });
 }
 
@@ -575,10 +582,11 @@ try {
   await Promise.all([waitForRoundIntro(pageOne), waitForRoundIntro(pageTwo)]);
 
   // Player two intentionally stays on the round-intro surface. The
-  // authoritative phase poll must expose the VIP countdown and move that
-  // client into the round without a second manual Start Round click.
+  // authoritative phase poll must expose the round-only VIP dialog while
+  // moving that client forward without a second manual Start Round click.
   await clickStartRound(pageOne);
-  await waitForBodyText(pageTwo, "VIP lock is in progress");
+  await waitForBodyText(pageTwo, "Choose your VIP");
+  await waitForBodyText(pageTwo, "Continue without VIP");
   assert(
     !(await readBody(pageTwo)).includes(
       "Active Movie Buff room membership required",
@@ -592,7 +600,8 @@ try {
     },
     playerTwo: {
       action: "no manual Start Round click",
-      vipCountdownVisible: true,
+      vipChoiceVisible: true,
+      continueWithoutVipAvailable: true,
       remainedOnRoundIntroBeforeAutomaticEntry: true,
     },
     membershipFailure: false,

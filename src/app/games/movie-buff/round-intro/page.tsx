@@ -16,7 +16,9 @@ import {
   Flame,
   LogOut,
   Play,
+  ShieldCheck,
   Trophy,
+  X,
 } from "lucide-react";
 
 import {
@@ -31,7 +33,10 @@ import {
 import {
   buildMovieBuffPhaseRouteHref,
   getMovieBuffMatchPhaseView,
+  getMovieBuffVipRoundView,
+  lockMovieBuffRoundVip,
   type MovieBuffMatchPhaseView,
+  type MovieBuffVipRoundView,
 } from "@/lib/game/movieBuffPhaseService";
 import {
   enterMovieBuffRound,
@@ -74,6 +79,19 @@ function formatRoundPhaseError(
   return message || fallback;
 }
 
+function createVipIdempotencyKey(
+  roundId: string,
+  vipId: string | null,
+) {
+  const randomPart =
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  return `movie-buff-vip-${roundId}-${vipId ?? "none"}-${randomPart}`;
+}
+
 export default function RoundIntroPage() {
   const router = useRouter();
   const isMountedRef = useRef(false);
@@ -89,6 +107,13 @@ export default function RoundIntroPage() {
   const [phaseView, setPhaseView] =
     useState<MovieBuffMatchPhaseView | null>(null);
   const [phaseError, setPhaseError] = useState("");
+  const [vipView, setVipView] =
+    useState<MovieBuffVipRoundView | null>(null);
+  const [vipError, setVipError] = useState("");
+  const [vipSaving, setVipSaving] = useState(false);
+  const [selectedVipId, setSelectedVipId] =
+    useState<string | undefined>();
+  const vipLoadedRoundIdRef = useRef<string | null>(null);
   const [, setNowTick] = useState(() => Date.now());
 
   const navigateTo = useCallback((
@@ -384,6 +409,62 @@ export default function RoundIntroPage() {
     };
   }, [refreshPhaseView, roomId]);
 
+  const vipRoundId =
+    phaseView?.phase === "vip_lock" && phaseView.roundId
+      ? phaseView.roundId
+      : null;
+
+  useEffect(() => {
+    if (!roomId || !vipRoundId) {
+      return;
+    }
+
+    let active = true;
+
+    const refreshVipView = async () => {
+      try {
+        const nextView = await getMovieBuffVipRoundView(
+          roomId,
+          vipRoundId,
+        );
+
+        if (!active || !isMountedRef.current) {
+          return;
+        }
+
+        setVipView(nextView);
+        setVipError("");
+
+        if (vipLoadedRoundIdRef.current !== vipRoundId) {
+          vipLoadedRoundIdRef.current = vipRoundId;
+          setSelectedVipId(undefined);
+        }
+      } catch (vipLoadError) {
+        if (!active || !isMountedRef.current) {
+          return;
+        }
+
+        setVipError(
+          formatRoundPhaseError(
+            vipLoadError,
+            "Unable to load the VIP choices.",
+          ),
+        );
+      }
+    };
+
+    void refreshVipView();
+    const vipTimer = window.setInterval(
+      refreshVipView,
+      1500,
+    );
+
+    return () => {
+      active = false;
+      window.clearInterval(vipTimer);
+    };
+  }, [roomId, vipRoundId]);
+
   useEffect(() => {
     if (!roomId) {
       return;
@@ -445,6 +526,72 @@ export default function RoundIntroPage() {
     }
   }
 
+  const currentVipView =
+    vipView?.roundId === vipRoundId ? vipView : null;
+
+  const handleVipLock = useCallback(
+    async (vipId: string | null) => {
+      if (
+        !roomId ||
+        !vipRoundId ||
+        vipSaving ||
+        currentVipView?.lock ||
+        currentVipView?.status !== "open"
+      ) {
+        return;
+      }
+
+      setVipSaving(true);
+      setVipError("");
+
+      try {
+        await lockMovieBuffRoundVip({
+          roomId,
+          roundId: vipRoundId,
+          vipId,
+          idempotencyKey: createVipIdempotencyKey(
+            vipRoundId,
+            vipId,
+          ),
+        });
+
+        setSelectedVipId(undefined);
+
+        const nextView = await getMovieBuffVipRoundView(
+          roomId,
+          vipRoundId,
+        );
+
+        if (isMountedRef.current) {
+          setVipView(nextView);
+        }
+
+        await refreshPhaseView();
+      } catch (vipLockError) {
+        if (isMountedRef.current) {
+          setVipError(
+            formatRoundPhaseError(
+              vipLockError,
+              "Unable to save your VIP choice.",
+            ),
+          );
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setVipSaving(false);
+        }
+      }
+    },
+    [
+      refreshPhaseView,
+      roomId,
+      vipRoundId,
+      vipSaving,
+      currentVipView?.lock,
+      currentVipView?.status,
+    ],
+  );
+
   const phaseCountdown =
     phaseView?.phase === "round_intro" ||
     phaseView?.phase === "vip_lock"
@@ -456,11 +603,14 @@ export default function RoundIntroPage() {
       ? phaseCountdown === null
         ? "Round intro is live. Your round entry will continue automatically."
         : `Round intro is live. Your round entry continues in ${phaseCountdown}s.`
-      : phaseView?.phase === "vip_lock"
-        ? phaseCountdown === null
-          ? "VIP lock is in progress. Your round entry will continue automatically."
-          : `VIP lock is in progress. Your round entry continues in ${phaseCountdown}s.`
-        : null;
+      : null;
+
+  const vipChoices = currentVipView?.inventory ?? [];
+  const vipSelectionOpen =
+    Boolean(vipRoundId) &&
+    Boolean(currentVipView) &&
+    currentVipView?.status === "open" &&
+    !currentVipView.lock;
 
   if (loading) {
     return (
@@ -475,6 +625,156 @@ export default function RoundIntroPage() {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(220,38,38,0.22),_transparent_55%)]" />
       <div className="absolute left-0 top-0 h-full w-1/3 bg-gradient-to-r from-red-950/60 to-transparent" />
       <div className="absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-red-950/60 to-transparent" />
+
+      {vipRoundId ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80 px-4 py-6 backdrop-blur-sm md:items-center">
+          <section
+            aria-labelledby="movie-buff-vip-title"
+            aria-modal="true"
+            className="w-full max-w-2xl rounded-3xl border border-amber-400/40 bg-zinc-950 p-5 shadow-2xl shadow-amber-950/40 md:p-7"
+            role="dialog"
+          >
+            <div className="flex items-start gap-4">
+              <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-3">
+                <ShieldCheck className="text-amber-300" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-black uppercase tracking-[0.3em] text-amber-300">
+                  Round advantage
+                </p>
+                <h2
+                  id="movie-buff-vip-title"
+                  className="mt-2 text-2xl font-black text-white md:text-3xl"
+                >
+                  Choose your VIP
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-zinc-400">
+                  Select one, continue without a VIP, or clear your selection
+                  before you submit. Your choice is locked for this round when
+                  you continue.
+                </p>
+              </div>
+
+              {phaseCountdown !== null ? (
+                <div className="shrink-0 rounded-full border border-amber-400/50 px-3 py-2 text-sm font-black text-amber-200">
+                  {phaseCountdown}s
+                </div>
+              ) : null}
+            </div>
+
+            {vipError ? (
+              <div className="mt-5 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-200">
+                {vipError}
+              </div>
+            ) : null}
+
+            {currentVipView?.lock ? (
+              <div className="mt-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-4 text-sm font-bold text-emerald-100">
+                Your VIP choice is locked. Waiting for the other players...
+              </div>
+            ) : currentVipView?.status === "closed" ? (
+              <div className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-4 text-sm font-bold text-amber-100">
+                The VIP window has closed. Continuing to the round...
+              </div>
+            ) : currentVipView?.status === "unavailable" ? (
+              <div className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-4 text-sm font-bold text-amber-100">
+                VIP choices are unavailable for this round. The round will
+                continue automatically.
+              </div>
+            ) : !currentVipView ? (
+              <div className="mt-6 rounded-2xl border border-zinc-800 bg-black/60 px-4 py-5 text-sm font-bold text-zinc-300">
+                Loading VIP choices...
+              </div>
+            ) : (
+              <>
+                <div className="mt-6 grid gap-3 md:grid-cols-2">
+                  {vipChoices.map((item) => {
+                    const selected = selectedVipId === item.vipId;
+                    const disabled = !item.available || vipSaving;
+
+                    return (
+                      <button
+                        key={item.vipId}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => setSelectedVipId(item.vipId)}
+                        className={`rounded-2xl border p-4 text-left transition ${
+                          selected
+                            ? "border-amber-300 bg-amber-500/15 text-white"
+                            : "border-zinc-800 bg-black/60 text-zinc-200 hover:border-amber-400/60"
+                        } disabled:cursor-not-allowed disabled:opacity-50`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-[0.22em] text-amber-300">
+                              {item.code}
+                            </p>
+                            <p className="mt-1 text-lg font-black">
+                              {item.name}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-xs font-black uppercase tracking-[0.16em] text-zinc-500">
+                            {selected
+                              ? "Selected"
+                              : item.available
+                                ? "Choose"
+                                : "Unavailable"}
+                          </span>
+                        </div>
+
+                        <p className="mt-2 text-sm leading-5 text-zinc-400">
+                          {item.description}
+                        </p>
+
+                        {!item.available && item.unavailableReason ? (
+                          <p className="mt-2 text-xs font-bold text-red-300">
+                            {item.unavailableReason}
+                          </p>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-6 flex flex-col gap-3 border-t border-zinc-800 pt-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedVipId(undefined)}
+                    disabled={!selectedVipId || vipSaving}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-zinc-700 px-4 py-3 text-sm font-black text-zinc-200 transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <X size={16} />
+                    Clear selection
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleVipLock(null)}
+                    disabled={vipSaving || !vipSelectionOpen}
+                    className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm font-black text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {vipSaving && !selectedVipId
+                      ? "Saving..."
+                      : "Continue without VIP"}
+                  </button>
+
+                  {selectedVipId ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleVipLock(selectedVipId)}
+                      disabled={vipSaving || !vipSelectionOpen}
+                      className="rounded-xl bg-red-600 px-4 py-3 text-sm font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {vipSaving ? "Saving..." : "Use selected VIP"}
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      ) : null}
 
       <section className="relative z-10 w-full max-w-5xl text-center">
         <div className="mb-8 flex flex-col justify-center gap-3 sm:flex-row">
@@ -581,19 +881,26 @@ export default function RoundIntroPage() {
           </p>
         </div>
 
-        <div className="mt-10 flex justify-center">
-          <Link
-            href={playRoundHref}
-            className="flex w-full max-w-sm items-center justify-center gap-3 rounded-xl bg-red-600 px-8 py-5 text-xl font-black transition hover:bg-red-700"
-          >
-            Start Round
-            <ArrowRight size={24} />
-          </Link>
-        </div>
+        {vipRoundId ? (
+          <div className="mt-10 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-5 py-4 text-sm font-bold text-amber-100">
+            Choose a VIP or continue without one above to enter the round.
+          </div>
+        ) : (
+          <div className="mt-10 flex justify-center">
+            <Link
+              href={playRoundHref}
+              className="flex w-full max-w-sm items-center justify-center gap-3 rounded-xl bg-red-600 px-8 py-5 text-xl font-black transition hover:bg-red-700"
+            >
+              Start Round
+              <ArrowRight size={24} />
+            </Link>
+          </div>
+        )}
 
         <p className="mx-auto mt-4 max-w-xl text-sm text-zinc-500">
-          Start your round when you are ready. If you wait, the server will
-          enter your player automatically when the launch window closes.
+          {vipRoundId
+            ? "Your round begins when the VIP window closes or all players submit a choice."
+            : "Start your round when you are ready. If you wait, the server will enter your player automatically when the launch window closes."}
         </p>
       </section>
     </main>

@@ -241,7 +241,7 @@ async function waitForBoardPreviewReady(page) {
         "/games/movie-buff/play",
       ) ||
       (document.body?.innerText?.includes(
-        "Prototype board",
+        "Live movie board",
       ) &&
         (Array.from(
           document.querySelectorAll("button"),
@@ -254,10 +254,10 @@ async function waitForBoardPreviewReady(page) {
             "Waiting for the current selector to choose a tile.",
           ) ||
           document.body?.innerText?.includes(
-            "Round intro is live. The board unlocks",
+            "Choose a category and point value",
           ) ||
           document.body?.innerText?.includes(
-            "VIP lock is in progress. The board opens",
+            "Preparing the round board",
           ) ||
           document.body?.innerText?.includes(
             "Checking the live Movie Buff phase for this room.",
@@ -375,11 +375,12 @@ async function waitForRoundIntroReady(page) {
       ) ||
         Array.from(
           document.querySelectorAll("button, a"),
-        ).some((control) =>
-          (control.textContent ?? "")
-            .trim()
-            .includes("Start Round"),
-        )),
+        ).some((control) => {
+          const text = (control.textContent ?? "").trim();
+          return text.includes("Start Round") ||
+            text.includes("Continue without VIP");
+        })
+        ),
     undefined,
     { timeout: 30000 },
   );
@@ -549,7 +550,26 @@ async function resolveIntoPlay(page) {
 
   if (page.url().includes("/round-intro")) {
     await waitForRoundIntroReady(page);
-    await clickUnique(page, "button", "Start Round");
+    const startRoundLink = page.getByRole("link", {
+      name: "Start Round",
+      exact: true,
+    });
+    const startRoundButton = page.getByRole("button", {
+      name: "Start Round",
+      exact: true,
+    });
+    const continueWithoutVip = page.getByRole("button", {
+      name: "Continue without VIP",
+      exact: true,
+    });
+
+    if ((await startRoundLink.count()) === 1) {
+      await startRoundLink.click();
+    } else if ((await startRoundButton.count()) === 1) {
+      await startRoundButton.click();
+    } else {
+      await continueWithoutVip.click();
+    }
     await waitForEitherUrl(page, [
       "**/games/movie-buff/board-preview?**",
       "**/games/movie-buff/play?**",

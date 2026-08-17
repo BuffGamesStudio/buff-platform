@@ -60,6 +60,51 @@ export type SelectMovieBuffMatchTileResult = {
   selectionSource: string | null;
 };
 
+export type MovieBuffVipInventoryItem = {
+  vipId: string;
+  code: string;
+  name: string;
+  description: string;
+  activationWindow: string;
+  effectScope: string;
+  quantityRemaining: number;
+  available: boolean;
+  unavailableReason: string | null;
+};
+
+export type MovieBuffVipRoundLock = {
+  lockId: string;
+  vipId: string | null;
+  vipName: string | null;
+  lockedAt: string;
+  activatedAt: string | null;
+  consumedAt: string | null;
+};
+
+export type MovieBuffVipRoundView = {
+  roomId: string;
+  matchId: string;
+  roundId: string;
+  roundNumber: number;
+  serverNow: string;
+  deadlineAt: string | null;
+  status: string;
+  lockedCount: number;
+  requiredPlayerCount: number;
+  originalRequiredPlayerCount: number;
+  advanceReady: boolean;
+  inventory: MovieBuffVipInventoryItem[];
+  lock: MovieBuffVipRoundLock | null;
+};
+
+export type LockMovieBuffRoundVipResult = {
+  lockId: string;
+  vipId: string | null;
+  lockedAt: string;
+  activatedAt: string | null;
+  consumedAt: string | null;
+};
+
 function assertRpcJson<T>(
   data: unknown,
   message: string,
@@ -144,6 +189,54 @@ export async function selectMovieBuffMatchTile(input: {
   return assertRpcJson<SelectMovieBuffMatchTileResult>(
     data,
     "The board tile selection did not return a result.",
+  );
+}
+
+export async function getMovieBuffVipRoundView(
+  roomId: string,
+  roundId: string,
+): Promise<MovieBuffVipRoundView> {
+  const { data, error } = await supabase.rpc(
+    "get_movie_buff_vip_round_view",
+    {
+      p_room_id: roomId,
+      p_round_id: roundId,
+    },
+  );
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return assertRpcJson<MovieBuffVipRoundView>(
+    data,
+    "The Movie Buff VIP choices are unavailable.",
+  );
+}
+
+export async function lockMovieBuffRoundVip(input: {
+  roomId: string;
+  roundId: string;
+  vipId: string | null;
+  idempotencyKey: string;
+}): Promise<LockMovieBuffRoundVipResult> {
+  const { data, error } = await supabase.rpc(
+    "lock_movie_buff_round_vip",
+    {
+      p_room_id: input.roomId,
+      p_round_id: input.roundId,
+      p_vip_id: input.vipId,
+      p_idempotency_key: input.idempotencyKey,
+    },
+  );
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return assertRpcJson<LockMovieBuffRoundVipResult>(
+    data,
+    "The Movie Buff VIP choice could not be locked.",
   );
 }
 

@@ -186,9 +186,9 @@ async function clickStartRound(page) {
       Array.from(
         document.querySelectorAll("a, button"),
       ).some((candidate) =>
-        (candidate.textContent ?? "")
-          .trim()
-          .includes("Start Round"),
+        ["Start Round", "Continue without VIP"].some((label) =>
+          (candidate.textContent ?? "").trim().includes(label),
+        ),
       ),
     undefined,
     { timeout: 30000 },
@@ -207,6 +207,14 @@ async function clickStartRound(page) {
   const button = page.getByRole("button", { name: "Start Round" });
   if ((await button.count()) === 1) {
     await button.click();
+    return;
+  }
+
+  const continueWithoutVip = page.getByRole("button", {
+    name: "Continue without VIP",
+  });
+  if ((await continueWithoutVip.count()) === 1) {
+    await continueWithoutVip.click();
     return;
   }
 
@@ -249,7 +257,7 @@ async function waitForBoardRender(page) {
         "/games/movie-buff/play",
       ) ||
       (document.body?.innerText?.includes(
-        "Prototype board",
+        "Live movie board",
       ) &&
         !document.body?.innerText?.includes(
           "Loading the next Movie Buff page.",
