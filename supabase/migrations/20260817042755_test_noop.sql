@@ -1,0 +1,3 @@
+-- This migration was recorded in the production migration history before the
+-- repository snapshot was synchronized. It intentionally makes no schema or
+-- data changes; the file exists to keep local source history aligned.
