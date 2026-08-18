@@ -239,6 +239,21 @@ export default function MovieBuffBoardPreviewClient({
     });
   }, [phaseView, preview.players]);
 
+  const leaderboardPlayers = useMemo(
+    () =>
+      displayedPlayers
+        .map((player, index) => ({
+          ...player,
+          originalIndex: index,
+        }))
+        .sort(
+          (left, right) =>
+            right.score - left.score ||
+            left.originalIndex - right.originalIndex,
+        ),
+    [displayedPlayers],
+  );
+
   const usedTileCount = useMemo(
     () =>
       preview.categories.reduce(
@@ -508,27 +523,158 @@ export default function MovieBuffBoardPreviewClient({
   );
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(180,24,24,0.26),_transparent_28%),linear-gradient(180deg,_#080808_0%,_#000000_100%)] text-white">
-      <section className="mx-auto max-w-[1600px] px-6 py-10">
-        <div className="rounded-[2rem] border border-amber-500/25 bg-gradient-to-b from-red-950/55 via-[#140909] to-black p-8 shadow-[0_0_90px_rgba(239,68,68,0.14)]">
-          <p className="text-sm font-black uppercase tracking-[0.35em] text-amber-300/90">
-            Live match board
-          </p>
-          <div className="mt-4 flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
-            <div className="max-w-4xl">
-              <h1 className="text-4xl font-black leading-none md:text-6xl xl:text-7xl">
-                {preview.headline}
-              </h1>
-              <p className="mt-4 text-lg text-zinc-300 md:text-2xl">
-                {preview.supportLine}
-              </p>
-              <p className="mt-4 max-w-3xl text-sm uppercase tracking-[0.26em] text-zinc-500">
-                Premium cinematic competition · synchronized clip play ·
-                first-correct-wins
-              </p>
+    <main
+      data-testid="movie-buff-live-board"
+      className="movie-buff-theater-board min-h-screen text-white"
+    >
+      <div className="movie-buff-theater-backdrop" aria-hidden="true">
+        <div className="movie-buff-theater-arch movie-buff-theater-arch--left" />
+        <div className="movie-buff-theater-arch movie-buff-theater-arch--right" />
+        <div className="movie-buff-theater-screen-glow" />
+      </div>
+
+      <section className="movie-buff-theater-shell mx-auto max-w-[1800px]">
+        <header className="movie-buff-board-marquee">
+          <div>
+            <p className="text-lg font-black uppercase tracking-[0.16em] text-white">
+              Movie Buff
+            </p>
+            <p className="mt-1 text-[11px] font-black uppercase tracking-[0.24em] text-red-300">
+              Live board / round {phaseView?.roundNumber ?? "Preview"}
+            </p>
+          </div>
+
+          <div className="movie-buff-board-marquee__center">
+            <p className="text-xl font-black uppercase tracking-[0.14em] text-amber-300 md:text-2xl">
+              Choose a category
+            </p>
+            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-400">
+              {preview.headline}
+            </p>
+          </div>
+
+          <div className="text-left md:text-right">
+            <p className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-emerald-300 md:justify-end">
+              <span className="movie-buff-live-dot" aria-hidden="true" />
+              Live
+            </p>
+            <p className="mt-1 text-xs leading-5 text-zinc-400">
+              {boardStatusLabel}
+            </p>
+          </div>
+        </header>
+
+        <div className="movie-buff-board-layout">
+          <aside className="movie-buff-side-panel movie-buff-player-panel">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-amber-300">
+                  Players
+                </p>
+                <p className="mt-2 text-sm uppercase tracking-[0.16em] text-zinc-400">
+                  {displayedPlayers.length} active
+                </p>
+              </div>
+              <span className="text-2xl" aria-hidden="true">
+                ◉
+              </span>
             </div>
 
-            <div className="grid min-w-[280px] gap-3 md:grid-cols-2 xl:grid-cols-1">
+            <div className="mt-5 space-y-3">
+              {displayedPlayers.map((player, index) => (
+                <div
+                  key={player.id}
+                  className={`movie-buff-player-card ${
+                    player.isCurrentSelector
+                      ? "movie-buff-player-card--active"
+                      : ""
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                        {index + 1}
+                      </p>
+                      <p className="mt-1 truncate text-base font-black text-white">
+                        {player.name}
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-400">
+                        {player.tier}
+                      </p>
+                    </div>
+                    {player.isCurrentSelector ? (
+                      <span className="movie-buff-picking-badge">Picking</span>
+                    ) : null}
+                  </div>
+                  <div className="mt-4 flex items-end justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                      Points
+                    </span>
+                    <span className="text-2xl font-black text-amber-100">
+                      {player.score.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="movie-buff-side-note mt-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-300">
+                Current pick
+              </p>
+              <p className="mt-2 text-sm font-bold text-white">
+                {selectorName
+                  ? `${selectorName} is choosing`
+                  : "Waiting for the live selector"}
+              </p>
+            </div>
+          </aside>
+
+          <section
+            className="movie-buff-board-stage"
+            aria-label="Movie category board"
+          >
+            <div className="movie-buff-board-stage__header">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-red-300">
+                  Movie categories
+                </p>
+                <h1 className="mt-2 text-2xl font-black text-amber-50 md:text-3xl">
+                  Pick a genre and point value to launch the clip
+                </h1>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+                  Every playable cell is linked to its authoritative movie
+                  clip. The current selector locks the tile for the room.
+                </p>
+              </div>
+              <div className="movie-buff-board-stage__eyebrow" aria-hidden="true">
+                ◈
+              </div>
+            </div>
+
+            <div className="movie-buff-board-status-strip">
+              <BoardMetricCard
+                label="Round"
+                value={
+                  phaseView
+                    ? `${phaseView.roundNumber} / ${phaseView.totalRounds}`
+                    : "Preview"
+                }
+                detail="Current match round"
+              />
+              <BoardMetricCard
+                label="Tiles used"
+                value={`${usedTileCount} / ${totalTileCount}`}
+                detail="Board progress"
+              />
+              <BoardMetricCard
+                label="Playable clips"
+                value={playableTileCount.toLocaleString()}
+                detail="Ready to launch"
+              />
+            </div>
+
+            <div className="movie-buff-board-callouts">
               <BoardStatusCard
                 label="Current turn"
                 value={currentTurnLabel}
@@ -540,247 +686,199 @@ export default function MovieBuffBoardPreviewClient({
                 accent="red"
               />
             </div>
-          </div>
 
-          {phaseBanner ? (
-            <div
-              className={`mt-6 max-w-3xl rounded-2xl px-5 py-4 text-sm font-bold ${
-                phaseBanner.tone === "red"
-                  ? "border border-red-500/30 bg-red-500/10 text-red-200"
-                  : "border border-amber-500/30 bg-amber-500/10 text-amber-100"
-              }`}
-            >
-              {phaseBanner.message}
-            </div>
-          ) : null}
-
-        </div>
-
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <BoardMetricCard
-            label="Round"
-            value={
-              phaseView
-                ? `${phaseView.roundNumber} / ${phaseView.totalRounds}`
-                : "Preview"
-            }
-            detail="Current match round"
-          />
-          <BoardMetricCard
-            label="Tiles used"
-            value={`${usedTileCount} / ${totalTileCount}`}
-            detail="Board progress"
-          />
-          <BoardMetricCard
-            label="Next selector"
-            value={selectorName ?? "Preview mode"}
-            detail="Who chooses the next tile"
-          />
-          <BoardMetricCard
-            label="Playable tiles"
-            value={playableTileCount.toLocaleString()}
-            detail="Clips ready to launch"
-          />
-        </div>
-
-        <div className="mt-8 grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="space-y-6">
-            <div className="rounded-[2rem] border border-amber-500/20 bg-gradient-to-b from-[#161010] to-[#090909] p-6 shadow-[0_0_50px_rgba(245,158,11,0.08)]">
-              <p className="text-xs font-black uppercase tracking-[0.3em] text-amber-300/90">
-                Scoreboard
-              </p>
-              <div className="mt-5 space-y-3">
-                {displayedPlayers.map((player, index) => (
-                  <div
-                    key={player.id}
-                    className={`rounded-2xl border px-4 py-4 ${
-                      player.isCurrentSelector
-                        ? "border-amber-400/40 bg-amber-500/10"
-                        : "border-zinc-800 bg-black/70"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-black uppercase tracking-[0.22em] text-zinc-500">
-                          Player {index + 1}
-                        </p>
-                        <p className="mt-1 text-xl font-black text-white">
-                          {player.name}
-                        </p>
-                        <p className="mt-1 text-sm text-zinc-400">
-                          {player.tier}
-                        </p>
-                      </div>
-                      {player.isCurrentSelector ? (
-                        <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-amber-200">
-                          Picking
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="mt-4 flex items-end justify-between">
-                      <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                        Score
-                      </span>
-                      <span className="text-3xl font-black text-white">
-                        {player.score.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+            {phaseBanner ? (
+              <div
+                className={`movie-buff-board-phase-banner ${
+                  phaseBanner.tone === "red"
+                    ? "movie-buff-board-phase-banner--red"
+                    : "movie-buff-board-phase-banner--amber"
+                }`}
+              >
+                {phaseBanner.message}
               </div>
+            ) : null}
+
+            <div className="movie-buff-board-grid">
+              {preview.categories.map((category) => (
+                <section
+                  key={category.id}
+                  className="movie-buff-board-column"
+                  aria-label={`${category.label} movie category`}
+                >
+                  <div className="movie-buff-board-column__header">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-200">
+                      Genre
+                    </p>
+                    <h2 className="mt-1 text-base font-black uppercase tracking-[0.08em] text-amber-100">
+                      {category.label}
+                    </h2>
+                    <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+                      {category.primaryGenre ?? category.eraBucket ?? "Movies"}
+                    </p>
+                  </div>
+
+                  <div className="movie-buff-board-column__tiles">
+                    {category.tiles.map((tile) => {
+                      const hasPlayableClip = Boolean(tile.clipId);
+                      const isAvailable = tile.status === "available";
+                      const isLocked = tile.status === "locked";
+                      const isUsed = tile.status === "used";
+                      const isDisabledTile =
+                        !hasPlayableClip && !isLocked && !isUsed;
+
+                      const tileClassName = isUsed
+                        ? "movie-buff-board-tile movie-buff-board-tile--used"
+                        : isLocked
+                          ? "movie-buff-board-tile movie-buff-board-tile--locked"
+                          : isDisabledTile
+                            ? "movie-buff-board-tile movie-buff-board-tile--disabled"
+                            : "movie-buff-board-tile";
+
+                      const statusLabel = isUsed
+                        ? "Used"
+                        : isLocked
+                          ? "Locked"
+                          : isDisabledTile
+                            ? "Unavailable"
+                            : "Available";
+
+                      const statusText = isUsed
+                        ? "Already played"
+                        : isLocked
+                          ? "Locked for room"
+                          : isDisabledTile
+                            ? "Clip unavailable"
+                            : canSelectTiles && isAvailable
+                              ? "Select tile"
+                              : "Waiting for selector";
+
+                      const body = (
+                        <>
+                          <span className="movie-buff-board-tile__meta">
+                            {tile.tierLabel}
+                            <span className="movie-buff-board-tile__state">
+                              {statusLabel}
+                            </span>
+                          </span>
+                          <span className="movie-buff-board-tile__points">
+                            {tile.pointValue}
+                          </span>
+                          <span className="movie-buff-board-tile__action">
+                            {statusText}
+                          </span>
+                        </>
+                      );
+
+                      if (
+                        !roomId ||
+                        !isAvailable ||
+                        !hasPlayableClip ||
+                        !canSelectTiles
+                      ) {
+                        return (
+                          <div
+                            key={tile.id}
+                            data-testid="movie-buff-tile"
+                            data-category={category.label}
+                            data-points={String(tile.pointValue)}
+                            data-tile-id={tile.id}
+                            className={tileClassName}
+                            aria-label={`${category.label}, ${tile.pointValue} points, ${statusText}`}
+                          >
+                            {body}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <button
+                          key={tile.id}
+                          type="button"
+                          data-testid="movie-buff-tile"
+                          data-category={category.label}
+                          data-points={String(tile.pointValue)}
+                          data-tile-id={tile.id}
+                          aria-label={`Select ${category.label} for ${tile.pointValue} points`}
+                          title={`Select ${category.label} for ${tile.pointValue} points`}
+                          onClick={() => void handleSelectTile(tile)}
+                          disabled={selectingTileId !== null}
+                          className={`${tileClassName} movie-buff-board-tile--interactive`}
+                        >
+                          {body}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </section>
+
+          <aside className="movie-buff-side-panel movie-buff-leaderboard-panel">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-amber-300">
+                  Movie Buff
+                </p>
+                <h2 className="mt-2 text-xl font-black text-white">
+                  Leaderboard
+                </h2>
+              </div>
+              <span className="text-2xl text-amber-300" aria-hidden="true">
+                ♛
+              </span>
             </div>
 
-            <div className="rounded-[2rem] border border-red-700/40 bg-gradient-to-br from-red-950/35 via-zinc-950 to-black p-6">
-              <p className="text-xs font-black uppercase tracking-[0.3em] text-red-300">
-                Launch rule
+            <div className="mt-5 space-y-3">
+              {leaderboardPlayers.map((player, index) => (
+                <div
+                  key={player.id}
+                  className={`movie-buff-leaderboard-row ${
+                    index === 0 ? "movie-buff-leaderboard-row--top" : ""
+                  }`}
+                >
+                  <span className="movie-buff-leaderboard-row__rank">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-black text-white">
+                      {player.name}
+                    </p>
+                    <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+                      {player.tier}
+                    </p>
+                  </div>
+                  <span className="text-lg font-black text-amber-100">
+                    {player.score.toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="movie-buff-now-playing mt-6">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-300">
+                Now playing
               </p>
-              <p className="mt-3 text-base font-black text-white">
-                First correct answer wins the tile.
+              <p className="mt-2 text-sm font-black text-white">
+                Round {phaseView?.roundNumber ?? "—"} · {phaseView ? "Pick a tile" : "Board preview"}
               </p>
-              <p className="mt-3 text-sm leading-6 text-zinc-400">
-                The rehearsal database owns the live phase machine. Tile
-                selection only opens for the current selector during board
-                selection.
+              <p className="mt-2 text-xs leading-5 text-zinc-400">
+                The selected clip opens in the synchronized theater round.
               </p>
             </div>
           </aside>
-
-          <div className="space-y-5">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-black text-amber-300">
-                  Live movie board
-                </h2>
-                <p className="mt-2 max-w-4xl text-sm leading-6 text-zinc-400">
-                  Choose a category and point value to launch the next
-                  synchronized clip.
-                </p>
-                {roomId ? (
-                  <p className="mt-3 max-w-4xl text-sm leading-6 text-amber-200/85">
-                    Playable tiles unlock only for the current selector.
-                    Selecting a tile starts the authoritative round for every
-                    player.
-                  </p>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="overflow-hidden rounded-[2rem] border border-zinc-800 bg-gradient-to-b from-[#111111] to-black p-4 shadow-[0_0_70px_rgba(120,0,0,0.14)] xl:p-5">
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-                {preview.categories.map((category) => (
-                  <section
-                    key={category.id}
-                    className="overflow-hidden rounded-[1.7rem] border border-zinc-800 bg-[linear-gradient(180deg,rgba(23,23,23,0.98)_0%,rgba(7,7,7,1)_100%)]"
-                  >
-                    <div className="border-b border-amber-500/20 bg-[linear-gradient(180deg,rgba(245,158,11,0.16)_0%,rgba(0,0,0,0)_100%)] px-4 py-4">
-                      <p className="text-[11px] font-black uppercase tracking-[0.24em] text-zinc-500">
-                        Category
-                      </p>
-                      <h3 className="mt-2 text-lg font-black leading-tight text-amber-100">
-                        {category.label}
-                      </h3>
-                    </div>
-
-                    <div className="grid gap-3 p-4">
-                      {category.tiles.map((tile) => {
-                        const hasPlayableClip =
-                          Boolean(tile.clipId);
-                        const isAvailable =
-                          tile.status === "available";
-                        const isLocked =
-                          tile.status === "locked";
-                        const isUsed =
-                          tile.status === "used";
-                        const isDisabledTile =
-                          !hasPlayableClip &&
-                          !isLocked &&
-                          !isUsed;
-
-                        const tileClassName = isUsed
-                          ? "border-zinc-800 bg-zinc-950/80 opacity-55"
-                          : isLocked
-                            ? "border-amber-400/70 bg-[linear-gradient(180deg,rgba(120,70,5,0.4)_0%,rgba(20,10,2,1)_100%)]"
-                            : isDisabledTile
-                              ? "border-zinc-800 bg-zinc-950/60 opacity-65"
-                              : "border-red-500/25 bg-[linear-gradient(180deg,rgba(13,13,13,1)_0%,rgba(0,0,0,1)_100%)] hover:border-amber-400 hover:bg-[linear-gradient(180deg,rgba(53,8,8,1)_0%,rgba(12,3,3,1)_100%)]";
-
-                        const statusLabel = isUsed
-                          ? "Used"
-                          : isLocked
-                            ? "Locked"
-                            : isDisabledTile
-                              ? "Unavailable"
-                              : "Tile";
-
-                        const body = (
-                          <>
-                            <div className="flex items-start justify-between gap-3">
-                              <span className="block text-[11px] font-black uppercase tracking-[0.22em] text-zinc-500 transition group-hover:text-amber-200">
-                                {tile.tierLabel}
-                              </span>
-                              <span className="rounded-full border border-zinc-800 px-2 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">
-                                {statusLabel}
-                              </span>
-                            </div>
-                            <span className="mt-3 block text-3xl font-black leading-none text-white">
-                              {tile.pointValue}
-                            </span>
-                            <span className="mt-2 block text-xs uppercase tracking-[0.2em] text-red-300/80">
-                              {isUsed
-                                ? "This tile has already been played"
-                                : isLocked
-                                  ? "This tile is locked for the room"
-                                  : isDisabledTile
-                                    ? "Playable rehearsal clip unavailable"
-                                    : canSelectTiles && isAvailable
-                                      ? "Select to lock this round"
-                                      : "Waiting for the live selector"}
-                            </span>
-                          </>
-                        );
-
-                        if (
-                          !roomId ||
-                          !isAvailable ||
-                          !hasPlayableClip ||
-                          !canSelectTiles
-                        ) {
-                          return (
-                            <div
-                              key={tile.id}
-                              className={`group rounded-[1.35rem] border px-4 py-4 text-left transition ${tileClassName}`}
-                            >
-                              {body}
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <button
-                            key={tile.id}
-                            type="button"
-                            onClick={() =>
-                              void handleSelectTile(
-                                tile,
-                              )
-                            }
-                            disabled={
-                              selectingTileId !==
-                              null
-                            }
-                            className={`group w-full rounded-[1.35rem] border px-4 py-4 text-left transition disabled:cursor-not-allowed disabled:opacity-70 ${tileClassName}`}
-                          >
-                            {body}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-                ))}
-              </div>
-            </div>
-          </div>
         </div>
+
+        <div className="movie-buff-balcony-rail" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+        <footer className="movie-buff-board-footer">
+          <p>BALCONY VIEW · PICK A TILE TO START THE CLIP</p>
+          <span>{preview.supportLine}</span>
+        </footer>
       </section>
     </main>
   );
