@@ -1,6 +1,10 @@
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
+import {
+  isMovieBuffPlayableCategory,
+  sortMovieBuffPlayableCategories,
+} from "@/lib/game/movieBuffPlayableCategories";
 
 export type MovieBuffLobbyCategory = {
   id: string | null;
@@ -169,7 +173,9 @@ export async function listMovieBuffLobbyCategories(): Promise<
         ) ?? 0,
     }))
     .filter(
-      (category) => category.playableClipCount > 0,
+      (category) =>
+        category.playableClipCount > 0 &&
+        isMovieBuffPlayableCategory(category),
     );
 
   return [
@@ -181,6 +187,6 @@ export async function listMovieBuffLobbyCategories(): Promise<
         "Play from every available movie clip.",
       playableClipCount: playableClips.length,
     },
-    ...playableCategories,
+    ...sortMovieBuffPlayableCategories(playableCategories),
   ];
 }
