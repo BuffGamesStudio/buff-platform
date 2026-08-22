@@ -2,6 +2,13 @@
 
 ## Current verified state
 
+- Railway `patient-prosperity` / `production` / `buff-platform` is now the
+  active managed runner host. A production read-only query at
+  `2026-08-22 21:58:40 UTC` observed `main` in
+  `waiting_for_contestants`, with worker
+  `movie-buff-live-39cdc3a3be39-1`, a fresh heartbeat, an unexpired lease, and
+  no recorded error. This proves the current Railway runner is operating; it
+  does not by itself prove host-level restart recovery or alert delivery.
 - Docker Desktop is running with Docker client/server `29.6.2`.
 - Docker Desktop is configured to start when the user signs in; the setting is
   enabled in Docker Desktop General settings. This improves workstation

@@ -1,7 +1,11 @@
 import type { MovieBuffLiveShowView } from "@/lib/db/movieBuffLiveShow";
 import { supabase } from "@/lib/supabase";
+import {
+  getMovieBuffProviderConfiguration,
+  type MovieBuffProviderConfiguration,
+} from "@/lib/movie-buff-live/providerConfig";
 
-export const MOVIE_BUFF_BROADCAST_SCHEMA_VERSION = 1;
+export const MOVIE_BUFF_BROADCAST_SCHEMA_VERSION = 2;
 
 export type MovieBuffBroadcastCue = {
   hostName: "Cinephile Cinematic";
@@ -16,6 +20,7 @@ export type MovieBuffBroadcastProjection = {
   showKey: string;
   show: MovieBuffLiveShowView;
   host: MovieBuffBroadcastCue;
+  integrations: MovieBuffProviderConfiguration;
 };
 
 const SHOW_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -83,5 +88,6 @@ export async function getMovieBuffBroadcastProjection(
     showKey: normalizedShowKey,
     show: view,
     host: buildHostCue(view),
+    integrations: getMovieBuffProviderConfiguration(),
   };
 }
