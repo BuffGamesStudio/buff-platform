@@ -121,6 +121,7 @@ function validate(values) {
     required(values, "LIVEKIT_URL", missing);
     required(values, "LIVEKIT_API_KEY", missing);
     required(values, "LIVEKIT_API_SECRET", missing);
+    required(values, "LIVEKIT_AGENT_NAME", missing);
   }
 
   if (!AI_MODEL_PROVIDERS.has(aiModelProvider)) {

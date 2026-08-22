@@ -35,6 +35,7 @@ export type MovieBuffProviderConfiguration = {
   aiHost: {
     provider: MovieBuffAiHostProvider;
     modelProvider: MovieBuffAiModelProvider;
+    agentName: string | null;
     configured: boolean;
   };
 };
@@ -139,6 +140,7 @@ export function getMovieBuffProviderConfiguration(
   const aiModelProvider = parseAiModelProvider(
     values.MOVIE_BUFF_AI_MODEL_PROVIDER,
   );
+  const aiAgentName = nonEmpty(values.LIVEKIT_AGENT_NAME);
   const aiHostEnabled = values.MOVIE_BUFF_AI_HOST_ENABLED === "true";
   const aiModelConfigured =
     aiModelProvider === "livekit_inference" ||
@@ -157,7 +159,8 @@ export function getMovieBuffProviderConfiguration(
     Boolean(
       nonEmpty(values.LIVEKIT_URL) &&
         nonEmpty(values.LIVEKIT_API_KEY) &&
-        nonEmpty(values.LIVEKIT_API_SECRET),
+        nonEmpty(values.LIVEKIT_API_SECRET) &&
+        aiAgentName,
     );
 
   return {
@@ -169,6 +172,7 @@ export function getMovieBuffProviderConfiguration(
     aiHost: {
       provider: aiHostProvider,
       modelProvider: aiModelProvider,
+      agentName: aiAgentName,
       configured: aiHostConfigured,
     },
   };

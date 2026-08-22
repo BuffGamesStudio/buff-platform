@@ -5,6 +5,7 @@ import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 
 import { readSmokeEnvFile } from "./movie-buff-smoke-env.mjs";
+import { createMovieBuffLiveProviderBridge } from "./movie-buff-live-provider-bridge.mjs";
 
 function loadEnvironment() {
   const explicitEnvFile =
@@ -75,6 +76,12 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
   },
 });
 
+const providerBridge = createMovieBuffLiveProviderBridge({
+  values,
+  supabase,
+  showKey,
+});
+
 let stopping = false;
 
 function requestStop(signal) {
@@ -104,6 +111,33 @@ async function tick() {
     throw new Error(error.message);
   }
 
+  let providerSync = null;
+
+  if (providerBridge) {
+    try {
+      providerSync = await providerBridge.sync();
+    } catch (providerError) {
+      console.error(
+        JSON.stringify({
+          event: "provider_bridge_failed",
+          workerId,
+          showKey,
+          roomName: providerBridge.roomName,
+          agentName: providerBridge.agentName,
+          error:
+            providerError instanceof Error
+              ? providerError.message
+              : String(providerError),
+          at: new Date().toISOString(),
+        }),
+      );
+
+      if (providerBridge.required) {
+        throw providerError;
+      }
+    }
+  }
+
   console.log(
     JSON.stringify({
       event: "show_tick",
@@ -111,6 +145,7 @@ async function tick() {
       showKey,
       durationMs: Date.now() - startedAt,
       result: data,
+      providerSync,
       at: new Date().toISOString(),
     }),
   );
@@ -124,6 +159,14 @@ async function run() {
       showKey,
       pollMilliseconds,
       runOnce,
+      providerBridge: providerBridge
+        ? {
+            enabled: true,
+            required: providerBridge.required,
+            roomName: providerBridge.roomName,
+            agentName: providerBridge.agentName,
+          }
+        : { enabled: false },
       at: new Date().toISOString(),
     }),
   );

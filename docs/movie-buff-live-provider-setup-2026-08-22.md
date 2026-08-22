@@ -67,9 +67,17 @@ the repository or browser code.
 
 - `MOVIE_BUFF_AI_HOST_PROVIDER=livekit`
 - `MOVIE_BUFF_AI_HOST_ENABLED=true`
+- `MOVIE_BUFF_LIVE_PROVIDER_BRIDGE_ENABLED=true` to opt the durable runner into
+  LiveKit room-metadata synchronization and explicit agent dispatch
+- `MOVIE_BUFF_LIVE_PROVIDER_BRIDGE_REQUIRED=true` only after the LiveKit agent
+  has been verified; when false, provider outages are logged without stopping
+  the Supabase episode runner
 - `LIVEKIT_URL`
 - `LIVEKIT_API_KEY`
 - `LIVEKIT_API_SECRET`
+- `LIVEKIT_AGENT_NAME` (the exact registered LiveKit agent name)
+- `MOVIE_BUFF_LIVEKIT_CONTROL_ROOM` (optional; defaults to
+  `movie-buff-<show-key>`)
 - `MOVIE_BUFF_AI_MODEL_PROVIDER=openai_realtime`, `livekit_inference`,
   `qwen`, or `deepseek`
 
@@ -79,6 +87,12 @@ The model-specific requirements are:
 - `livekit_inference`: no additional model key in the application
 - `qwen` or `deepseek`: `MOVIE_BUFF_AI_MODEL_BASE_URL` and
   `MOVIE_BUFF_AI_MODEL_API_KEY`
+
+When the bridge is enabled, the runner publishes a redacted, non-secret show
+projection to the LiveKit control-room metadata and explicitly dispatches the
+registered agent. The agent must be implemented/configured to consume the
+`movie_buff_live_state` metadata contract; environment variables alone do not
+make the AI host speak or publish a broadcast feed.
 
 ## Remaining external actions
 

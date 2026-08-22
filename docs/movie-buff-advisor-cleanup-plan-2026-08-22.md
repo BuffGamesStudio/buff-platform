@@ -21,6 +21,23 @@ The current snapshot was collected on 2026-08-22 with `mcp__codex_apps__supabase
 
 The direct attribution above is by exact object name and migration evidence. It is not a claim that every historical Advisor row is otherwise unchanged.
 
+### Fresh live-runner catalog snapshot
+
+A read-only production catalog query on 2026-08-22 confirmed the current
+function boundary:
+
+| Function group | `SECURITY DEFINER` | Execute ACL |
+|---|---:|---|
+| `get_movie_buff_live_show_view(text)` | yes | `anon`, `authenticated` |
+| `join/heartbeat/leave_movie_buff_live_queue(text)` | yes | `authenticated` |
+| `tick_movie_buff_live_show(text,text)` | yes | `service_role` |
+| private `movie_buff_live_show_view(text)` | yes | owner only |
+
+The live tables remain RLS-enabled/forced with direct table access denied to
+the client roles; the public view and authenticated queue functions are the
+intended API boundary. This confirms the Advisor findings are contract-review
+items, not an instruction to add broad table policies or revoke gameplay RPCs.
+
 ## Stage 1 — urgent security review
 
 Do this before performance cleanup. The objective is to preserve the current fail-closed table boundary while making every privileged RPC intentional, least-privileged, and independently verified.
@@ -182,7 +199,10 @@ The independent validator must not be the implementation agent, migration author
 
 ## Current UNKNOWNs / blockers
 
-- UNKNOWN: a fresh production catalog read for live function bodies, ACLs, policy definitions, grants, migration ledger, and `pg_stat_*` usage was not performed in this lane; the connector read was limited to Advisor output.
+- UNKNOWN: full function bodies, policy definitions, migration-ledger parity,
+  and `pg_stat_*` usage/reset-window evidence still need a separate read-only
+  capture; the current catalog query verified the live-runner function ACLs and
+  `SECURITY DEFINER` flags only.
 - UNKNOWN: the exact per-finding diff between the 2026-08-21 aggregate baseline and the current 2026-08-22 performance rows. The current names allow direct attribution of four live-runner rows, but the historical note does not list all 70 names.
 - UNKNOWN: whether anonymous live-board read is a required product contract or can be authenticated-only.
 - UNKNOWN: Data API exposed-schema settings and the production observation-window/reset time for index usage.
