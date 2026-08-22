@@ -84,6 +84,7 @@ type RoomPlayerRow = {
   profiles: {
     display_name: string | null;
     username: string | null;
+    avatar_url: string | null;
   } | null;
 };
 
@@ -686,7 +687,8 @@ async function listRoomPlayers(
         score,
         profiles:player_id (
           display_name,
-          username
+          username,
+          avatar_url
         )
       `,
     )
@@ -749,6 +751,7 @@ function toBoardPreviewFromPersisted(
         player.profiles?.display_name?.trim() ||
         player.profiles?.username?.trim() ||
         `Player ${index + 1}`,
+      avatarUrl: player.profiles?.avatar_url ?? null,
       score: 0,
       tier: "Fan",
       isCurrentSelector:
@@ -1463,6 +1466,11 @@ export async function getMovieBuffBoardPreview(): Promise<MovieBuffBoardPreview>
         score: 1200,
         tier: "Fanatic",
         isCurrentSelector: true,
+        vips: [
+          { id: "vip-director", name: "The Director" },
+          { id: "vip-critic", name: "The Critic" },
+          { id: "vip-star", name: "The Star" },
+        ],
       },
       {
         id: "player-2",
@@ -1470,6 +1478,10 @@ export async function getMovieBuffBoardPreview(): Promise<MovieBuffBoardPreview>
         score: 800,
         tier: "Fan",
         isCurrentSelector: false,
+        vips: [
+          { id: "vip-producer", name: "The Producer" },
+          { id: "vip-archivist", name: "The Archivist" },
+        ],
       },
       {
         id: "player-3",
@@ -1477,6 +1489,9 @@ export async function getMovieBuffBoardPreview(): Promise<MovieBuffBoardPreview>
         score: 1600,
         tier: "Fanatic",
         isCurrentSelector: false,
+        vips: [
+          { id: "vip-stunt-double", name: "The Stunt Double" },
+        ],
       },
     ],
     categories: draft.categories.map((category) => ({
