@@ -1,0 +1,12 @@
+services:
+  movie-buff-live-runner:
+    build:
+      context: .
+      dockerfile: docker/movie-buff-live-runner.Dockerfile
+    restart: unless-stopped
+    environment:
+      MOVIE_BUFF_LIVE_RUNNER_ENABLED: "true"
+      MOVIE_BUFF_LIVE_SHOW_KEY: "main"
+      MOVIE_BUFF_LIVE_RUNNER_POLL_MS: "1000"
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}

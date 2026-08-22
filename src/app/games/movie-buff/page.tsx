@@ -36,6 +36,13 @@ export default function MovieBuffPage() {
           >
             HOW TO PLAY
           </Link>
+
+          <Link
+            href="/games/movie-buff/live"
+            className="rounded-xl border border-amber-300/70 bg-amber-300/10 px-10 py-5 text-xl font-bold text-amber-200 transition hover:bg-amber-300/20"
+          >
+            JOIN MOVIE BUFF LIVE
+          </Link>
         </div>
 
         <div className="mb-10 flex flex-wrap justify-center gap-4 text-sm font-bold">

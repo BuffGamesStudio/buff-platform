@@ -1,0 +1,166 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import { createClient } from "@supabase/supabase-js";
+
+import { readSmokeEnvFile } from "./movie-buff-smoke-env.mjs";
+
+function loadEnvironment() {
+  const explicitEnvFile =
+    process.env.MOVIE_BUFF_LIVE_ENV_FILE ??
+    process.env.MOVIE_BUFF_ENV_FILE ??
+    null;
+  const envFilePath = explicitEnvFile
+    ? path.resolve(process.cwd(), explicitEnvFile)
+    : path.join(process.cwd(), ".env.local");
+  const fileEnv = fs.existsSync(envFilePath)
+    ? readSmokeEnvFile(envFilePath)
+    : {};
+
+  return {
+    ...fileEnv,
+    ...process.env,
+  };
+}
+
+function requiredValue(values, key) {
+  const value = values[key]?.trim();
+
+  if (!value) {
+    throw new Error(`Movie Buff Live runner requires ${key}.`);
+  }
+
+  return value;
+}
+
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+const values = loadEnvironment();
+
+if (values.MOVIE_BUFF_LIVE_RUNNER_ENABLED !== "true") {
+  throw new Error(
+    "Movie Buff Live runner is fail-closed. Set MOVIE_BUFF_LIVE_RUNNER_ENABLED=true to start it.",
+  );
+}
+
+const supabaseUrl = requiredValue(values, "NEXT_PUBLIC_SUPABASE_URL");
+const serviceRoleKey =
+  values.SUPABASE_SECRET_KEY?.trim() ??
+  values.SUPABASE_SERVICE_ROLE_KEY?.trim();
+
+if (!serviceRoleKey) {
+  throw new Error(
+    "Movie Buff Live runner requires SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY.",
+  );
+}
+
+const showKey = values.MOVIE_BUFF_LIVE_SHOW_KEY?.trim() || "main";
+const pollMilliseconds = Math.max(
+  250,
+  Number.parseInt(values.MOVIE_BUFF_LIVE_RUNNER_POLL_MS ?? "1000", 10) ||
+    1000,
+);
+const runOnce = values.MOVIE_BUFF_LIVE_RUNNER_ONCE === "true";
+const workerId =
+  values.MOVIE_BUFF_LIVE_WORKER_ID?.trim() ||
+  `movie-buff-live-${os.hostname()}-${process.pid}`;
+
+const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+});
+
+let stopping = false;
+
+function requestStop(signal) {
+  stopping = true;
+  console.log(
+    JSON.stringify({
+      event: "runner_stop_requested",
+      signal,
+      workerId,
+      showKey,
+      at: new Date().toISOString(),
+    }),
+  );
+}
+
+process.on("SIGINT", () => requestStop("SIGINT"));
+process.on("SIGTERM", () => requestStop("SIGTERM"));
+
+async function tick() {
+  const startedAt = Date.now();
+  const { data, error } = await supabase.rpc("tick_movie_buff_live_show", {
+    p_show_key: showKey,
+    p_worker_id: workerId,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  console.log(
+    JSON.stringify({
+      event: "show_tick",
+      workerId,
+      showKey,
+      durationMs: Date.now() - startedAt,
+      result: data,
+      at: new Date().toISOString(),
+    }),
+  );
+}
+
+async function run() {
+  console.log(
+    JSON.stringify({
+      event: "runner_started",
+      workerId,
+      showKey,
+      pollMilliseconds,
+      runOnce,
+      at: new Date().toISOString(),
+    }),
+  );
+
+  while (!stopping) {
+    const startedAt = Date.now();
+
+    try {
+      await tick();
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "show_tick_failed",
+          workerId,
+          showKey,
+          error: error instanceof Error ? error.message : String(error),
+          at: new Date().toISOString(),
+        }),
+      );
+    }
+
+    if (runOnce) {
+      break;
+    }
+
+    const remainingDelay = Math.max(0, pollMilliseconds - (Date.now() - startedAt));
+    await sleep(remainingDelay);
+  }
+
+  console.log(
+    JSON.stringify({
+      event: "runner_stopped",
+      workerId,
+      showKey,
+      at: new Date().toISOString(),
+    }),
+  );
+}
+
+await run();
