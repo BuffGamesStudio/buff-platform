@@ -89,10 +89,20 @@ responsible for an abandoned seat inside an active match.
 
 ## Production gate
 
-This change adds a migration and a worker, but it does not apply the migration,
-deploy the worker, or start a production show. Those actions require explicit
-production authorization and a separate smoke test using dedicated accounts.
-Before production use, verify:
+The authorized rollout is now active:
+
+- migration `20260822075207_movie_buff_live_show_runner` is applied to
+  Supabase project `yfatwreicmiocdxzyznd`;
+- the hosted frontend is live at `https://movie-buff-sigma.vercel.app` from
+  the `main` deployment;
+- the runner is active through Docker Compose with `restart: unless-stopped`
+  and is leasing the `main` show while it waits for three contestants.
+
+The current worker is running on the authorized workstation. It is production
+functional, but a dedicated always-on Linux/Docker host is still recommended
+for resilience across workstation shutdowns or network loss.
+
+Continue to verify:
 
 - migration applied to the intended Supabase project;
 - anonymous read access exposes only the public show view;
