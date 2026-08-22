@@ -277,21 +277,6 @@ export default function MovieBuffBoardPreviewClient({
     [preview.categories],
   );
 
-  const playableTileCount = useMemo(
-    () =>
-      preview.categories.reduce(
-        (total, category) =>
-          total +
-          category.tiles.filter(
-            (tile) =>
-              tile.status === "available" &&
-              Boolean(tile.clipId),
-          ).length,
-        0,
-      ),
-    [preview.categories],
-  );
-
   const selectorName = useMemo(() => {
     if (!phaseView?.selectorPlayerId) {
       return null;
@@ -544,15 +529,6 @@ export default function MovieBuffBoardPreviewClient({
             </p>
           </div>
 
-          <div className="movie-buff-board-marquee__center">
-            <p className="text-xl font-black uppercase tracking-[0.14em] text-amber-300 md:text-2xl">
-              Choose a category
-            </p>
-            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-400">
-              {preview.headline}
-            </p>
-          </div>
-
           <div className="text-left md:text-right">
             <p className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-emerald-300 md:justify-end">
               <span className="movie-buff-live-dot" aria-hidden="true" />
@@ -634,46 +610,6 @@ export default function MovieBuffBoardPreviewClient({
             className="movie-buff-board-stage"
             aria-label="Movie category board"
           >
-            <div className="movie-buff-board-stage__header">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.25em] text-red-300">
-                  Movie categories
-                </p>
-                <h1 className="mt-2 text-2xl font-black text-amber-50 md:text-3xl">
-                  Pick a genre and point value to launch the clip
-                </h1>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
-                  Every playable cell is linked to its authoritative movie
-                  clip. The current selector locks the tile for the room.
-                </p>
-              </div>
-              <div className="movie-buff-board-stage__eyebrow" aria-hidden="true">
-                ◈
-              </div>
-            </div>
-
-            <div className="movie-buff-board-status-strip">
-              <BoardMetricCard
-                label="Round"
-                value={
-                  phaseView
-                    ? `${phaseView.roundNumber} / ${phaseView.totalRounds}`
-                    : "Preview"
-                }
-                detail="Current match round"
-              />
-              <BoardMetricCard
-                label="Tiles used"
-                value={`${usedTileCount} / ${totalTileCount}`}
-                detail="Board progress"
-              />
-              <BoardMetricCard
-                label="Playable clips"
-                value={playableTileCount.toLocaleString()}
-                detail="Ready to launch"
-              />
-            </div>
-
             <div className="movie-buff-board-callouts">
               <BoardStatusCard
                 label="Current turn"
@@ -906,30 +842,6 @@ function BoardStatusCard({
       </p>
       <p className="mt-2 text-sm font-black leading-6 text-white">
         {value}
-      </p>
-    </div>
-  );
-}
-
-function BoardMetricCard({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-zinc-800 bg-gradient-to-br from-zinc-900 to-black px-5 py-4 shadow-[0_0_35px_rgba(239,68,68,0.08)]">
-      <p className="text-[11px] font-black uppercase tracking-[0.22em] text-zinc-500">
-        {label}
-      </p>
-      <p className="mt-2 truncate text-2xl font-black text-white">
-        {value}
-      </p>
-      <p className="mt-1 text-xs font-bold text-zinc-500">
-        {detail}
       </p>
     </div>
   );
