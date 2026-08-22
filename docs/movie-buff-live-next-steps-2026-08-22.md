@@ -3,6 +3,9 @@
 ## Current verified state
 
 - Docker Desktop is running with Docker client/server `29.6.2`.
+- Docker Desktop is configured to start when the user signs in; the setting is
+  enabled in Docker Desktop General settings. This improves workstation
+  recovery but is not a substitute for a durable host.
 - The hardened runner image builds successfully and is configured for UID/GID
   `10001:10001`, a read-only filesystem, dropped capabilities, bounded
   resources, and a local process healthcheck.
