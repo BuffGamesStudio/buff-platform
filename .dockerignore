@@ -1,0 +1,8 @@
+*
+!package.json
+!package-lock.json
+!scripts/
+!scripts/movie-buff-live-show-runner.mjs
+!scripts/movie-buff-smoke-env.mjs
+!docker/
+!docker/movie-buff-live-runner.Dockerfile
