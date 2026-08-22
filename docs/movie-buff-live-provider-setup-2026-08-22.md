@@ -14,6 +14,12 @@ The projection remains `cue_only` until a real LiveKit agent has joined the
 episode control room. Environment variables alone must never make the UI claim
 that an AI host is live.
 
+The current provider-account verification found the LiveKit Cloud agent
+`assistant-231b` (agent ID `CA_5mveYweP497m`) deployed and running in `us-east`,
+with zero concurrent sessions at inspection time. The Mux Production live
+stream resource is present but currently `Idle`, with zero live minutes; an
+ingest/egress connection is still required before a live broadcast is proven.
+
 ## Recommended launch configuration
 
 Use one Railway persistent service for `movie-buff-live-runner`, Mux as the
@@ -75,7 +81,8 @@ the repository or browser code.
 - `LIVEKIT_URL`
 - `LIVEKIT_API_KEY`
 - `LIVEKIT_API_SECRET`
-- `LIVEKIT_AGENT_NAME` (the exact registered LiveKit agent name)
+- `LIVEKIT_AGENT_NAME=assistant-231b` (the exact registered LiveKit agent name,
+  verified in LiveKit Cloud)
 - `MOVIE_BUFF_LIVEKIT_CONTROL_ROOM` (optional; defaults to
   `movie-buff-<show-key>`)
 - `MOVIE_BUFF_AI_MODEL_PROVIDER=openai_realtime`, `livekit_inference`,
