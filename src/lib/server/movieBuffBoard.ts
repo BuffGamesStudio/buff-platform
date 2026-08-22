@@ -1,6 +1,10 @@
 import "server-only";
 
 import {
+  isMovieBuffPlayableCategory,
+  sortMovieBuffPlayableCategories,
+} from "@/lib/game/movieBuffPlayableCategories";
+import {
   movieBuffBoardBandPresentation,
   movieBuffBoardTileBands,
   type MovieBuffBoardDraft,
@@ -80,6 +84,7 @@ type RoomPlayerRow = {
   profiles: {
     display_name: string | null;
     username: string | null;
+    avatar_url: string | null;
   } | null;
 };
 
@@ -268,52 +273,68 @@ async function listEligibleBoardCategories(): Promise<
       continue;
     }
 
-    const primaryCategoryLink =
-      row.content_categories?.find(
-        (link) => link.is_primary && link.categories,
-      ) ??
-      row.content_categories?.find((link) => link.categories) ??
-      null;
+    const categories = (row.content_categories ?? [])
+      .map((link) => link.categories)
+      .filter(
+        (category): category is {
+          id: string;
+          name: string;
+          slug: string;
+        } =>
+          Boolean(
+            category?.id &&
+              category.name &&
+              category.slug &&
+              isMovieBuffPlayableCategory(category),
+          ),
+      );
 
-    const category = primaryCategoryLink?.categories;
-
-    if (!category) {
+    if (categories.length === 0) {
       continue;
     }
 
     const band = boardBand as MovieBuffBoardTileBand;
-    const existing =
-      categoryMap.get(category.id) ??
-      (() => {
-        const next = createEligibleCategory(category, row);
-        categoryMap.set(category.id, next);
-        return next;
-      })();
+    const seenCategoryIds = new Set<string>();
 
-    existing.playableTileCountByBand[band] =
-      (existing.playableTileCountByBand[band] ?? 0) + 1;
+    for (const category of categories) {
+      if (seenCategoryIds.has(category.id)) {
+        continue;
+      }
 
-    existing.mediaByBand[band].push({
-      clipId: row.legacy_clip_id ?? null,
-      contentMediaId: row.id,
-      contentId: content.id,
-      contentTitle: content.title,
-      boardBand: band,
-      mediaUrl: row.media_url ?? "",
-      qualityScore: row.quality_score ?? 100,
-    });
+      seenCategoryIds.add(category.id);
 
-    if (!existing.eraBucket && content.era_bucket) {
-      existing.eraBucket = content.era_bucket;
-    }
+      const existing =
+        categoryMap.get(category.id) ??
+        (() => {
+          const next = createEligibleCategory(category, row);
+          categoryMap.set(category.id, next);
+          return next;
+        })();
 
-    if (!existing.primaryGenre && content.primary_genre) {
-      existing.primaryGenre = content.primary_genre;
+      existing.playableTileCountByBand[band] =
+        (existing.playableTileCountByBand[band] ?? 0) + 1;
+
+      existing.mediaByBand[band].push({
+        clipId: row.legacy_clip_id ?? null,
+        contentMediaId: row.id,
+        contentId: content.id,
+        contentTitle: content.title,
+        boardBand: band,
+        mediaUrl: row.media_url ?? "",
+        qualityScore: row.quality_score ?? 100,
+      });
+
+      if (!existing.eraBucket && content.era_bucket) {
+        existing.eraBucket = content.era_bucket;
+      }
+
+      if (!existing.primaryGenre && content.primary_genre) {
+        existing.primaryGenre = content.primary_genre;
+      }
     }
   }
 
-  return Array.from(categoryMap.values())
-    .sort((a, b) => a.label.localeCompare(b.label));
+  return sortMovieBuffPlayableCategories(Array.from(categoryMap.values()));
 }
 
 function buildFallbackDraftFromLobby(
@@ -427,13 +448,13 @@ async function listLegacyEligibleBoardCategories(): Promise<
     throw new Error(categoryLinksError.message);
   }
 
-  const categoryByMovieId = new Map<
+  const categoriesByMovieId = new Map<
     string,
-    {
+    Array<{
       id: string;
       name: string;
       slug: string;
-    }
+    }>
   >();
 
   for (const link of (categoryLinks ?? []) as Array<{
@@ -452,16 +473,24 @@ async function listLegacyEligibleBoardCategories(): Promise<
       !category?.id ||
       !category.name ||
       !category.slug ||
-      categoryByMovieId.has(movieId)
+      !isMovieBuffPlayableCategory(category)
     ) {
       continue;
     }
 
-    categoryByMovieId.set(movieId, {
+    const categories = categoriesByMovieId.get(movieId) ?? [];
+
+    if (categories.some((existing) => existing.id === category.id)) {
+      continue;
+    }
+
+    categories.push({
       id: category.id,
       name: category.name,
       slug: category.slug,
     });
+
+    categoriesByMovieId.set(movieId, categories);
   }
 
   const categoryMap = new Map<string, EligibleBoardCategory>();
@@ -474,41 +503,43 @@ async function listLegacyEligibleBoardCategories(): Promise<
       continue;
     }
 
-    const category = categoryByMovieId.get(movie.id);
+    const categories = categoriesByMovieId.get(movie.id) ?? [];
 
-    if (!category) {
+    if (categories.length === 0) {
       continue;
     }
 
     const bands = mapLegacyDifficultyToBoardBands(row.difficulty);
-    const existing =
-      categoryMap.get(category.id) ??
-      (() => {
-        const next = createEligibleCategory(category, {
-          content_items: null,
-        } as BoardEligibleMediaRow);
-        categoryMap.set(category.id, next);
-        return next;
-      })();
 
-    for (const band of bands) {
-      existing.playableTileCountByBand[band] =
-        (existing.playableTileCountByBand[band] ?? 0) + 1;
+    for (const category of categories) {
+      const existing =
+        categoryMap.get(category.id) ??
+        (() => {
+          const next = createEligibleCategory(category, {
+            content_items: null,
+          } as BoardEligibleMediaRow);
+          categoryMap.set(category.id, next);
+          return next;
+        })();
 
-      existing.mediaByBand[band].push({
-        clipId: row.id,
-        contentMediaId: null,
-        contentId: movie.id,
-        contentTitle: movie.title?.trim() || "Movie Buff clip",
-        boardBand: band,
-        mediaUrl,
-        qualityScore: 100,
-      });
+      for (const band of bands) {
+        existing.playableTileCountByBand[band] =
+          (existing.playableTileCountByBand[band] ?? 0) + 1;
+
+        existing.mediaByBand[band].push({
+          clipId: row.id,
+          contentMediaId: null,
+          contentId: movie.id,
+          contentTitle: movie.title?.trim() || "Movie Buff clip",
+          boardBand: band,
+          mediaUrl,
+          qualityScore: 100,
+        });
+      }
     }
   }
 
-  return Array.from(categoryMap.values())
-    .sort((a, b) => a.label.localeCompare(b.label));
+  return sortMovieBuffPlayableCategories(Array.from(categoryMap.values()));
 }
 
 async function listLegacyFallbackMediaByBand(): Promise<
@@ -656,7 +687,8 @@ async function listRoomPlayers(
         score,
         profiles:player_id (
           display_name,
-          username
+          username,
+          avatar_url
         )
       `,
     )
@@ -719,6 +751,7 @@ function toBoardPreviewFromPersisted(
         player.profiles?.display_name?.trim() ||
         player.profiles?.username?.trim() ||
         `Player ${index + 1}`,
+      avatarUrl: player.profiles?.avatar_url ?? null,
       score: 0,
       tier: "Fan",
       isCurrentSelector:
@@ -1433,6 +1466,11 @@ export async function getMovieBuffBoardPreview(): Promise<MovieBuffBoardPreview>
         score: 1200,
         tier: "Fanatic",
         isCurrentSelector: true,
+        vips: [
+          { id: "vip-director", name: "The Director" },
+          { id: "vip-critic", name: "The Critic" },
+          { id: "vip-star", name: "The Star" },
+        ],
       },
       {
         id: "player-2",
@@ -1440,6 +1478,10 @@ export async function getMovieBuffBoardPreview(): Promise<MovieBuffBoardPreview>
         score: 800,
         tier: "Fan",
         isCurrentSelector: false,
+        vips: [
+          { id: "vip-producer", name: "The Producer" },
+          { id: "vip-archivist", name: "The Archivist" },
+        ],
       },
       {
         id: "player-3",
@@ -1447,6 +1489,9 @@ export async function getMovieBuffBoardPreview(): Promise<MovieBuffBoardPreview>
         score: 1600,
         tier: "Fanatic",
         isCurrentSelector: false,
+        vips: [
+          { id: "vip-stunt-double", name: "The Stunt Double" },
+        ],
       },
     ],
     categories: draft.categories.map((category) => ({

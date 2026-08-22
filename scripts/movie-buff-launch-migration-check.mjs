@@ -48,6 +48,7 @@ const requiredMigrations = [
   "20260814235757_movie_buff_per_player_automatic_entry.sql",
   "20260815040000_movie_buff_playback_launch_window_after_media_ready.sql",
   "20260816043318_movie_buff_media_playback_readiness.sql",
+  "20260819013613_movie_buff_playable_genre_clip_mappings.sql",
 ];
 
 const result = {

@@ -30,6 +30,11 @@ export type MovieBuffBoardCategoryPreview = {
   tiles: MovieBuffBoardTilePreview[];
 };
 
+export type MovieBuffBoardPlayerVipPreview = {
+  id: string;
+  name: string;
+};
+
 export type MovieBuffBoardPreview = {
   headline: string;
   supportLine: string;
@@ -38,6 +43,8 @@ export type MovieBuffBoardPreview = {
   players: Array<{
     id: string;
     name: string;
+    avatarUrl?: string | null;
+    vips?: MovieBuffBoardPlayerVipPreview[];
     score: number;
     tier: string;
     isCurrentSelector: boolean;

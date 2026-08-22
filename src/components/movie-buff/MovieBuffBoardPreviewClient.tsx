@@ -54,6 +54,19 @@ function createSelectionIdempotencyKey() {
     .slice(2, 10)}`;
 }
 
+function getPlayerInitials(name: string) {
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
+  return initials || "MB";
+}
+
 export default function MovieBuffBoardPreviewClient({
   roomId,
   round,
@@ -239,44 +252,6 @@ export default function MovieBuffBoardPreviewClient({
     });
   }, [phaseView, preview.players]);
 
-  const usedTileCount = useMemo(
-    () =>
-      preview.categories.reduce(
-        (total, category) =>
-          total +
-          category.tiles.filter(
-            (tile) => tile.status === "used",
-          ).length,
-        0,
-      ),
-    [preview.categories],
-  );
-
-  const totalTileCount = useMemo(
-    () =>
-      preview.categories.reduce(
-        (total, category) =>
-          total + category.tiles.length,
-        0,
-      ),
-    [preview.categories],
-  );
-
-  const playableTileCount = useMemo(
-    () =>
-      preview.categories.reduce(
-        (total, category) =>
-          total +
-          category.tiles.filter(
-            (tile) =>
-              tile.status === "available" &&
-              Boolean(tile.clipId),
-          ).length,
-        0,
-      ),
-    [preview.categories],
-  );
-
   const selectorName = useMemo(() => {
     if (!phaseView?.selectorPlayerId) {
       return null;
@@ -288,59 +263,6 @@ export default function MovieBuffBoardPreviewClient({
       ) ?? "Current selector"
     );
   }, [phaseView, playerNameById]);
-
-  const boardStatusLabel = phaseView
-    ? `Round ${phaseView.roundNumber} of ${phaseView.totalRounds} · ${usedTileCount} of ${totalTileCount} tiles used`
-    : preview.boardStatusLabel;
-
-  const currentTurnLabel = useMemo(() => {
-    if (!phaseView) {
-      return preview.currentTurnLabel;
-    }
-
-    if (phaseView.phase === "round_intro") {
-      return "Round intro is live. The board unlocks after the intro window.";
-    }
-
-    if (phaseView.phase === "vip_lock") {
-      return "Preparing the round board.";
-    }
-
-    if (phaseView.phase === "board_select") {
-      if (phaseView.callerIsSelector) {
-        return "It is your pick. Select the next playable tile.";
-      }
-
-      return selectorName
-        ? `${selectorName} is choosing the next tile.`
-        : "Waiting for the selector to choose the next tile.";
-    }
-
-    if (
-      phaseView.phase === "transition" ||
-      phaseView.phase === "playback" ||
-      phaseView.phase === "answer"
-    ) {
-      return "The synchronized clip round is launching now.";
-    }
-
-    if (phaseView.phase === "results") {
-      return "Round results are live.";
-    }
-
-    if (phaseView.phase === "blocked") {
-      return (
-        phaseView.blockedReason ??
-        "The live round is blocked."
-      );
-    }
-
-    return preview.currentTurnLabel;
-  }, [
-    phaseView,
-    preview.currentTurnLabel,
-    selectorName,
-  ]);
 
   const boardPhaseCountdown =
     phaseView?.phase === "round_intro"
@@ -398,15 +320,15 @@ export default function MovieBuffBoardPreviewClient({
         tone: "amber" as const,
         message:
           boardPhaseCountdown === null
-            ? "Round intro is live. The board unlocks automatically."
-            : `Round intro is live. The board unlocks in ${boardPhaseCountdown}s.`,
+            ? "Board opening"
+            : `Board opens in ${boardPhaseCountdown}s`,
       };
     }
 
     if (phaseView.phase === "vip_lock") {
       return {
         tone: "amber" as const,
-        message: "Preparing the round board. The board will open automatically.",
+        message: "Board opening",
       };
     }
 
@@ -416,16 +338,16 @@ export default function MovieBuffBoardPreviewClient({
           tone: "amber" as const,
           message:
             boardPhaseCountdown === null
-              ? "Choose a playable tile to launch the synchronized clip round."
-              : `Choose a playable tile in ${boardPhaseCountdown}s to launch the synchronized clip round.`,
+              ? "Your turn · choose a tile"
+              : `Your turn · ${boardPhaseCountdown}s`,
         };
       }
 
       return {
         tone: "amber" as const,
         message: selectorName
-          ? `${selectorName} is choosing the next tile.`
-          : "Waiting for the current selector to choose a tile.",
+          ? `${selectorName}'s turn`
+          : "Waiting for turn",
       };
     }
 
@@ -508,331 +430,323 @@ export default function MovieBuffBoardPreviewClient({
   );
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(180,24,24,0.26),_transparent_28%),linear-gradient(180deg,_#080808_0%,_#000000_100%)] text-white">
-      <section className="mx-auto max-w-[1600px] px-6 py-10">
-        <div className="rounded-[2rem] border border-amber-500/25 bg-gradient-to-b from-red-950/55 via-[#140909] to-black p-8 shadow-[0_0_90px_rgba(239,68,68,0.14)]">
-          <p className="text-sm font-black uppercase tracking-[0.35em] text-amber-300/90">
-            Live match board
-          </p>
-          <div className="mt-4 flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
-            <div className="max-w-4xl">
-              <h1 className="text-4xl font-black leading-none md:text-6xl xl:text-7xl">
-                {preview.headline}
-              </h1>
-              <p className="mt-4 text-lg text-zinc-300 md:text-2xl">
-                {preview.supportLine}
-              </p>
-              <p className="mt-4 max-w-3xl text-sm uppercase tracking-[0.26em] text-zinc-500">
-                Premium cinematic competition · synchronized clip play ·
-                first-correct-wins
-              </p>
-            </div>
+    <main
+      data-testid="movie-buff-live-board"
+      className="movie-buff-theater-board min-h-screen text-white"
+    >
+      <div className="movie-buff-theater-backdrop" aria-hidden="true">
+        <div className="movie-buff-theater-top-banner" />
+        <div className="movie-buff-theater-arch movie-buff-theater-arch--left" />
+        <div className="movie-buff-theater-arch movie-buff-theater-arch--right" />
+        <div className="movie-buff-theater-film-reel movie-buff-theater-film-reel--left" />
+        <div className="movie-buff-theater-film-reel movie-buff-theater-film-reel--right" />
+        <div className="movie-buff-theater-screen-glow" />
+      </div>
 
-            <div className="grid min-w-[280px] gap-3 md:grid-cols-2 xl:grid-cols-1">
-              <BoardStatusCard
-                label="Current turn"
-                value={currentTurnLabel}
-                accent="amber"
-              />
-              <BoardStatusCard
-                label="Board status"
-                value={boardStatusLabel}
-                accent="red"
-              />
-            </div>
-          </div>
-
-          {phaseBanner ? (
-            <div
-              className={`mt-6 max-w-3xl rounded-2xl px-5 py-4 text-sm font-bold ${
-                phaseBanner.tone === "red"
-                  ? "border border-red-500/30 bg-red-500/10 text-red-200"
-                  : "border border-amber-500/30 bg-amber-500/10 text-amber-100"
-              }`}
+      <section className="movie-buff-theater-shell mx-auto max-w-[1800px]">
+        <header className="movie-buff-board-marquee">
+          <div
+            className="movie-buff-board-marquee__searchlight movie-buff-board-marquee__searchlight--left"
+            aria-hidden="true"
+          />
+          <div
+            className="movie-buff-board-marquee__searchlight movie-buff-board-marquee__searchlight--right"
+            aria-hidden="true"
+          />
+          <div className="movie-buff-title-marquee" aria-label="Movie Buff">
+            <h1 className="movie-buff-title-marquee__word">
+              <span className="movie-buff-title-marquee__line">Movie</span>
+              <span className="movie-buff-title-marquee__line">Buff</span>
+            </h1>
+            <p
+              className="movie-buff-title-marquee__tagline"
+              aria-label="Lights, Camera, Guess"
             >
-              {phaseBanner.message}
+              <span className="movie-buff-title-marquee__tagline-word movie-buff-title-marquee__tagline-word--lights">
+                Lights
+              </span>
+              <span
+                className="movie-buff-title-marquee__tagline-separator"
+                aria-hidden="true"
+              >
+                ·
+              </span>
+              <span className="movie-buff-title-marquee__tagline-word movie-buff-title-marquee__tagline-word--camera">
+                Camera
+              </span>
+              <span
+                className="movie-buff-title-marquee__tagline-separator"
+                aria-hidden="true"
+              >
+                ·
+              </span>
+              <span className="movie-buff-title-marquee__tagline-word movie-buff-title-marquee__tagline-word--guess">
+                Guess
+              </span>
+            </p>
+          </div>
+        </header>
+
+        <div className="movie-buff-board-layout">
+          <aside className="movie-buff-side-panel movie-buff-player-panel">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-amber-300">
+                  Players
+                </p>
+                <p className="mt-2 text-sm uppercase tracking-[0.16em] text-zinc-400">
+                  {displayedPlayers.length} active
+                </p>
+              </div>
+              <span className="text-2xl" aria-hidden="true">
+                ◉
+              </span>
             </div>
-          ) : null}
 
-        </div>
-
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <BoardMetricCard
-            label="Round"
-            value={
-              phaseView
-                ? `${phaseView.roundNumber} / ${phaseView.totalRounds}`
-                : "Preview"
-            }
-            detail="Current match round"
-          />
-          <BoardMetricCard
-            label="Tiles used"
-            value={`${usedTileCount} / ${totalTileCount}`}
-            detail="Board progress"
-          />
-          <BoardMetricCard
-            label="Next selector"
-            value={selectorName ?? "Preview mode"}
-            detail="Who chooses the next tile"
-          />
-          <BoardMetricCard
-            label="Playable tiles"
-            value={playableTileCount.toLocaleString()}
-            detail="Clips ready to launch"
-          />
-        </div>
-
-        <div className="mt-8 grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="space-y-6">
-            <div className="rounded-[2rem] border border-amber-500/20 bg-gradient-to-b from-[#161010] to-[#090909] p-6 shadow-[0_0_50px_rgba(245,158,11,0.08)]">
-              <p className="text-xs font-black uppercase tracking-[0.3em] text-amber-300/90">
-                Scoreboard
-              </p>
-              <div className="mt-5 space-y-3">
-                {displayedPlayers.map((player, index) => (
-                  <div
-                    key={player.id}
-                    className={`rounded-2xl border px-4 py-4 ${
-                      player.isCurrentSelector
-                        ? "border-amber-400/40 bg-amber-500/10"
-                        : "border-zinc-800 bg-black/70"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-black uppercase tracking-[0.22em] text-zinc-500">
-                          Player {index + 1}
+            <div className="mt-5 space-y-3">
+              {displayedPlayers.map((player, index) => (
+                <div
+                  key={player.id}
+                  className={`movie-buff-player-card ${
+                    player.isCurrentSelector
+                      ? "movie-buff-player-card--active"
+                      : ""
+                  }`}
+                >
+                  {player.isCurrentSelector ? (
+                    <>
+                      <span
+                        className="movie-buff-player-ticket-edge movie-buff-player-ticket-edge--top"
+                        aria-hidden="true"
+                      />
+                      <span
+                        className="movie-buff-player-ticket-edge movie-buff-player-ticket-edge--bottom"
+                        aria-hidden="true"
+                      />
+                    </>
+                  ) : null}
+                  <div className="movie-buff-player-card__header">
+                    <div className="movie-buff-player-card__identity">
+                      <div
+                        className="movie-buff-player-avatar"
+                        role="img"
+                        aria-label={`${player.name} avatar`}
+                        data-avatar-index={index}
+                        style={
+                          player.avatarUrl
+                            ? {
+                                backgroundImage: `url("${player.avatarUrl}")`,
+                              }
+                            : undefined
+                        }
+                      >
+                        {!player.avatarUrl ? (
+                          <span>{getPlayerInitials(player.name)}</span>
+                        ) : null}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                          {index + 1}
                         </p>
-                        <p className="mt-1 text-xl font-black text-white">
+                        <p className="mt-1 truncate text-base font-black text-white">
                           {player.name}
                         </p>
-                        <p className="mt-1 text-sm text-zinc-400">
+                        <p className="mt-1 text-xs text-zinc-400">
                           {player.tier}
                         </p>
                       </div>
-                      {player.isCurrentSelector ? (
-                        <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-amber-200">
-                          Picking
+                    </div>
+                    {player.isCurrentSelector ? (
+                      <span className="sr-only">
+                        {player.name}&apos;s turn
+                      </span>
+                    ) : null}
+                  </div>
+                  <div
+                    className="movie-buff-player-vips"
+                    aria-label={`${player.vips?.length ?? 0} VIPs`}
+                  >
+                    <div className="movie-buff-player-vips__heading">
+                      <span>VIPs</span>
+                      <span className="movie-buff-player-vips__count">
+                        {player.vips?.length ?? 0}
+                      </span>
+                    </div>
+                    <div className="movie-buff-player-vips__list">
+                      {player.vips?.slice(0, 2).map((vip) => (
+                        <span
+                          key={vip.id}
+                          className="movie-buff-player-vip"
+                          title={vip.name}
+                        >
+                          <span
+                            className="movie-buff-player-vip__icon"
+                            aria-hidden="true"
+                          >
+                            {getPlayerInitials(vip.name)}
+                          </span>
+                          <span className="movie-buff-player-vip__name">
+                            {vip.name}
+                          </span>
+                        </span>
+                      ))}
+                      {(player.vips?.length ?? 0) > 2 ? (
+                        <span className="movie-buff-player-vip movie-buff-player-vip--more">
+                          +{(player.vips?.length ?? 0) - 2} more
+                        </span>
+                      ) : null}
+                      {(player.vips?.length ?? 0) === 0 ? (
+                        <span className="movie-buff-player-vips__empty">
+                          None selected
                         </span>
                       ) : null}
                     </div>
-                    <div className="mt-4 flex items-end justify-between">
-                      <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                        Score
-                      </span>
-                      <span className="text-3xl font-black text-white">
-                        {player.score.toLocaleString()}
-                      </span>
-                    </div>
                   </div>
-                ))}
-              </div>
+                  <div className="mt-4 flex items-end justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                      Points
+                    </span>
+                    <span className="text-2xl font-black text-amber-100">
+                      {player.score.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
 
-            <div className="rounded-[2rem] border border-red-700/40 bg-gradient-to-br from-red-950/35 via-zinc-950 to-black p-6">
-              <p className="text-xs font-black uppercase tracking-[0.3em] text-red-300">
-                Launch rule
-              </p>
-              <p className="mt-3 text-base font-black text-white">
-                First correct answer wins the tile.
-              </p>
-              <p className="mt-3 text-sm leading-6 text-zinc-400">
-                The rehearsal database owns the live phase machine. Tile
-                selection only opens for the current selector during board
-                selection.
-              </p>
-            </div>
           </aside>
 
-          <div className="space-y-5">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-black text-amber-300">
-                  Live movie board
-                </h2>
-                <p className="mt-2 max-w-4xl text-sm leading-6 text-zinc-400">
-                  Choose a category and point value to launch the next
-                  synchronized clip.
-                </p>
-                {roomId ? (
-                  <p className="mt-3 max-w-4xl text-sm leading-6 text-amber-200/85">
-                    Playable tiles unlock only for the current selector.
-                    Selecting a tile starts the authoritative round for every
-                    player.
-                  </p>
-                ) : null}
+          <section
+            className="movie-buff-board-stage"
+            aria-label="Movie category board"
+          >
+            {phaseBanner ? (
+              <div
+                className={`movie-buff-board-phase-banner ${
+                  phaseBanner.tone === "red"
+                    ? "movie-buff-board-phase-banner--red"
+                    : "movie-buff-board-phase-banner--amber"
+                }`}
+              >
+                {phaseBanner.message}
               </div>
-            </div>
+            ) : null}
 
-            <div className="overflow-hidden rounded-[2rem] border border-zinc-800 bg-gradient-to-b from-[#111111] to-black p-4 shadow-[0_0_70px_rgba(120,0,0,0.14)] xl:p-5">
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-                {preview.categories.map((category) => (
-                  <section
-                    key={category.id}
-                    className="overflow-hidden rounded-[1.7rem] border border-zinc-800 bg-[linear-gradient(180deg,rgba(23,23,23,0.98)_0%,rgba(7,7,7,1)_100%)]"
-                  >
-                    <div className="border-b border-amber-500/20 bg-[linear-gradient(180deg,rgba(245,158,11,0.16)_0%,rgba(0,0,0,0)_100%)] px-4 py-4">
-                      <p className="text-[11px] font-black uppercase tracking-[0.24em] text-zinc-500">
-                        Category
-                      </p>
-                      <h3 className="mt-2 text-lg font-black leading-tight text-amber-100">
-                        {category.label}
-                      </h3>
-                    </div>
+            <div className="movie-buff-board-grid">
+              {preview.categories.map((category) => (
+                <section
+                  key={category.id}
+                  className="movie-buff-board-column"
+                  aria-label={`${category.label} movie category`}
+                >
+                  <div className="movie-buff-board-column__header">
+                    <h2 className="text-base font-black uppercase tracking-[0.08em] text-amber-100">
+                      {category.label === "Science Fiction"
+                        ? "Sci-Fi"
+                        : category.label}
+                    </h2>
+                  </div>
 
-                    <div className="grid gap-3 p-4">
-                      {category.tiles.map((tile) => {
-                        const hasPlayableClip =
-                          Boolean(tile.clipId);
-                        const isAvailable =
-                          tile.status === "available";
-                        const isLocked =
-                          tile.status === "locked";
-                        const isUsed =
-                          tile.status === "used";
-                        const isDisabledTile =
-                          !hasPlayableClip &&
-                          !isLocked &&
-                          !isUsed;
+                  <div className="movie-buff-board-column__tiles">
+                    {category.tiles.map((tile) => {
+                      const hasPlayableClip = Boolean(tile.clipId);
+                      const isAvailable = tile.status === "available";
+                      const isLocked = tile.status === "locked";
+                      const isUsed = tile.status === "used";
+                      const isDisabledTile =
+                        !hasPlayableClip && !isLocked && !isUsed;
 
-                        const tileClassName = isUsed
-                          ? "border-zinc-800 bg-zinc-950/80 opacity-55"
-                          : isLocked
-                            ? "border-amber-400/70 bg-[linear-gradient(180deg,rgba(120,70,5,0.4)_0%,rgba(20,10,2,1)_100%)]"
-                            : isDisabledTile
-                              ? "border-zinc-800 bg-zinc-950/60 opacity-65"
-                              : "border-red-500/25 bg-[linear-gradient(180deg,rgba(13,13,13,1)_0%,rgba(0,0,0,1)_100%)] hover:border-amber-400 hover:bg-[linear-gradient(180deg,rgba(53,8,8,1)_0%,rgba(12,3,3,1)_100%)]";
+                      const tileClassName = isUsed
+                        ? "movie-buff-board-tile movie-buff-board-tile--used"
+                        : isLocked
+                          ? "movie-buff-board-tile movie-buff-board-tile--locked"
+                          : isDisabledTile
+                            ? "movie-buff-board-tile movie-buff-board-tile--disabled"
+                            : "movie-buff-board-tile";
 
-                        const statusLabel = isUsed
-                          ? "Used"
-                          : isLocked
-                            ? "Locked"
-                            : isDisabledTile
-                              ? "Unavailable"
-                              : "Tile";
+                      const statusLabel = isUsed
+                        ? "Used"
+                        : isLocked
+                          ? "Locked"
+                          : isDisabledTile
+                            ? "Unavailable"
+                            : "Available";
 
-                        const body = (
-                          <>
-                            <div className="flex items-start justify-between gap-3">
-                              <span className="block text-[11px] font-black uppercase tracking-[0.22em] text-zinc-500 transition group-hover:text-amber-200">
-                                {tile.tierLabel}
-                              </span>
-                              <span className="rounded-full border border-zinc-800 px-2 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">
-                                {statusLabel}
-                              </span>
-                            </div>
-                            <span className="mt-3 block text-3xl font-black leading-none text-white">
-                              {tile.pointValue}
+                      const statusText = isUsed
+                        ? "Already played"
+                        : isLocked
+                          ? "Locked for room"
+                          : isDisabledTile
+                            ? "Clip unavailable"
+                            : canSelectTiles && isAvailable
+                              ? "Select tile"
+                              : "Waiting for selector";
+
+                      const body = (
+                        <>
+                          <span className="movie-buff-board-tile__meta">
+                            {tile.tierLabel}
+                            <span className="movie-buff-board-tile__state">
+                              {statusLabel}
                             </span>
-                            <span className="mt-2 block text-xs uppercase tracking-[0.2em] text-red-300/80">
-                              {isUsed
-                                ? "This tile has already been played"
-                                : isLocked
-                                  ? "This tile is locked for the room"
-                                  : isDisabledTile
-                                    ? "Playable rehearsal clip unavailable"
-                                    : canSelectTiles && isAvailable
-                                      ? "Select to lock this round"
-                                      : "Waiting for the live selector"}
-                            </span>
-                          </>
-                        );
+                          </span>
+                          <span className="movie-buff-board-tile__points">
+                            {tile.pointValue}
+                          </span>
+                          <span className="movie-buff-board-tile__action">
+                            {statusText}
+                          </span>
+                        </>
+                      );
 
-                        if (
-                          !roomId ||
-                          !isAvailable ||
-                          !hasPlayableClip ||
-                          !canSelectTiles
-                        ) {
-                          return (
-                            <div
-                              key={tile.id}
-                              className={`group rounded-[1.35rem] border px-4 py-4 text-left transition ${tileClassName}`}
-                            >
-                              {body}
-                            </div>
-                          );
-                        }
-
+                      if (
+                        !roomId ||
+                        !isAvailable ||
+                        !hasPlayableClip ||
+                        !canSelectTiles
+                      ) {
                         return (
-                          <button
+                          <div
                             key={tile.id}
-                            type="button"
-                            onClick={() =>
-                              void handleSelectTile(
-                                tile,
-                              )
-                            }
-                            disabled={
-                              selectingTileId !==
-                              null
-                            }
-                            className={`group w-full rounded-[1.35rem] border px-4 py-4 text-left transition disabled:cursor-not-allowed disabled:opacity-70 ${tileClassName}`}
+                            data-testid="movie-buff-tile"
+                            data-category={category.label}
+                            data-points={String(tile.pointValue)}
+                            data-tile-id={tile.id}
+                            className={tileClassName}
+                            aria-label={`${category.label}, ${tile.pointValue} points, ${statusText}`}
                           >
                             {body}
-                          </button>
+                          </div>
                         );
-                      })}
-                    </div>
-                  </section>
-                ))}
-              </div>
+                      }
+
+                      return (
+                        <button
+                          key={tile.id}
+                          type="button"
+                          data-testid="movie-buff-tile"
+                          data-category={category.label}
+                          data-points={String(tile.pointValue)}
+                          data-tile-id={tile.id}
+                          aria-label={`Select ${category.label} for ${tile.pointValue} points`}
+                          title={`Select ${category.label} for ${tile.pointValue} points`}
+                          onClick={() => void handleSelectTile(tile)}
+                          disabled={selectingTileId !== null}
+                          className={`${tileClassName} movie-buff-board-tile--interactive`}
+                        >
+                          {body}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
-          </div>
+          </section>
+
         </div>
+
       </section>
     </main>
-  );
-}
-
-function BoardStatusCard({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string;
-  accent: "amber" | "red";
-}) {
-  return (
-    <div
-      className={`rounded-2xl border px-4 py-4 ${
-        accent === "amber"
-          ? "border-amber-400/25 bg-amber-500/10"
-          : "border-red-500/25 bg-red-500/10"
-      }`}
-    >
-      <p className="text-[11px] font-black uppercase tracking-[0.22em] text-zinc-500">
-        {label}
-      </p>
-      <p className="mt-2 text-sm font-black leading-6 text-white">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function BoardMetricCard({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-zinc-800 bg-gradient-to-br from-zinc-900 to-black px-5 py-4 shadow-[0_0_35px_rgba(239,68,68,0.08)]">
-      <p className="text-[11px] font-black uppercase tracking-[0.22em] text-zinc-500">
-        {label}
-      </p>
-      <p className="mt-2 truncate text-2xl font-black text-white">
-        {value}
-      </p>
-      <p className="mt-1 text-xs font-bold text-zinc-500">
-        {detail}
-      </p>
-    </div>
   );
 }
