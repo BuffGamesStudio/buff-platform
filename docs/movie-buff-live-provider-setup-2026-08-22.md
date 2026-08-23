@@ -161,6 +161,24 @@ The command is read-only unless both `MOVIE_BUFF_BROADCAST_EGRESS_ENABLED` and
 active Web Egress by the exact composition URL and never prints the ingest URL,
 stream key, or provider credentials.
 
+For a durable host, the runner can supervise that controller continuously. The
+supervisor polls the active-egress state, starts the matching Web Egress when it
+is absent, and retries after provider or network failures. It is disabled by
+default and requires all three explicit controls below before it can create an
+egress:
+
+```text
+MOVIE_BUFF_BROADCAST_EGRESS_SUPERVISOR_ENABLED=true
+MOVIE_BUFF_BROADCAST_EGRESS_ENABLED=true
+MOVIE_BUFF_BROADCAST_EGRESS_APPLY=true
+```
+
+Set `MOVIE_BUFF_BROADCAST_EGRESS_REQUIRED=true` only when the durable runner
+should stop if supervision cannot stay up. Keep it `false` during a staged
+rollout so the gameplay runner remains independently available. The supervisor
+does not print provider URLs, stream keys, or credentials, and it is not a
+replacement for checking Mux ingest health.
+
 ## Remaining external actions
 
 The repository-side boundary is safe to validate without provider accounts.

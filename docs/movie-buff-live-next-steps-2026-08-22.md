@@ -152,3 +152,8 @@
   no HTTP, client, or MCP tools configured. Therefore the 24/7 video feed and
   speaking AI host remain unproven until the reviewed commit is deployed and
   the provider-side wiring is explicitly authorized and configured.
+- The local branch now also contains a fail-closed egress supervisor. It is
+  wired into the durable runner but remains disabled unless the supervisor,
+  egress-inspection, and egress-apply flags are all explicitly enabled. This
+  removes the one-shot-controller gap without starting a Mux feed during build
+  or deployment.

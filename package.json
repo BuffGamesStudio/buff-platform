@@ -34,6 +34,7 @@
     "movie-buff:live-health": "node ./scripts/movie-buff-live-health-check.mjs",
     "movie-buff:provider-preflight": "node ./scripts/movie-buff-live-provider-preflight.mjs",
     "movie-buff:broadcast-egress": "node ./scripts/movie-buff-live-broadcast-egress.mjs",
+    "movie-buff:broadcast-egress-supervisor": "node ./scripts/movie-buff-live-broadcast-egress-supervisor.mjs",
     "movie-buff:broadcast-contract": "node ./scripts/movie-buff-live-broadcast-contract-smoke.mjs",
     "movie-buff:smoke-live-production": "node ./scripts/movie-buff-live-production-smoke.mjs",
     "movie-buff:promotable-pool-assets": "node ./scripts/movie-buff-promotable-pool-assets.mjs",

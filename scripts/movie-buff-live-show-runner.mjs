@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -69,6 +71,11 @@ const workerId =
   values.MOVIE_BUFF_LIVE_WORKER_ID?.trim() ||
   `movie-buff-live-${os.hostname()}-${process.pid}`;
 
+const egressSupervisorEnabled =
+  values.MOVIE_BUFF_BROADCAST_EGRESS_SUPERVISOR_ENABLED === "true";
+const egressSupervisorRequired =
+  values.MOVIE_BUFF_BROADCAST_EGRESS_REQUIRED === "true";
+
 const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: {
     autoRefreshToken: false,
@@ -83,9 +90,103 @@ const providerBridge = createMovieBuffLiveProviderBridge({
 });
 
 let stopping = false;
+let egressSupervisor = null;
+
+function redact(value) {
+  return String(value)
+    .replace(/(?:https?|wss?|rtmps?):\/\/[^\s"']+/gi, "<redacted-url>")
+    .replace(/(bearer\s+)[^\s]+/gi, "$1<redacted>")
+    .replace(
+      /(apikey|api[_-]?key|token|secret|password|stream[_-]?key)[=:]\s*[^\s,;]+/gi,
+      "$1=<redacted>",
+    );
+}
+
+function startEgressSupervisor() {
+  if (!egressSupervisorEnabled) {
+    return null;
+  }
+
+  const supervisorPath = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "movie-buff-live-broadcast-egress-supervisor.mjs",
+  );
+  const child = spawn(process.execPath, [supervisorPath], {
+    env: values,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  function forward(stream, chunk) {
+    const text = chunk.toString().trim();
+
+    if (!text) {
+      return;
+    }
+
+    for (const line of text.split(/\r?\n/)) {
+      console.log(
+        JSON.stringify({
+          event: "broadcast_egress_supervisor_output",
+          stream,
+          line: redact(line),
+          workerId,
+          showKey,
+          at: new Date().toISOString(),
+        }),
+      );
+    }
+  }
+
+  child.stdout.on("data", (chunk) => forward("stdout", chunk));
+  child.stderr.on("data", (chunk) => forward("stderr", chunk));
+  child.once("error", (error) => {
+    console.error(
+      JSON.stringify({
+        event: "broadcast_egress_supervisor_failed",
+        workerId,
+        showKey,
+        required: egressSupervisorRequired,
+        error: redact(error),
+        at: new Date().toISOString(),
+      }),
+    );
+
+    if (egressSupervisorRequired) {
+      stopping = true;
+    }
+  });
+  child.once("close", (code, signal) => {
+    egressSupervisor = null;
+
+    if (!stopping) {
+      console.error(
+        JSON.stringify({
+          event: "broadcast_egress_supervisor_stopped",
+          workerId,
+          showKey,
+          required: egressSupervisorRequired,
+          code,
+          signal,
+          at: new Date().toISOString(),
+        }),
+      );
+
+      if (egressSupervisorRequired) {
+        stopping = true;
+      }
+    }
+  });
+
+  return child;
+}
 
 function requestStop(signal) {
   stopping = true;
+
+  if (egressSupervisor && !egressSupervisor.killed) {
+    egressSupervisor.kill(signal === "SIGINT" ? "SIGINT" : "SIGTERM");
+  }
+
   console.log(
     JSON.stringify({
       event: "runner_stop_requested",
@@ -167,9 +268,14 @@ async function run() {
             agentName: providerBridge.agentName,
           }
         : { enabled: false },
+      broadcastEgressSupervisor: egressSupervisorEnabled
+        ? { enabled: true, required: egressSupervisorRequired }
+        : { enabled: false },
       at: new Date().toISOString(),
     }),
   );
+
+  egressSupervisor = startEgressSupervisor();
 
   while (!stopping) {
     const startedAt = Date.now();

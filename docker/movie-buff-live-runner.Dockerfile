@@ -11,12 +11,16 @@ RUN npm ci --omit=dev
 COPY scripts/movie-buff-live-show-runner.mjs scripts/movie-buff-live-show-runner.mjs
 COPY scripts/movie-buff-live-provider-bridge.mjs scripts/movie-buff-live-provider-bridge.mjs
 COPY scripts/movie-buff-live-broadcast-egress.mjs scripts/movie-buff-live-broadcast-egress.mjs
+COPY scripts/movie-buff-live-broadcast-egress-supervisor.mjs scripts/movie-buff-live-broadcast-egress-supervisor.mjs
 COPY scripts/movie-buff-smoke-env.mjs scripts/movie-buff-smoke-env.mjs
 RUN chown -R moviebuff:moviebuff /app
 
 ENV MOVIE_BUFF_LIVE_RUNNER_ENABLED=false
 ENV MOVIE_BUFF_LIVE_SHOW_KEY=main
 ENV MOVIE_BUFF_LIVE_RUNNER_POLL_MS=1000
+ENV MOVIE_BUFF_BROADCAST_EGRESS_SUPERVISOR_ENABLED=false
+ENV MOVIE_BUFF_BROADCAST_EGRESS_REQUIRED=false
+ENV MOVIE_BUFF_BROADCAST_EGRESS_POLL_MS=30000
 ENV NODE_ENV=production
 
 USER 10001:10001
