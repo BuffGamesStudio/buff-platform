@@ -110,3 +110,24 @@
 - The provider bridge remains control-plane only. A board renderer/encoder or
   LiveKit egress to the Mux RTMPS ingest is still required before a 24/7 video
   broadcast can be claimed as proven.
+
+## Continuation evidence — 2026-08-22 23:47 EDT
+
+- The authorized grant was applied to production project
+  `yfatwreicmiocdxzyznd` and recorded remotely as migration
+  `20260823034512_movie_buff_live_show_view_service_role_grant`.
+- A privilege verification query returned
+  `service_role_can_execute=true` for
+  `public.get_movie_buff_live_show_view(text)`. The local migration filename
+  is aligned with that remote migration ID.
+- Railway logs now show `providerSync.status: synced` for room
+  `movie-buff-main` and agent `assistant-231b`; the dispatch already existed.
+- A fresh read-only show query observed `main` in
+  `waiting_for_contestants`, with a current heartbeat, an unexpired lease, and
+  `last_error = null`.
+- Post-migration advisor counts remain 34 security notices (31 WARN, 3 INFO)
+  and 42 performance notices (all INFO). No new advisor class appeared from
+  this grant.
+- Remaining release gates are unchanged: configure and test the scheduled
+  health-alert secrets, run the separately authorized authenticated production
+  smoke, and connect a real board renderer/encoder or LiveKit egress to Mux.
