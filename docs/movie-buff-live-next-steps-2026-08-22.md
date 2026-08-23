@@ -131,3 +131,21 @@
 - Remaining release gates are unchanged: configure and test the scheduled
   health-alert secrets, run the separately authorized authenticated production
   smoke, and connect a real board renderer/encoder or LiveKit egress to Mux.
+
+## Continuation evidence — 2026-08-23
+
+- The guarded authenticated production smoke was authorized and completed with
+  three temporary contestants. The show advanced from `round_intro` to
+  `vip_lock`, and cleanup verified zero queue rows, episode rows, match rows,
+  or temporary users remaining. The public show returned to
+  `waiting_for_contestants`.
+- The local branch contains commit `b61794f` (`feat(movie-buff): add broadcast
+  composition and guarded egress`). It adds the public composition, a
+  server-resolved current-clip projection, the secret-free LiveKit host-context
+  endpoint, and a fail-closed Web Egress controller. The commit is not pushed
+  to `main` or deployed.
+- Read-only provider verification still observes Railway `Online`, Mux stream
+  `8S5401...` `idle` with no ingest, and LiveKit Agent Builder `Actions` with
+  no HTTP, client, or MCP tools configured. Therefore the 24/7 video feed and
+  speaking AI host remain unproven until the reviewed commit is deployed and
+  the provider-side wiring is explicitly authorized and configured.

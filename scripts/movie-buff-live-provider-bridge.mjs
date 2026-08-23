@@ -79,19 +79,113 @@ function normalizeView(view) {
   };
 }
 
-function buildRoomMetadata({ showKey, view, provider, playbackUrl }) {
+function phaseLabel(phase) {
+  return (phase ?? "casting")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function buildHostCue(view) {
+  if (view.status === "live") {
+    return `Cinephile Cinematic is guiding the contestants through ${phaseLabel(view.currentPhase)}. Buster is standing by for the next movie moment.`;
+  }
+
+  if (view.status === "cooldown") {
+    return "The curtain is between episodes. Buster is resetting the stage for the next three contestants.";
+  }
+
+  if (view.status === "paused") {
+    return "The Movie Buff stage is paused. Cinephile Cinematic will return when the show resumes.";
+  }
+
+  if (view.status === "error") {
+    return "The Movie Buff control room needs attention before the next scene can begin.";
+  }
+
+  return "Cinephile Cinematic is calling the next three contestants to the stage.";
+}
+
+async function resolveCurrentMedia(supabase, view) {
+  if (
+    !view.matchId ||
+    !["transition", "playback", "answer", "results"].includes(
+      view.currentPhase,
+    )
+  ) {
+    return null;
+  }
+
+  const { data: phaseState, error: phaseError } = await supabase
+    .from("movie_buff_match_phase_state")
+    .select("round_id, selected_clip_id")
+    .eq("match_id", view.matchId)
+    .maybeSingle();
+
+  if (phaseError || !phaseState?.round_id) {
+    return null;
+  }
+
+  let clipId = phaseState.selected_clip_id;
+
+  if (!clipId) {
+    const { data: round, error: roundError } = await supabase
+      .from("match_rounds")
+      .select("clip_id")
+      .eq("id", phaseState.round_id)
+      .eq("match_id", view.matchId)
+      .maybeSingle();
+
+    if (roundError) {
+      return null;
+    }
+
+    clipId = round?.clip_id ?? null;
+  }
+
+  if (!clipId) {
+    return null;
+  }
+
+  const { data: clip, error: clipError } = await supabase
+    .from("clips")
+    .select("clip_type")
+    .eq("id", clipId)
+    .maybeSingle();
+
+  if (
+    clipError ||
+    (clip?.clip_type !== "video" && clip?.clip_type !== "audio")
+  ) {
+    return null;
+  }
+
+  return {
+    available: true,
+    clipType: clip.clip_type,
+  };
+}
+
+function buildRoomMetadata({
+  showKey,
+  view,
+  provider,
+  playbackUrl,
+  media,
+}) {
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     type: "movie_buff_live_state",
     source: "buff-platform",
     showKey,
     host: {
       name: "Cinephile Cinematic",
       mascot: "Buster",
+      cue: buildHostCue(view),
     },
     broadcast: {
       provider,
       playbackUrl,
+      media,
     },
     show: normalizeView(view),
   };
@@ -167,11 +261,14 @@ export function createMovieBuffLiveProviderBridge({ values, supabase, showKey })
         throw new Error(error.message);
       }
 
+      const normalizedView = normalizeView(data);
+      const media = await resolveCurrentMedia(supabase, normalizedView);
       const metadata = buildRoomMetadata({
         showKey,
-        view: data,
+        view: normalizedView,
         provider,
         playbackUrl,
+        media,
       });
       let metadataChanged = false;
       let dispatchCreated = false;

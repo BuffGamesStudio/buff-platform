@@ -21,16 +21,18 @@ stream resource is present but currently `Idle`, with zero live minutes; an
 ingest/egress connection is still required before a live broadcast is proven.
 
 The repository-side provider bridge is deliberately control-plane only: it
-creates or updates the LiveKit control-room metadata and dispatches the named
-agent. It does not claim to be a video renderer, start a LiveKit Egress job, or
-push an encoder feed into Mux. The remaining broadcast step is to connect the
-reviewed board/broadcast renderer to an authorized egress or encoder and send
-it to the Mux RTMPS ingest endpoint using the Mux stream key. The repository now
-contains a fail-closed LiveKit Web Egress controller for that handoff; it only
-starts an egress when both explicit opt-in flags are present. The stream key is
-a secret and must never be committed, printed, or placed in browser code. See
-the [Mux RTMP/RTMPS configuration guide](https://www.mux.com/docs/guides/configure-broadcast-software)
-for the provider endpoint contract.
+creates or updates the LiveKit control-room metadata, including the current
+host cue and whether the authoritative phase has a playable movie moment, and
+dispatches the named agent. It does not claim to be a video renderer, start a
+LiveKit Egress job, or push an encoder feed into Mux. The remaining broadcast
+step is to connect the reviewed board/broadcast renderer to an authorized
+egress or encoder and send it to the Mux RTMPS ingest endpoint using the Mux
+stream key. The repository now contains a fail-closed LiveKit Web Egress
+controller for that handoff; it only starts an egress when both explicit opt-in
+flags are present. The stream key is a secret and must never be committed,
+printed, or placed in browser code. See the [Mux RTMP/RTMPS configuration
+guide](https://www.mux.com/docs/guides/configure-broadcast-software) for the
+provider endpoint contract.
 
 ## Recommended launch configuration
 
@@ -129,9 +131,24 @@ The public, read-only composition is available at:
 ```
 
 It polls the public live-show projection and renders the theater board,
-contestants, phase countdown, Cinephile Cinematic cue, and Buster branding. It
-does not expose player controls or provider secrets, making it suitable for
-LiveKit Web Egress to capture.
+contestants, phase countdown, current movie clip when the authoritative phase
+has one, Cinephile Cinematic cue, and Buster branding. It does not expose player
+controls or provider secrets, making it suitable for LiveKit Web Egress to
+capture. The clip is resolved server-side from the authoritative phase state;
+the browser receives only a same-origin media route, never a clip ID.
+
+The read-only host context for the LiveKit agent is:
+
+```text
+/api/movie-buff/live/host-context?showKey=main
+```
+
+It returns the current episode, phase, contestants, host cue, and sanitized
+current-media descriptor. It intentionally omits the board payload,
+integration metadata, provider credentials, and raw database identifiers. A
+LiveKit HTTP tool can poll this endpoint before each host segment; until that
+tool is configured in LiveKit Cloud, the agent remains a configured but
+non-speaking control-plane participant.
 
 Inspect the egress state from the durable host with:
 

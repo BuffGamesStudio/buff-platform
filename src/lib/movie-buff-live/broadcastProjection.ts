@@ -9,6 +9,7 @@ import {
   getMovieBuffProviderConfiguration,
   type MovieBuffProviderConfiguration,
 } from "@/lib/movie-buff-live/providerConfig";
+import { supabaseAdmin } from "@/lib/server/supabaseAdmin";
 
 export const MOVIE_BUFF_BROADCAST_SCHEMA_VERSION = 2;
 
@@ -25,6 +26,7 @@ export type MovieBuffBroadcastProjection = {
   showKey: string;
   show: MovieBuffLiveShowView;
   board: MovieBuffBroadcastBoard;
+  media: MovieBuffBroadcastMedia | null;
   host: MovieBuffBroadcastCue;
   integrations: MovieBuffProviderConfiguration;
 };
@@ -42,6 +44,12 @@ export type MovieBuffBroadcastBoard = {
       status: "available" | "locked" | "used";
     }>;
   }>;
+};
+
+export type MovieBuffBroadcastMedia = {
+  roundId: string;
+  clipType: "video" | "audio";
+  url: string;
 };
 
 const SHOW_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -135,6 +143,79 @@ async function getBroadcastBoard(
   return toBroadcastBoard(preview);
 }
 
+const MEDIA_PHASES = new Set([
+  "transition",
+  "playback",
+  "answer",
+  "results",
+]);
+
+async function getBroadcastMedia(
+  view: MovieBuffLiveShowView,
+): Promise<MovieBuffBroadcastMedia | null> {
+  if (
+    !view.matchId ||
+    !view.currentPhase ||
+    !MEDIA_PHASES.has(view.currentPhase)
+  ) {
+    return null;
+  }
+
+  try {
+    const { data: phaseState, error: phaseError } = await supabaseAdmin
+      .from("movie_buff_match_phase_state")
+      .select("round_id, selected_clip_id, phase")
+      .eq("match_id", view.matchId)
+      .maybeSingle();
+
+    if (phaseError || !phaseState?.round_id) {
+      return null;
+    }
+
+    let clipId = phaseState.selected_clip_id as string | null;
+
+    if (!clipId) {
+      const { data: round, error: roundError } = await supabaseAdmin
+        .from("match_rounds")
+        .select("clip_id")
+        .eq("id", phaseState.round_id)
+        .eq("match_id", view.matchId)
+        .maybeSingle();
+
+      if (roundError) {
+        return null;
+      }
+
+      clipId = (round?.clip_id as string | null) ?? null;
+    }
+
+    if (!clipId) {
+      return null;
+    }
+
+    const { data: clip, error: clipError } = await supabaseAdmin
+      .from("clips")
+      .select("clip_type")
+      .eq("id", clipId)
+      .maybeSingle();
+
+    if (
+      clipError ||
+      (clip?.clip_type !== "video" && clip?.clip_type !== "audio")
+    ) {
+      return null;
+    }
+
+    return {
+      roundId: phaseState.round_id,
+      clipType: clip.clip_type,
+      url: `/api/movie-buff/round-media/${encodeURIComponent(phaseState.round_id)}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getMovieBuffBroadcastProjection(
   showKey = "main",
 ): Promise<MovieBuffBroadcastProjection> {
@@ -160,6 +241,7 @@ export async function getMovieBuffBroadcastProjection(
     showKey: normalizedShowKey,
     show: view,
     board: await getBroadcastBoard(view),
+    media: await getBroadcastMedia(view),
     host: buildHostCue(view),
     integrations: getMovieBuffProviderConfiguration(),
   };

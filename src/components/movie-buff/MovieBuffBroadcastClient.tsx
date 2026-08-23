@@ -109,6 +109,11 @@ export default function MovieBuffBroadcastClient({
   const status = projection?.show.status ?? "connecting";
   const statusLabel = formatStatus(status);
   const phaseLabel = formatPhase(projection?.show.currentPhase ?? null);
+  const currentPhase = projection?.show.currentPhase ?? null;
+  const media = projection?.media ?? null;
+  const mediaCanPlay =
+    currentPhase !== null &&
+    ["playback", "answer", "results"].includes(currentPhase);
   const signalLabel = useMemo(() => {
     if (error) {
       return "Signal check";
@@ -212,6 +217,41 @@ export default function MovieBuffBroadcastClient({
                 ) : null}
               </div>
             </div>
+
+            {media ? (
+              <div className="mb-5 overflow-hidden rounded-2xl border border-amber-300/30 bg-black shadow-[0_0_32px_rgba(0,0,0,.45)]">
+                <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.04] px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">
+                  <span>{mediaCanPlay ? "Now playing" : "Next clip"}</span>
+                  <span className="text-amber-200">Movie moment</span>
+                </div>
+                {media.clipType === "audio" ? (
+                  <div className="flex min-h-28 items-center justify-center px-6">
+                    <audio
+                      key={`${media.roundId}:${currentPhase}`}
+                      src={media.url}
+                      autoPlay={mediaCanPlay}
+                      controls={false}
+                      preload="auto"
+                      aria-label="Movie Buff audio clip"
+                    />
+                    <p className="text-center text-sm text-zinc-400">
+                      The movie moment is playing for the broadcast audience.
+                    </p>
+                  </div>
+                ) : (
+                  <video
+                    key={`${media.roundId}:${currentPhase}`}
+                    src={media.url}
+                    autoPlay={mediaCanPlay}
+                    controls={false}
+                    playsInline
+                    preload="auto"
+                    className="aspect-video w-full object-cover"
+                    aria-label="Movie Buff video clip"
+                  />
+                )}
+              </div>
+            ) : null}
 
             {categories.length > 0 ? (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
