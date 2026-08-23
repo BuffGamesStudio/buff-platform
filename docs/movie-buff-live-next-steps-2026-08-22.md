@@ -9,6 +9,14 @@
   `movie-buff-live-39cdc3a3be39-1`, a fresh heartbeat, an unexpired lease, and
   no recorded error. This proves the current Railway runner is operating; it
   does not by itself prove host-level restart recovery or alert delivery.
+- A read-only Railway UI inspection at approximately `2026-08-22 22:34 EDT`
+  showed `buff-platform` Online, its latest deployment successful, and fresh
+  `show_tick` logs in `waiting_for_contestants`. Railway reports 19 service
+  variables. The four new bridge controls are not present yet:
+  `MOVIE_BUFF_LIVE_PROVIDER_BRIDGE_ENABLED`,
+  `MOVIE_BUFF_LIVE_PROVIDER_BRIDGE_REQUIRED`,
+  `MOVIE_BUFF_LIVEKIT_CONTROL_ROOM`, and `LIVEKIT_AGENT_NAME`. Secret values
+  remained masked and were not opened, so their correctness is unverified.
 - Docker Desktop is running with Docker client/server `29.6.2`.
 - Docker Desktop is configured to start when the user signs in; the setting is
   enabled in Docker Desktop General settings. This improves workstation
