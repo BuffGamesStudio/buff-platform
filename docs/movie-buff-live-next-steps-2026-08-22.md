@@ -157,3 +157,16 @@
   egress-inspection, and egress-apply flags are all explicitly enabled. This
   removes the one-shot-controller gap without starting a Mux feed during build
   or deployment.
+
+## Continuation evidence — 2026-08-23
+
+- The authorized guarded production smoke ran against Supabase project
+  `yfatwreicmiocdxzyznd` with three temporary accounts. It queued positions
+  `1,2,3`, cast episode `1`, advanced `round_intro` to `vip_lock`, and verified
+  zero queue rows, episode rows, match rows, and temporary users after cleanup.
+- A post-smoke health check returned `healthy` with `main` back in
+  `waiting_for_contestants`, episode `0`, a fresh heartbeat, an unexpired lease,
+  and no findings. Alert delivery remains unconfigured.
+- The repository env files target a different Supabase project, so the smoke
+  was run only after the target was explicitly resolved through the authenticated
+  Supabase CLI; the initial mismatch was blocked before any mutation.
