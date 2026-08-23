@@ -901,6 +901,29 @@ async function loadPersistedBoardPreview(
   };
 }
 
+/**
+ * Read the board already attached to a live room without creating or changing
+ * anything. The broadcast composition uses this helper so a renderer can
+ * observe an episode without accidentally bootstrapping player state.
+ */
+export async function getMovieBuffBoardPreviewForRoom(
+  roomId: string,
+): Promise<MovieBuffBoardPreview | null> {
+  const normalizedRoomId = roomId.trim();
+
+  if (!normalizedRoomId) {
+    return null;
+  }
+
+  const roomPlayers = await listRoomPlayers(normalizedRoomId);
+  const persistedBoardPreview = await loadPersistedBoardPreview(
+    normalizedRoomId,
+    roomPlayers,
+  );
+
+  return persistedBoardPreview?.preview ?? null;
+}
+
 async function waitForPersistedBoardPreview(
   roomId: string,
   roomPlayers: RoomPlayerRow[],

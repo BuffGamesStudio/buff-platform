@@ -10,6 +10,7 @@ RUN npm ci --omit=dev
 
 COPY scripts/movie-buff-live-show-runner.mjs scripts/movie-buff-live-show-runner.mjs
 COPY scripts/movie-buff-live-provider-bridge.mjs scripts/movie-buff-live-provider-bridge.mjs
+COPY scripts/movie-buff-live-broadcast-egress.mjs scripts/movie-buff-live-broadcast-egress.mjs
 COPY scripts/movie-buff-smoke-env.mjs scripts/movie-buff-smoke-env.mjs
 RUN chown -R moviebuff:moviebuff /app
 

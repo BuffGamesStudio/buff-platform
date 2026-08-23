@@ -304,6 +304,14 @@ export default function MovieBuffLiveShowClient() {
                 Open the live board
               </Link>
             ) : null}
+
+            <Link
+              href="/games/movie-buff/broadcast"
+              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-sky-300/35 bg-sky-300/10 px-4 py-3 text-sm font-black text-sky-200 transition hover:bg-sky-300/20"
+            >
+              <Radio size={16} />
+              Open broadcast composition
+            </Link>
           </div>
 
           <aside className="rounded-[2rem] border border-white/10 bg-white/[.04] p-5 sm:p-7">

@@ -25,7 +25,9 @@ creates or updates the LiveKit control-room metadata and dispatches the named
 agent. It does not claim to be a video renderer, start a LiveKit Egress job, or
 push an encoder feed into Mux. The remaining broadcast step is to connect the
 reviewed board/broadcast renderer to an authorized egress or encoder and send
-it to the Mux RTMPS ingest endpoint using the Mux stream key. The stream key is
+it to the Mux RTMPS ingest endpoint using the Mux stream key. The repository now
+contains a fail-closed LiveKit Web Egress controller for that handoff; it only
+starts an egress when both explicit opt-in flags are present. The stream key is
 a secret and must never be committed, printed, or placed in browser code. See
 the [Mux RTMP/RTMPS configuration guide](https://www.mux.com/docs/guides/configure-broadcast-software)
 for the provider endpoint contract.
@@ -70,6 +72,11 @@ the repository or browser code.
 - `MOVIE_BUFF_LIVE_RUNNER_ENABLED=true`
 - `MOVIE_BUFF_BROADCAST_WEBHOOK_SECRET`
 - `MOVIE_BUFF_PUBLIC_PLAYBACK_URL`
+- `MOVIE_BUFF_BROADCAST_COMPOSITION_URL` (public HTTPS URL for the read-only
+  `/games/movie-buff/broadcast` composition)
+- `MOVIE_BUFF_BROADCAST_EGRESS_ENABLED=true` to inspect egress state
+- `MOVIE_BUFF_BROADCAST_EGRESS_APPLY=true` only for an explicitly authorized
+  egress start
 
 ### Mux
 
@@ -78,6 +85,8 @@ the repository or browser code.
 - `MUX_TOKEN_SECRET`
 - `MUX_LIVE_STREAM_ID`
 - `MUX_PLAYBACK_ID`
+- `MUX_LIVE_STREAM_INGEST_URL` (the RTMP/RTMPS ingest URL including the stream
+  key; store it only in the host secret manager)
 
 ### LiveKit and the AI host
 
@@ -110,6 +119,30 @@ projection to the LiveKit control-room metadata and explicitly dispatches the
 registered agent. The agent must be implemented/configured to consume the
 `movie_buff_live_state` metadata contract; environment variables alone do not
 make the AI host speak or publish a broadcast feed.
+
+## Broadcast composition and egress controller
+
+The public, read-only composition is available at:
+
+```text
+/games/movie-buff/broadcast?showKey=main
+```
+
+It polls the public live-show projection and renders the theater board,
+contestants, phase countdown, Cinephile Cinematic cue, and Buster branding. It
+does not expose player controls or provider secrets, making it suitable for
+LiveKit Web Egress to capture.
+
+Inspect the egress state from the durable host with:
+
+```powershell
+npm run movie-buff:broadcast-egress
+```
+
+The command is read-only unless both `MOVIE_BUFF_BROADCAST_EGRESS_ENABLED` and
+`MOVIE_BUFF_BROADCAST_EGRESS_APPLY` are set to `true`. It matches an existing
+active Web Egress by the exact composition URL and never prints the ingest URL,
+stream key, or provider credentials.
 
 ## Remaining external actions
 

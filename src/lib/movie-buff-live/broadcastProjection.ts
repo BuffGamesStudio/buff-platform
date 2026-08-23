@@ -1,4 +1,9 @@
 import type { MovieBuffLiveShowView } from "@/lib/db/movieBuffLiveShow";
+import type { MovieBuffBoardPreview } from "@/lib/game/movieBuffBoard";
+import {
+  getMovieBuffBoardPreview,
+  getMovieBuffBoardPreviewForRoom,
+} from "@/lib/server/movieBuffBoard";
 import { supabase } from "@/lib/supabase";
 import {
   getMovieBuffProviderConfiguration,
@@ -19,8 +24,24 @@ export type MovieBuffBroadcastProjection = {
   generatedAt: string;
   showKey: string;
   show: MovieBuffLiveShowView;
+  board: MovieBuffBroadcastBoard;
   host: MovieBuffBroadcastCue;
   integrations: MovieBuffProviderConfiguration;
+};
+
+export type MovieBuffBroadcastBoard = {
+  headline: string;
+  supportLine: string;
+  totalTiles: number;
+  categories: Array<{
+    id: string;
+    label: string;
+    tiles: Array<{
+      id: string;
+      pointValue: number;
+      status: "available" | "locked" | "used";
+    }>;
+  }>;
 };
 
 const SHOW_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -63,6 +84,57 @@ function buildHostCue(view: MovieBuffLiveShowView): MovieBuffBroadcastCue {
   };
 }
 
+function toBroadcastBoard(
+  preview: MovieBuffBoardPreview | null,
+): MovieBuffBroadcastBoard {
+  if (!preview) {
+    return {
+      headline: "So You Think You’re a Movie Buff?",
+      supportLine: "Watch. Guess. Win.",
+      totalTiles: 0,
+      categories: [],
+    };
+  }
+
+  const categories = preview.categories.map((category) => ({
+    id: category.id,
+    label: category.label,
+    tiles: category.tiles.map((tile) => ({
+      id: tile.id,
+      pointValue: tile.pointValue,
+      status: tile.status,
+    })),
+  }));
+
+  return {
+    headline: preview.headline,
+    supportLine: preview.supportLine,
+    totalTiles: categories.reduce(
+      (total, category) => total + category.tiles.length,
+      0,
+    ),
+    categories,
+  };
+}
+
+async function getBroadcastBoard(
+  view: MovieBuffLiveShowView,
+): Promise<MovieBuffBroadcastBoard> {
+  let preview: MovieBuffBoardPreview | null = null;
+
+  if (view.roomId) {
+    preview = await getMovieBuffBoardPreviewForRoom(view.roomId).catch(
+      () => null,
+    );
+  }
+
+  if (!preview) {
+    preview = await getMovieBuffBoardPreview().catch(() => null);
+  }
+
+  return toBroadcastBoard(preview);
+}
+
 export async function getMovieBuffBroadcastProjection(
   showKey = "main",
 ): Promise<MovieBuffBroadcastProjection> {
@@ -87,6 +159,7 @@ export async function getMovieBuffBroadcastProjection(
     generatedAt: new Date().toISOString(),
     showKey: normalizedShowKey,
     show: view,
+    board: await getBroadcastBoard(view),
     host: buildHostCue(view),
     integrations: getMovieBuffProviderConfiguration(),
   };
