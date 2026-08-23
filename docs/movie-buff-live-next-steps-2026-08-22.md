@@ -24,11 +24,13 @@
   `2026-08-22T18:30:19.090Z` for project
   `yfatwreicmiocdxzyznd`: heartbeat age `0` seconds, current lease, and no
   findings.
-- TypeScript, targeted ESLint, Node syntax checks, Compose validation, and the
-  provider preflight pass. The post-bridge production build is UNKNOWN: the
-  default build hit a local Node out-of-memory failure during its TypeScript
-  phase, and a memory-expanded Webpack run was interrupted before returning a
-  result. The existing NFT-tracing warning from `next.config.ts` remains.
+- TypeScript, targeted ESLint, Node syntax checks, Compose validation, provider
+  preflight, and the production build pass. The production build was verified
+  with `NODE_OPTIONS=--max-old-space-size=4096 npm run build -- --webpack`
+  after enabling Next's `experimental.cpus: 1` and
+  `experimental.webpackMemoryOptimizations: true` settings. The default build
+  remains unsuitable for this workstation's available heap; the successful
+  bounded build generated all 14 static pages and finalized build traces.
 - The local reviewed branch contains unpushed commits beyond its tracked origin
   branch, including the LiveKit provider bridge and Docker Compose wiring. No
   commit has been pushed or deployed from this branch.
