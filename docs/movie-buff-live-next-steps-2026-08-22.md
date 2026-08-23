@@ -29,7 +29,7 @@
   default build hit a local Node out-of-memory failure during its TypeScript
   phase, and a memory-expanded Webpack run was interrupted before returning a
   result. The existing NFT-tracing warning from `next.config.ts` remains.
-- The local reviewed branch contains eight commits beyond its tracked origin
+- The local reviewed branch contains unpushed commits beyond its tracked origin
   branch, including the LiveKit provider bridge and Docker Compose wiring. No
   commit has been pushed or deployed from this branch.
 - LiveKit Cloud has the `assistant-231b` agent deployed and running in
