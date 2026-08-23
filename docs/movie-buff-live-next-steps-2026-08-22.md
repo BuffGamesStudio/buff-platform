@@ -137,29 +137,6 @@
 
 ## Continuation evidence — 2026-08-23
 
-- The guarded authenticated production smoke was authorized and completed with
-  three temporary contestants. The show advanced from `round_intro` to
-  `vip_lock`, and cleanup verified zero queue rows, episode rows, match rows,
-  or temporary users remaining. The public show returned to
-  `waiting_for_contestants`.
-- The local branch contains commit `b61794f` (`feat(movie-buff): add broadcast
-  composition and guarded egress`). It adds the public composition, a
-  server-resolved current-clip projection, the secret-free LiveKit host-context
-  endpoint, and a fail-closed Web Egress controller. The commit is not pushed
-  to `main` or deployed.
-- Read-only provider verification still observes Railway `Online`, Mux stream
-  `8S5401...` `idle` with no ingest, and LiveKit Agent Builder `Actions` with
-  no HTTP, client, or MCP tools configured. Therefore the 24/7 video feed and
-  speaking AI host remain unproven until the reviewed commit is deployed and
-  the provider-side wiring is explicitly authorized and configured.
-- The local branch now also contains a fail-closed egress supervisor. It is
-  wired into the durable runner but remains disabled unless the supervisor,
-  egress-inspection, and egress-apply flags are all explicitly enabled. This
-  removes the one-shot-controller gap without starting a Mux feed during build
-  or deployment.
-
-## Continuation evidence — 2026-08-23
-
 - The authorized guarded production smoke ran against Supabase project
   `yfatwreicmiocdxzyznd` with three temporary accounts. It queued positions
   `1,2,3`, cast episode `1`, advanced `round_intro` to `vip_lock`, and verified
@@ -167,6 +144,17 @@
 - A post-smoke health check returned `healthy` with `main` back in
   `waiting_for_contestants`, episode `0`, a fresh heartbeat, an unexpired lease,
   and no findings. Alert delivery remains unconfigured.
+- The local branch contains the reviewed broadcast composition, server-resolved
+  current-clip projection, secret-free host-context endpoint, fail-closed Web
+  Egress controller, and fail-closed egress supervisor. The latest local
+  commits are `ff2c20e` and `3286781`; none of the seven local commits are
+  pushed to `main` or deployed.
+- Read-only provider verification observes Railway `Online` on the older
+  deployment, the public broadcast projection returning schema version `2`,
+  the host-context route still returning `404`, Mux stream `8S5401...` `idle`
+  with no ingest, and LiveKit Agent Builder with no HTTP, client, or MCP tools.
+  Therefore the 24/7 video feed and speaking AI host remain unproven until the
+  reviewed commits are deployed and provider-side wiring is authorized.
 - The repository env files target a different Supabase project, so the smoke
   was run only after the target was explicitly resolved through the authenticated
   Supabase CLI; the initial mismatch was blocked before any mutation.
