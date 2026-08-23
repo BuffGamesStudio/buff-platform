@@ -10,28 +10,27 @@ permissions:
 
 jobs:
   health:
+    name: health
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
+    env:
+      MOVIE_BUFF_SUPABASE_URL: ${{ secrets.MOVIE_BUFF_SUPABASE_URL }}
+      MOVIE_BUFF_SUPABASE_SECRET_KEY: ${{ secrets.MOVIE_BUFF_SUPABASE_SECRET_KEY }}
+      MOVIE_BUFF_LIVE_ALERT_WEBHOOK_URL: ${{ secrets.MOVIE_BUFF_LIVE_ALERT_WEBHOOK_URL }}
+
     steps:
-      - name: Check out the reviewed candidate
-        uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 20
           cache: npm
 
-      - name: Install runtime dependencies
-        run: npm ci --ignore-scripts
+      - name: Install dependencies
+        run: npm ci
 
       - name: Check Movie Buff live show
-        run: node scripts/movie-buff-live-health-check.mjs
-        env:
-          MOVIE_BUFF_LIVE_HEALTH_ENABLED: "true"
-          MOVIE_BUFF_LIVE_SHOW_KEY: main
-          MOVIE_BUFF_LIVE_EXPECTED_SUPABASE_REF: yfatwreicmiocdxzyznd
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.MOVIE_BUFF_SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.MOVIE_BUFF_SUPABASE_SECRET_KEY }}
-          MOVIE_BUFF_LIVE_ALERT_WEBHOOK_URL: ${{ secrets.MOVIE_BUFF_LIVE_ALERT_WEBHOOK_URL }}
+        run: npm run movie-buff:live-health
