@@ -75,14 +75,35 @@ host:
 MOVIE_BUFF_LIVE_RUNNER_ENABLED=true
 MOVIE_BUFF_LIVE_SHOW_KEY=main
 MOVIE_BUFF_LIVE_RUNNER_POLL_MS=1000
+MOVIE_BUFF_EXPECTED_SUPABASE_REF=<intended-project-ref>
 NEXT_PUBLIC_SUPABASE_URL=https://<intended-project>.supabase.co
 SUPABASE_SECRET_KEY=<preferred-server-secret>
+MOVIE_BUFF_BROADCAST_PROVIDER=mux
+MOVIE_BUFF_PUBLIC_PLAYBACK_URL=https://stream.mux.com/<playback-id>
+MOVIE_BUFF_AI_HOST_PROVIDER=livekit
+MOVIE_BUFF_AI_HOST_ENABLED=false
+MOVIE_BUFF_AI_MODEL_PROVIDER=livekit_inference
+MOVIE_BUFF_LIVE_PROVIDER_BRIDGE_ENABLED=false
+MOVIE_BUFF_LIVE_PROVIDER_BRIDGE_REQUIRED=false
+MOVIE_BUFF_LIVEKIT_CONTROL_ROOM=movie-buff-main
+LIVEKIT_URL=wss://<livekit-project>.livekit.cloud
+LIVEKIT_API_KEY=<livekit-api-key>
+LIVEKIT_API_SECRET=<livekit-api-secret>
+LIVEKIT_AGENT_NAME=assistant-231b
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` is accepted by the runner as a legacy fallback if
 the preferred `SUPABASE_SECRET_KEY` is not available. Provide one elevated
 server key, never a publishable browser key. Confirm the URL points to the
 intended project before starting the service.
+
+Keep `MOVIE_BUFF_LIVE_PROVIDER_BRIDGE_ENABLED=false` until the reviewed bridge
+code is deployed to the host. When enabling it, set
+`MOVIE_BUFF_AI_HOST_ENABLED=true` and provide the LiveKit URL, API key, API
+secret, and exact registered agent name. Leave
+`MOVIE_BUFF_LIVE_PROVIDER_BRIDGE_REQUIRED=false` during the first staged
+rollout so a provider outage cannot stop the authoritative show runner; only
+make it required after provider synchronization has been observed healthy.
 
 Pass the protected env file to each Compose command with `--env-file`. The
 Compose file uses those values for required interpolation; it does not mount
