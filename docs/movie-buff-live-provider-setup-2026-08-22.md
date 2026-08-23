@@ -20,6 +20,16 @@ with zero concurrent sessions at inspection time. The Mux Production live
 stream resource is present but currently `Idle`, with zero live minutes; an
 ingest/egress connection is still required before a live broadcast is proven.
 
+The repository-side provider bridge is deliberately control-plane only: it
+creates or updates the LiveKit control-room metadata and dispatches the named
+agent. It does not claim to be a video renderer, start a LiveKit Egress job, or
+push an encoder feed into Mux. The remaining broadcast step is to connect the
+reviewed board/broadcast renderer to an authorized egress or encoder and send
+it to the Mux RTMPS ingest endpoint using the Mux stream key. The stream key is
+a secret and must never be committed, printed, or placed in browser code. See
+the [Mux RTMP/RTMPS configuration guide](https://www.mux.com/docs/guides/configure-broadcast-software)
+for the provider endpoint contract.
+
 ## Recommended launch configuration
 
 Use one Railway persistent service for `movie-buff-live-runner`, Mux as the
