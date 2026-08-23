@@ -30,6 +30,7 @@ function targetFromEnvironment(values = process.env) {
     !["http:", "https:"].includes(origin.protocol) ||
     origin.username ||
     origin.password ||
+    (origin.pathname !== "/" && origin.pathname !== "") ||
     origin.search ||
     origin.hash
   ) {
