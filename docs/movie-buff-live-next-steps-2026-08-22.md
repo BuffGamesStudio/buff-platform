@@ -89,3 +89,24 @@
   analytics service; investigate a socket/configuration fix separately.
 - No production SQL, migration, deployment, secret change, or runner cutover
   was performed by this validation pass.
+
+## Continuation evidence — 2026-08-22 23:15 EDT
+
+- The reviewed Movie Buff Live branch was pushed to `main` through commit
+  `4f0a285` (`fix(movie-buff): grant live show view to provider runner`).
+- Railway `patient-prosperity` / `production` / `buff-platform` automatically
+  deployed that commit successfully and reports the service `Online`.
+- The provider bridge is enabled with `MOVIE_BUFF_LIVE_PROVIDER_BRIDGE_REQUIRED=false`.
+  The runner owns a current lease and continues to emit `show_tick`, but every
+  bridge attempt currently fails with `permission denied for function
+  get_movie_buff_live_show_view`; `providerSync` remains null.
+- The repository contains the narrowly scoped migration
+  `20260823031439_movie_buff_live_show_view_service_role_grant.sql`. The
+  production migration list currently ends at `20260822075207`; this grant has
+  not been applied. Applying it is a separate production database authorization
+  gate and does not require changing or exposing any secret.
+- A fresh advisor read reports 34 security notices (31 WARN, 3 INFO) and 42
+  performance notices (all INFO). These remain a separate cleanup track.
+- The provider bridge remains control-plane only. A board renderer/encoder or
+  LiveKit egress to the Mux RTMPS ingest is still required before a 24/7 video
+  broadcast can be claimed as proven.
