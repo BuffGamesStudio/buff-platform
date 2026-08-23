@@ -53,10 +53,11 @@
 
 ## Next actions requiring an operator or production authorization
 
-1. Authorize pushing the reviewed branch and redeploying Railway with the
-   provider bridge. Add the non-secret `LIVEKIT_AGENT_NAME=assistant-231b` and
-   bridge flags only after confirming the existing protected values remain in
-   Railway.
+1. Authorize pushing the reviewed broadcast commits and redeploying Railway.
+   The provider bridge itself is already deployed and synchronized; the new
+   composition/media and host-context code is still local on the reviewed
+   branch. Add any new non-secret broadcast flags only after confirming the
+   existing protected values remain in Railway.
 2. Provision a durable Linux/Docker host and copy the exact reviewed candidate
    there. Inject a protected env file containing the production Supabase URL,
    server secret, and (when enabling the bridge) the LiveKit values; never
@@ -70,10 +71,12 @@
    `MOVIE_BUFF_LIVE_ALERT_WEBHOOK_URL`. Dispatch it once and confirm an alert
    is delivered for a controlled test incident without exposing credentials.
 6. Connect a real broadcast path: the Mux stream still needs an authorized
-   ingest/egress or encoder connection, and the LiveKit agent must consume the
-   synchronized room metadata before a 24/7 show is proven.
-7. Run the guarded authenticated gameplay smoke with dedicated test accounts;
-   it mutates production data and has not been run.
+   ingest/egress or encoder connection. After deployment, configure the
+   LiveKit HTTP tool for `/api/movie-buff/live/host-context?showKey=main` and
+   deploy the agent so Cinephile Cinematic can consume the synchronized state.
+7. The guarded authenticated gameplay smoke with dedicated temporary accounts
+   was completed on 2026-08-23 and cleaned up with zero residual test rows or
+   users. Repeat it only when a future production change requires it.
 8. Treat Supabase Advisor cleanup as a separate reviewed change. Capture the
    production catalog and usage baselines before authoring any RLS, function,
    grant, or index migration.
