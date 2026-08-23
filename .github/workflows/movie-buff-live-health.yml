@@ -16,6 +16,7 @@ jobs:
 
     env:
       MOVIE_BUFF_LIVE_HEALTH_ENABLED: "true"
+      MOVIE_BUFF_EXPECTED_SUPABASE_REF: "yfatwreicmiocdxzyznd"
 
       MOVIE_BUFF_SUPABASE_URL: ${{ secrets.MOVIE_BUFF_SUPABASE_URL }}
       SUPABASE_URL: ${{ secrets.MOVIE_BUFF_SUPABASE_URL }}
